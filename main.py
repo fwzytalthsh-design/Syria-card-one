@@ -45,6 +45,12 @@ TELEGRAM_ADMIN_CHAT_ID = "8694276183"
 ADMIN_EMAIL = "adminsyriacardone@gmail.com"
 ADMIN_PASSWORD = "Ss517!&7ia"
 
+# --------------------------------------------------
+# رابط API الأساسي للموقع
+# --------------------------------------------------
+SITE_BASE_URL = "https://syriacardone.up.railway.app"
+API_BASE_URL = f"{SITE_BASE_URL}/client/api/"
+
 
 def send_telegram_notification(product, subcategory, price, email, reason):
     if not TELEGRAM_FAIL_BOT_TOKEN or TELEGRAM_FAIL_BOT_TOKEN == "YOUR_TELEGRAM_BOT_TOKEN":
@@ -778,6 +784,10 @@ API_DOCS_HTML = """
         .method { display: inline-block; background: #16a34a; color: #fff; padding: 3px 8px; border-radius: 4px; font-weight: 700; font-size: 0.75rem; margin-left: 8px; }
         .endpoint { font-family: monospace; font-size: 0.9rem; color: var(--green); font-weight: 700; }
         pre { background: #000; border: 1px solid var(--border); border-radius: 8px; padding: 12px; overflow-x: auto; font-family: monospace; font-size: 0.8rem; color: #38bdf8; margin-top: 8px; direction: ltr; text-align: left; }
+        .error-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        .error-table th, .error-table td { border: 1px solid var(--border); padding: 8px 12px; text-align: right; font-size: 0.85rem; }
+        .error-table th { background: #1a1a1f; color: var(--accent); }
+        .error-table td:first-child { font-weight: 700; color: #f87171; font-family: monospace; direction: ltr; text-align: center; }
         footer { text-align: center; font-size: 0.8rem; color: var(--subtext); margin-top: 30px; border-top: 1px solid var(--border); padding-top: 15px; }
     </style>
 </head>
@@ -786,7 +796,7 @@ API_DOCS_HTML = """
         <h1>وثائق واجهة برمجة التطبيقات (API)</h1>
         <p style="color: var(--subtext); font-size: 0.9rem;">SYRIA CARD ONE - التوثيق الرسمي لخدمات الربط البرمجي</p>
         <div class="base-url">
-            <b>عنوان URL الأساسي:</b> <span style="color: var(--accent);">https://api.tartousi-store1.com/client/api/</span>
+            <b>عنوان URL الأساسي:</b> <span style="color: var(--accent);">https://syriacardone.up.railway.app/client/api</span>
         </div>
     </header>
 
@@ -797,41 +807,140 @@ API_DOCS_HTML = """
     </div>
 
     <div class="section">
-        <div class="section-title">حساب تعريفي</div>
+        <div class="section-title">الملف الشخصي</div>
         <div><span class="method">GET</span> <span class="endpoint">/client/api/profile</span></div>
         <p style="font-size: 0.85rem; color: var(--subtext); margin-top: 5px;">يسترجع رصيد المستخدم ومعلومات ملفه الشخصي.</p>
+        <pre>{
+    "balance": "8788.683",
+    "email": "user@email.com"
+}</pre>
     </div>
 
     <div class="section">
         <div class="section-title">المنتجات</div>
         <div><span class="method">GET</span> <span class="endpoint">/client/api/products</span></div>
         <p style="font-size: 0.85rem; color: var(--subtext); margin-top: 5px;">يسترجع جميع المنتجات المتاحة.</p>
+        <pre>[
+    {
+        "id": 365,
+        "name": "UC 60",
+        "price": 0.104,
+        "params": ["ادخل الايدي الاعب"],
+        "category_name": "UC 60",
+        "available": true,
+        "qty_values": {
+            "min": 1,
+            "max": "15000"
+        },
+        "product_type": "amount",
+        "parent_id": 0,
+        "base_price": 0.10,
+        "category_img": ""
+    }
+]</pre>
+        <div style="margin-top:12px;"><span class="method">GET</span> <span class="endpoint">/client/api/products?products_id=id1,id2,id3</span></div>
+        <p style="font-size: 0.85rem; color: var(--subtext); margin-top: 5px;">يسترجع منتجات محددة بواسطة معرّفاتها.</p>
+        <div style="margin-top:12px;"><span class="method">GET</span> <span class="endpoint">/client/api/products?base=1</span></div>
+        <p style="font-size: 0.85rem; color: var(--subtext); margin-top: 5px;">يسترجع فقط معرّفات وأسماء المنتجات.</p>
+    </div>
+
+    <div class="section">
+        <div class="section-title">قيم الكمية (qty_values)</div>
+        <ul style="font-size: 0.85rem; color: var(--subtext); padding-right: 20px; line-height: 2;">
+            <li><code>qty_values: null</code> - الكمية في الطلب يجب أن تكون 1</li>
+            <li><code>qty_values: ["110", "150", "210"]</code> - فقط هذه الكميات المحددة مسموح بها</li>
+            <li><code>qty_values: {"min": "500", "max": "500000"}</code> - الكمية يجب أن تكون ضمن هذا النطاق</li>
+        </ul>
     </div>
 
     <div class="section">
         <div class="section-title">المحتوى (الأقسام الرئيسية)</div>
         <div><span class="method">GET</span> <span class="endpoint">/client/api/content/0</span></div>
         <p style="font-size: 0.85rem; color: var(--subtext); margin-top: 5px;">يسترجع المنتجات والأقسام للصفحة الرئيسية (parent ID = 0).</p>
-    </div>
-
-    <div class="section">
-        <div class="section-title">المحتوى لقسم محدد</div>
-        <div><span class="method">GET</span> <span class="endpoint">/client/api/content/[category.id]</span></div>
+        <div style="margin-top:12px;"><span class="method">GET</span> <span class="endpoint">/client/api/content/[category.id]</span></div>
         <p style="font-size: 0.85rem; color: var(--subtext); margin-top: 5px;">يسترجع المنتجات والأقسام الفرعية لقسم معين.</p>
     </div>
 
     <div class="section">
         <div class="section-title">إنشاء طلب</div>
-        <div><span class="method">GET</span> <span class="endpoint">/client/api/newOrder/364/params?qty=1&playerId=test&order_uuid=...</span></div>
+        <p style="font-size: 0.85rem; color: #fbbf24; font-weight: 700;">⚠️ هام: الطلبات ذات المعرف الفريد (Idempotent Requests with order_uuid)</p>
+        <p style="font-size: 0.85rem; color: var(--subtext);">معامل <code>order_uuid</code> مطلوب ويعمل كمعرّف فريد لكل طلب. عند إرسال نفس <code>order_uuid</code> أكثر من مرة لن يتم إنشاء طلب مكرر بل سيتم إرجاع بيانات الطلب الأصلي.</p>
+        <div style="margin-top:12px;"><span class="method">GET</span> <span class="endpoint">/client/api/newOrder/364/params?qty=1&playerId=test&anyKey=anyVal&order_uuid=ecbdd545-e616-4aee-8770-7eefa977bcd</span></div>
+        <pre>{
+    "status": "OK",
+    "data": {
+        "order_id": "ID_9fffb0d849a45215",
+        "status": "accept",
+        "price": 1.26048,
+        "data": {
+            "playerId": "test"
+        },
+        "replay_api": [
+            {
+                "replay": ["erg3eg"]
+            }
+        ]
+    }
+}</pre>
+        <p style="font-size: 0.85rem; color: var(--subtext); margin-top: 5px;">قيم الحالة: <b style="color:var(--green);">accept</b> | <b style="color:#f87171;">reject</b> | <b style="color:#fbbf24;">wait</b></p>
     </div>
 
     <div class="section">
         <div class="section-title">فحص الطلبات</div>
-        <div><span class="method">GET</span> <span class="endpoint">/client/api/check?orders=[ID_a37aaa06]</span></div>
+        <div><span class="method">GET</span> <span class="endpoint">/client/api/check?orders=[ID_a37aaa06,ID2,ID3]</span></div>
+        <p style="font-size: 0.85rem; color: var(--subtext); margin-top: 5px;">يفحص حالة طلب واحد أو عدة طلبات.</p>
+        <div style="margin-top:12px;"><span class="method">GET</span> <span class="endpoint">/client/api/check?orders=[yourOrderUUID]&uuid=1</span></div>
+        <p style="font-size: 0.85rem; color: var(--subtext); margin-top: 5px;">استبدل <code>[ID_a37aaa06]</code> بمعرّف الطلب أو UUID (عند استخدام معامل <code>uuid=1</code>).</p>
+        <pre>{
+    "status": "OK",
+    "data": [
+        {
+            "order_id": "ID_9fffb0d849a45215",
+            "quantity": 1,
+            "data": {
+                "playerId": "test"
+            },
+            "created_at": "2025-04-10 13:55:48",
+            "product_name": "A-60UC-stock",
+            "price": "1.2604800000000000",
+            "status": "accept",
+            "replay_api": ["erg3eg"]
+        }
+    ]
+}</pre>
+    </div>
+
+    <div class="section">
+        <div class="section-title">رموز الأخطاء</div>
+        <h4 style="color: #f87171; margin-top: 10px; font-size: 0.95rem;">رموز الأخطاء العامة</h4>
+        <table class="error-table">
+            <tr><th>الرمز</th><th>الوصف</th></tr>
+            <tr><td>120</td><td>Api Token is required!</td></tr>
+            <tr><td>121</td><td>Token error</td></tr>
+            <tr><td>122</td><td>Not allowed to use API</td></tr>
+            <tr><td>123</td><td>IP not allowed</td></tr>
+            <tr><td>130</td><td>The site is under maintenance</td></tr>
+        </table>
+        <h4 style="color: #f87171; margin-top: 15px; font-size: 0.95rem;">رموز أخطاء الطلبات</h4>
+        <table class="error-table">
+            <tr><th>الرمز</th><th>الوصف</th></tr>
+            <tr><td>100</td><td>Insufficient balance</td></tr>
+            <tr><td>105</td><td>Quantity not available</td></tr>
+            <tr><td>106</td><td>Quantity not allowed</td></tr>
+            <tr><td>107</td><td>Player ID blocked</td></tr>
+            <tr><td>108</td><td>2FA required</td></tr>
+            <tr><td>109</td><td>Product deleted or not found</td></tr>
+            <tr><td>110</td><td>Product not available now</td></tr>
+            <tr><td>111</td><td>Try again after 1 minute</td></tr>
+            <tr><td>112</td><td>Quantity is too small</td></tr>
+            <tr><td>113</td><td>Quantity is too large</td></tr>
+            <tr><td>114</td><td>Unknown error</td></tr>
+            <tr><td>500</td><td>Unknown error</td></tr>
+        </table>
     </div>
 
     <footer>
-        © 2026 SYRIA CARD ONE - API Documentation. All rights reserved.
+        © 2025 SYRIA CARD ONE - API Documentation. All rights reserved.
     </footer>
 </body>
 </html>
@@ -2205,7 +2314,7 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
             </div>
             <div style="display:flex; flex-direction:column; gap:4px; margin-top:5px;">
                 <label style="font-size:0.75rem; color:var(--subtext-color);">رابط API:</label>
-                <div class="dep-code-box" id="userApiUrlBox" onclick="copyUserApiUrl()" style="font-size:0.75rem;">https://api.tartousi-store1.com/client/api/</div>
+                <div class="dep-code-box" id="userApiUrlBox" onclick="copyUserApiUrl()" style="font-size:0.75rem;">https://syriacardone.up.railway.app/api-docs</div>
             </div>
             <button class="cancel-btn-outline" style="margin-top:10px; width:100%;" onclick="closeUserApiModal()">إغلاق</button>
         </div>
@@ -2942,7 +3051,7 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
             }
 
             document.getElementById('userApiTokenBox').innerText = userToken;
-            document.getElementById('userApiUrlBox').innerText = "https://api.tartousi-store1.com/client/api/";
+            document.getElementById('userApiUrlBox').innerText = "https://syriacardone.up.railway.app/api-docs";
             document.getElementById('userApiModal').classList.add('active');
         }
 
@@ -8365,7 +8474,7 @@ class WebAppHandler(BaseHTTPRequestHandler):
             if not auth_token:
                 self.wfile.write(json.dumps({"error": 120, "message": "Api Token is required!"}).encode("utf-8"))
             else:
-                self.wfile.write(json.dumps({"الرصيد": 0.0, "البريد الإلكتروني": "user@syriacard.com"}, ensure_ascii=False).encode("utf-8"))
+                self.wfile.write(json.dumps({"balance": "0.0", "email": "user@syriacard.com"}, ensure_ascii=False).encode("utf-8"))
 
         elif self.path.startswith("/client/api/products"):
             auth_token = self.headers.get('api-token')
