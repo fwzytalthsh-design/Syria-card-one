@@ -33,6 +33,7 @@ NOTIFICATIONS_FILE = "user_notifications.json"
 CURRENCIES_FILE = "currrenciejs.json"
 API_IMPORTS_FILE = "api_imports.json"
 API_PRICE_TRACKING_FILE = "api_price_tracking.json"
+MAINTENANCE_FILE = "maintenance_mode.json"
 
 # --------------------------------------------------
 # إعدادات بوت التليجرام للإشعارات
@@ -285,7 +286,6 @@ def send_telegram_deposit_notification(method_name, amount, tx_id, email, receip
 
 
 def send_telegram_new_user_notification(email, password, phone, user_ip, currency_name, currency_symbol, currency_rate):
-    """إرسال إشعار عند تسجيل مستخدم جديد أو إكمال بياناته"""
     if not TELEGRAM_PURCHASE_BOT_TOKEN or TELEGRAM_PURCHASE_BOT_TOKEN == "YOUR_TELEGRAM_BOT_TOKEN":
         logging.warning("لم يتم ضبط توكن بوت إشعارات التسجيل.")
         return
@@ -388,6 +388,11 @@ DEFAULT_APPEARANCE = {
     "sidebar_width": 300
 }
 
+DEFAULT_MAINTENANCE = {
+    "is_active": False,
+    "message": "الموقع تحت اعمال الصيانة الرجاء صبر حتى انتهاء التصليحات"
+}
+
 
 def load_json_file(file_path, default_data):
     if os.path.exists(file_path):
@@ -427,6 +432,7 @@ NOTIFICATIONS_DATA = load_json_file(NOTIFICATIONS_FILE, {})
 CURRENCIES_DATA = load_json_file(CURRENCIES_FILE, [])
 API_IMPORTS_DATA = load_json_file(API_IMPORTS_FILE, {})
 API_PRICE_TRACKING_DATA = load_json_file(API_PRICE_TRACKING_FILE, {})
+MAINTENANCE_DATA = load_json_file(MAINTENANCE_FILE, DEFAULT_MAINTENANCE)
 
 # Ensure sidebar_font_size & sidebar_width keys exist for backward compatibility
 if "sidebar_font_size" not in APPEARANCE_DATA:
@@ -1646,7 +1652,6 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
         .counter-total-label { font-size: 0.72rem; color: #a7f3d0; font-weight: 600; }
         .counter-total-value { font-size: 1.3rem; font-weight: 800; color: #ffffff; direction: ltr; }
 
-        /* ====== Complete Profile Modal (Phone + Currency) ====== */
         #completeProfileModal {
             background: linear-gradient(160deg, #0a0a1a 0%, #0f1b2d 100%);
         }
@@ -1788,9 +1793,227 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
             0% { transform: translateX(-50%) translateY(-30px) scale(0.85); opacity: 0; }
             100% { transform: translateX(-50%) translateY(0) scale(1); opacity: 1; }
         }
+
+        /* ====== MAINTENANCE SCREEN ====== */
+        #maintenanceScreen {
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            background: linear-gradient(160deg, #050508 0%, #0a0a18 40%, #0d1117 100%);
+            z-index: 999999;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            overflow: hidden;
+        }
+        #maintenanceScreen.active {
+            display: flex;
+        }
+        .maint-particles {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; overflow: hidden;
+        }
+        .maint-particle {
+            position: absolute;
+            width: 4px; height: 4px;
+            background: rgba(56, 189, 248, 0.3);
+            border-radius: 50%;
+            animation: maintFloat 8s infinite ease-in-out;
+        }
+        .maint-particle:nth-child(1) { left: 10%; top: 20%; animation-delay: 0s; }
+        .maint-particle:nth-child(2) { left: 25%; top: 60%; animation-delay: 1s; width: 6px; height: 6px; background: rgba(74, 222, 128, 0.25); }
+        .maint-particle:nth-child(3) { left: 50%; top: 10%; animation-delay: 2s; }
+        .maint-particle:nth-child(4) { left: 75%; top: 70%; animation-delay: 0.5s; width: 5px; height: 5px; background: rgba(245, 158, 11, 0.25); }
+        .maint-particle:nth-child(5) { left: 85%; top: 30%; animation-delay: 1.5s; }
+        .maint-particle:nth-child(6) { left: 40%; top: 80%; animation-delay: 3s; width: 7px; height: 7px; background: rgba(168, 85, 247, 0.2); }
+        .maint-particle:nth-child(7) { left: 60%; top: 45%; animation-delay: 2.5s; }
+        .maint-particle:nth-child(8) { left: 15%; top: 85%; animation-delay: 1.8s; background: rgba(56, 189, 248, 0.2); }
+        @keyframes maintFloat {
+            0%, 100% { transform: translateY(0) scale(1); opacity: 0.3; }
+            50% { transform: translateY(-30px) scale(1.8); opacity: 0.7; }
+        }
+        .maint-gears {
+            position: relative;
+            width: 120px; height: 120px;
+            margin-bottom: 30px;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .maint-gear {
+            position: absolute;
+            font-size: 3.2rem;
+            animation: maintSpin 4s linear infinite;
+        }
+        .maint-gear.big {
+            font-size: 4rem;
+            color: #38bdf8;
+            text-shadow: 0 0 30px rgba(56, 189, 248, 0.6);
+            animation-duration: 6s;
+        }
+        .maint-gear.small {
+            font-size: 2.2rem;
+            color: #4ade80;
+            text-shadow: 0 0 20px rgba(74, 222, 128, 0.5);
+            animation-direction: reverse;
+            animation-duration: 4s;
+            margin-top: 30px; margin-right: 50px;
+        }
+        @keyframes maintSpin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .maint-logo-box {
+            position: relative;
+            margin-bottom: 25px;
+        }
+        .maint-logo-box img {
+            width: 100px; height: 100px;
+            border-radius: 24px;
+            object-fit: cover;
+            border: 2px solid rgba(56, 189, 248, 0.3);
+            box-shadow: 0 0 40px rgba(56, 189, 248, 0.2), 0 0 80px rgba(56, 189, 248, 0.1);
+            animation: maintPulse 3s ease-in-out infinite;
+        }
+        @keyframes maintPulse {
+            0%, 100% { box-shadow: 0 0 40px rgba(56, 189, 248, 0.2), 0 0 80px rgba(56, 189, 248, 0.1); transform: scale(1); }
+            50% { box-shadow: 0 0 60px rgba(56, 189, 248, 0.4), 0 0 120px rgba(56, 189, 248, 0.2); transform: scale(1.05); }
+        }
+        .maint-title {
+            font-size: 1.4rem;
+            font-weight: 800;
+            color: #ffffff;
+            text-align: center;
+            margin-bottom: 12px;
+            letter-spacing: -0.5px;
+            background: linear-gradient(135deg, #38bdf8, #4ade80, #38bdf8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            background-size: 200% auto;
+            animation: maintGradient 3s ease infinite;
+        }
+        @keyframes maintGradient {
+            0% { background-position: 0% center; }
+            50% { background-position: 100% center; }
+            100% { background-position: 0% center; }
+        }
+        .maint-message {
+            font-size: 0.95rem;
+            color: #a1a1aa;
+            text-align: center;
+            line-height: 1.8;
+            max-width: 340px;
+            font-weight: 600;
+            margin-bottom: 25px;
+        }
+        .maint-progress-wrapper {
+            width: 280px;
+            max-width: 85%;
+            margin-bottom: 20px;
+        }
+        .maint-progress-track {
+            width: 100%;
+            height: 6px;
+            background: rgba(255,255,255,0.08);
+            border-radius: 3px;
+            overflow: hidden;
+            position: relative;
+        }
+        .maint-progress-bar {
+            height: 100%;
+            width: 40%;
+            background: linear-gradient(90deg, #38bdf8, #4ade80, #38bdf8);
+            border-radius: 3px;
+            animation: maintProgress 2s ease-in-out infinite;
+            background-size: 200% 100%;
+        }
+        @keyframes maintProgress {
+            0% { transform: translateX(0); background-position: 0% center; }
+            100% { transform: translateX(250%); background-position: 200% center; }
+        }
+        .maint-status-dots {
+            display: flex;
+            gap: 8px;
+            justify-content: center;
+            margin-top: 10px;
+        }
+        .maint-dot {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            background: #38bdf8;
+            animation: maintDot 1.4s ease-in-out infinite;
+        }
+        .maint-dot:nth-child(2) { animation-delay: 0.2s; background: #4ade80; }
+        .maint-dot:nth-child(3) { animation-delay: 0.4s; background: #f59e0b; }
+        @keyframes maintDot {
+            0%, 100% { opacity: 0.3; transform: scale(0.8); }
+            50% { opacity: 1; transform: scale(1.3); }
+        }
+        .maint-footer {
+            position: absolute;
+            bottom: 30px;
+            font-size: 0.75rem;
+            color: #52525b;
+            text-align: center;
+            font-weight: 600;
+            direction: ltr;
+            letter-spacing: 1px;
+        }
+        .maint-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(245, 158, 11, 0.12);
+            border: 1px solid rgba(245, 158, 11, 0.3);
+            color: #fbbf24;
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 700;
+            margin-bottom: 18px;
+            animation: maintBadgePulse 2s ease-in-out infinite;
+        }
+        @keyframes maintBadgePulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.3); }
+            50% { box-shadow: 0 0 0 8px rgba(245, 158, 11, 0); }
+        }
     </style>
 </head>
 <body>
+
+    <!-- MAINTENANCE SCREEN -->
+    <div id="maintenanceScreen">
+        <div class="maint-particles">
+            <div class="maint-particle"></div>
+            <div class="maint-particle"></div>
+            <div class="maint-particle"></div>
+            <div class="maint-particle"></div>
+            <div class="maint-particle"></div>
+            <div class="maint-particle"></div>
+            <div class="maint-particle"></div>
+            <div class="maint-particle"></div>
+        </div>
+        <div class="maint-gears">
+            <span class="maint-gear big">⚙️</span>
+            <span class="maint-gear small">🔧</span>
+        </div>
+        <div class="maint-logo-box">
+            <img id="maintLogo" src="" alt="Logo" />
+        </div>
+        <div class="maint-badge">🔧 وضع الصيانة</div>
+        <div class="maint-title">الموقع تحت أعمال الصيانة</div>
+        <div class="maint-message" id="maintMessage">الموقع تحت اعمال الصيانة الرجاء صبر حتى انتهاء التصليحات</div>
+        <div class="maint-progress-wrapper">
+            <div class="maint-progress-track">
+                <div class="maint-progress-bar"></div>
+            </div>
+            <div class="maint-status-dots">
+                <div class="maint-dot"></div>
+                <div class="maint-dot"></div>
+                <div class="maint-dot"></div>
+            </div>
+        </div>
+        <div class="maint-footer">SYRIA CARD ONE &copy; 2025</div>
+    </div>
 
     <div id="pageTransitionLoader">
         <div class="loader-center-box">
@@ -1816,10 +2039,8 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
         <div class="splash-spinner"></div>
     </div>
 
-    <!-- Welcome Message -->
     <div class="cpm-welcome-msg" id="welcomeMessage">أهلا وسهلا فيك بموقعنا</div>
 
-    <!-- ====== Complete Profile Modal (Phone + Currency) ====== -->
     <div id="completeProfileModal">
         <div class="cpm-box">
             <img id="cpmLogo" class="auth-store-logo" src="" alt="Logo" style="align-self:center;" />
@@ -2422,6 +2643,42 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
         const sidebar = document.getElementById('sidebar');
         const overlay = document.getElementById('sidebarOverlay');
 
+        // ====== MAINTENANCE CHECK ======
+        async function checkMaintenanceMode() {
+            try {
+                const res = await fetch('/api/maintenance_status');
+                const data = await res.json();
+                if (data.is_active) {
+                    document.getElementById('maintMessage').innerText = data.message || 'الموقع تحت اعمال الصيانة الرجاء صبر حتى انتهاء التصليحات';
+                    // Set logo
+                    try {
+                        const splashRes = await fetch('/api/splash');
+                        const splashData = await splashRes.json();
+                        if (splashData.image) {
+                            document.getElementById('maintLogo').src = splashData.image;
+                        } else {
+                            document.getElementById('maintLogo').src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Crect width='100' height='100' fill='%23121212' rx='20'/%3E%3Ctext x='50%25' y='50%25' fill='%2338bdf8' font-size='14' text-anchor='middle' dominant-baseline='middle' font-weight='bold'%3ESYRIA%3C/text%3E%3Ctext x='50%25' y='65%25' fill='%2338bdf8' font-size='12' text-anchor='middle' dominant-baseline='middle' font-weight='bold'%3ECARD%3C/text%3E%3C/svg%3E";
+                        }
+                    } catch(e) {}
+                    document.getElementById('maintenanceScreen').classList.add('active');
+                    // Hide everything else
+                    document.querySelectorAll('body > div:not(#maintenanceScreen)').forEach(el => {
+                        el.style.display = 'none';
+                    });
+                    return true;
+                }
+                return false;
+            } catch (e) {
+                return false;
+            }
+        }
+
+        // Check maintenance on load and every 15 seconds
+        checkMaintenanceMode();
+        setInterval(checkMaintenanceMode, 15000);
+
+        // ====== END MAINTENANCE CHECK ======
+
         async function applyAppearanceSettings() {
             try {
                 const res = await fetch('/api/get_appearance_settings');
@@ -2719,12 +2976,10 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
             }
         }
 
-        // ====== Complete Profile Modal Functions ======
         async function openCompleteProfileModal(email, showWelcome = true) {
             pendingCompleteProfileEmail = email;
             updateModalLogos();
             
-            // Load currencies into the select
             const select = document.getElementById('cpmCurrencySelect');
             select.innerHTML = '<option value="">-- اختر العملة --</option>';
             select.innerHTML += '<option value="USD|$|1">💵 الدولار الأمريكي ($)</option>';
@@ -2738,7 +2993,6 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
                 });
             } catch (e) { console.error('فشل تحميل العملات', e); }
 
-            // Try to pre-fill phone from server
             try {
                 const res = await fetch('/api/get_user_profile?email=' + encodeURIComponent(email));
                 const data = await res.json();
@@ -2778,7 +3032,6 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
                 return;
             }
 
-            // Clean phone number
             let phoneClean = phoneRaw.replace(/[^0-9]/g, '');
             if (phoneClean.startsWith('963')) {
                 phoneClean = phoneClean;
@@ -2808,7 +3061,6 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
                     closeCompleteProfileModal();
                     showWelcomeMessage();
                     
-                    // Set selected currency locally
                     if (currName !== 'USD') {
                         selectedCurrency = {
                             name: currName,
@@ -2820,10 +3072,8 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
                     }
                     updateCurrencyLabel();
 
-                    // Mark profile as complete
                     localStorage.setItem('profileCompleted_' + pendingCompleteProfileEmail, 'true');
 
-                    // Refresh user balance
                     if (currentLoggedInEmail) {
                         applyLoggedInState(currentLoggedInEmail, data.balance, data.user_id);
                     }
@@ -2861,7 +3111,6 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
                     startOrderPolling();
                     loadNotifications();
 
-                    // Check if profile is complete
                     if (!data.profile_completed) {
                         openCompleteProfileModal(email, true);
                     }
@@ -2899,7 +3148,6 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
                     startOrderPolling();
                     loadNotifications();
 
-                    // Open complete profile modal after registration
                     openCompleteProfileModal(email, true);
                 } else {
                     showTopNotification(data.message || 'فشل إنشاء الحساب');
@@ -3249,10 +3497,8 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
                         loadNotifications();
                         checkNotificationsForUpdate();
 
-                        // Check if profile is complete
                         const profileCompleted = localStorage.getItem('profileCompleted_' + savedEmail);
                         if (!data.profile_completed && profileCompleted !== 'true') {
-                            // Check server-side
                             try {
                                 const profileRes = await fetch('/api/get_user_profile?email=' + encodeURIComponent(savedEmail));
                                 const profileData = await profileRes.json();
@@ -3264,7 +3510,6 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
                             } catch (e) {}
                         }
 
-                        // Restore selected currency from server
                         if (data.currency_name && data.currency_name !== 'USD') {
                             selectedCurrency = {
                                 name: data.currency_name,
@@ -4321,7 +4566,7 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
 """
 
 # --------------------------------------------------
-# 3. واجهة الإدمن الخاصة (بدون تسجيل دخول، مباشرة)
+# 3. واجهة الإدمن الخاصة
 # --------------------------------------------------
 ADMIN_HTML_CONTENT = """
 <!DOCTYPE html>
@@ -4411,7 +4656,6 @@ ADMIN_HTML_CONTENT = """
         .success-circle-box { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 15px 5px; gap: 12px; text-align: center; }
         .success-circle { width: 65px; height: 65px; border-radius: 50%; background-color: rgba(74, 222, 128, 0.15); border: 2px solid #4ade80; display: flex; align-items: center; justify-content: center; color: #4ade80; font-size: 2rem; box-shadow: 0 0 15px rgba(74, 222, 128, 0.3); }
         .success-text-sub { font-size: 0.88rem; font-weight: 700; color: #ffffff; line-height: 1.5; }
-
         .delete-step-box { background-color: #000; border: 1px solid #27272a; border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 8px; position: relative; transition: all 0.3s ease; }
         .delete-step-box.disabled { opacity: 0.4; pointer-events: none; }
         .delete-step-box.completed { border-color: #4ade80; background: linear-gradient(135deg, rgba(74,222,128,0.05) 0%, rgba(74,222,128,0.02) 100%); }
@@ -4419,7 +4663,6 @@ ADMIN_HTML_CONTENT = """
         .delete-step-box.completed .delete-step-number { background: #4ade80; color: #000; }
         .delete-step-title { font-size: 0.8rem; color: #a1a1aa; font-weight: 700; padding-right: 15px; }
         .delete-step-value { font-size: 0.9rem; color: #4ade80; font-weight: 800; padding-right: 15px; }
-        
         .multi-select-list { display: flex; flex-direction: column; gap: 6px; max-height: 300px; overflow-y: auto; padding: 4px; }
         .multi-select-item { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; background-color: #121212; border: 1px solid #27272a; border-radius: 8px; cursor: pointer; transition: all 0.2s; }
         .multi-select-item:hover { border-color: #38bdf8; }
@@ -4430,237 +4673,104 @@ ADMIN_HTML_CONTENT = """
         .delete-mode-btn { flex: 1; padding: 8px; background-color: #121212; border: 1px solid #27272a; border-radius: 8px; color: #a1a1aa; font-size: 0.8rem; font-weight: 700; cursor: pointer; text-align: center; transition: all 0.2s; }
         .delete-mode-btn.active { background-color: #2563eb; color: #fff; border-color: #2563eb; }
         .currency-list-item { background-color: #121212; border: 1px solid #27272a; border-radius: 10px; padding: 12px 14px; display: flex; justify-content: space-between; align-items: center; }
-        
         .counter-badge { display: inline-block; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: #000; font-size: 0.65rem; font-weight: 800; padding: 2px 6px; border-radius: 4px; margin-right: 4px; }
-
-        .api-import-fullscreen {
-            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
-            background: #050508; z-index: 99999; display: none; flex-direction: column;
-            overflow-y: auto; padding: 20px;
-        }
+        .api-import-fullscreen { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #050508; z-index: 99999; display: none; flex-direction: column; overflow-y: auto; padding: 20px; }
         .api-import-fullscreen.active { display: flex; }
-        .api-provider-select-box {
-            width: 100%; padding: 16px; background: #121212; border: 1px solid #27272a;
-            border-radius: 12px; display: flex; flex-direction: column; gap: 10px;
-        }
-        .api-provider-select-box select {
-            padding: 14px; background: #000; border: 1px solid #38bdf8; border-radius: 10px;
-            color: #fff; font-size: 0.95rem; font-weight: 700; outline: none; cursor: pointer;
-        }
-        .api-categories-grid {
-            display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;
-            padding: 15px 5px; margin-top: 10px;
-        }
-        .api-category-card {
-            background: #121212; border: 1px solid #27272a; border-radius: 12px;
-            aspect-ratio: 1 / 1; display: flex; flex-direction: column;
-            align-items: center; justify-content: flex-end; padding: 6px;
-            cursor: pointer; position: relative; overflow: hidden;
-            transform: scale(1.1); transform-origin: center;
-            transition: all 0.2s ease;
-        }
-        .api-category-card:hover {
-            border-color: #4ade80; box-shadow: 0 0 15px rgba(74, 222, 128, 0.3);
-        }
-        .api-category-img {
-            width: 100%; height: calc(100% - 30px); object-fit: cover;
-            border-radius: 8px 8px 0 0; position: absolute; top: 0; left: 0;
-        }
-        .api-category-placeholder {
-            width: 100%; height: calc(100% - 30px); display: flex;
-            align-items: center; justify-content: center; color: #666;
-            font-size: 1.5rem; position: absolute; top: 0; left: 0;
-        }
-        .api-category-label {
-            width: 100%; background: #000; border: 1px solid #27272a;
-            border-radius: 6px; padding: 5px 3px; text-align: center;
-            font-size: 0.75rem; font-weight: 700; color: #fff;
-            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-            z-index: 2;
-        }
-        .api-category-actions {
-            display: flex; gap: 6px; width: 100%; margin-top: 6px;
-            z-index: 3; position: relative;
-        }
-        .api-action-btn {
-            flex: 1; padding: 6px 4px; border-radius: 6px;
-            font-size: 0.65rem; font-weight: 800; cursor: pointer;
-            text-align: center; border: none; transition: all 0.2s;
-        }
-        .api-action-btn.import-btn {
-            background: linear-gradient(135deg, #16a34a 0%, #22c55e 100%);
-            color: #fff;
-        }
+        .api-provider-select-box { width: 100%; padding: 16px; background: #121212; border: 1px solid #27272a; border-radius: 12px; display: flex; flex-direction: column; gap: 10px; }
+        .api-provider-select-box select { padding: 14px; background: #000; border: 1px solid #38bdf8; border-radius: 10px; color: #fff; font-size: 0.95rem; font-weight: 700; outline: none; cursor: pointer; }
+        .api-categories-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; padding: 15px 5px; margin-top: 10px; }
+        .api-category-card { background: #121212; border: 1px solid #27272a; border-radius: 12px; aspect-ratio: 1 / 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; padding: 6px; cursor: pointer; position: relative; overflow: hidden; transform: scale(1.1); transform-origin: center; transition: all 0.2s ease; }
+        .api-category-card:hover { border-color: #4ade80; box-shadow: 0 0 15px rgba(74, 222, 128, 0.3); }
+        .api-category-img { width: 100%; height: calc(100% - 30px); object-fit: cover; border-radius: 8px 8px 0 0; position: absolute; top: 0; left: 0; }
+        .api-category-placeholder { width: 100%; height: calc(100% - 30px); display: flex; align-items: center; justify-content: center; color: #666; font-size: 1.5rem; position: absolute; top: 0; left: 0; }
+        .api-category-label { width: 100%; background: #000; border: 1px solid #27272a; border-radius: 6px; padding: 5px 3px; text-align: center; font-size: 0.75rem; font-weight: 700; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; z-index: 2; }
+        .api-category-actions { display: flex; gap: 6px; width: 100%; margin-top: 6px; z-index: 3; position: relative; }
+        .api-action-btn { flex: 1; padding: 6px 4px; border-radius: 6px; font-size: 0.65rem; font-weight: 800; cursor: pointer; text-align: center; border: none; transition: all 0.2s; }
+        .api-action-btn.import-btn { background: linear-gradient(135deg, #16a34a 0%, #22c55e 100%); color: #fff; }
         .api-action-btn.import-btn:hover { background: linear-gradient(135deg, #15803d 0%, #16a34a 100%); }
-        .api-action-btn.import-btn:disabled {
-            background: #3f3f46; color: #a1a1aa; cursor: not-allowed;
-        }
-        .api-action-btn.open-btn {
-            background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
-            color: #fff;
-        }
+        .api-action-btn.import-btn:disabled { background: #3f3f46; color: #a1a1aa; cursor: not-allowed; }
+        .api-action-btn.open-btn { background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%); color: #fff; }
         .api-action-btn.open-btn:hover { background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%); }
-        .import-modal-overlay {
-            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
-            background: rgba(0,0,0,0.9); backdrop-filter: blur(8px);
-            z-index: 100000; display: none; align-items: center; justify-content: center;
-        }
+        .import-modal-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.9); backdrop-filter: blur(8px); z-index: 100000; display: none; align-items: center; justify-content: center; }
         .import-modal-overlay.active { display: flex; }
-        .import-modal-box {
-            background: #121212; border: 1px solid #4ade80; border-radius: 16px;
-            width: 92%; max-width: 400px; padding: 24px;
-            display: flex; flex-direction: column; gap: 16px;
-        }
-        .import-progress-bar {
-            width: 100%; height: 8px; background: #27272a;
-            border-radius: 4px; overflow: hidden;
-        }
-        .import-progress-fill {
-            height: 100%; background: linear-gradient(90deg, #4ade80, #22c55e);
-            border-radius: 4px; transition: width 0.3s ease;
-            width: 0%;
-        }
-        .import-progress-text {
-            font-size: 0.85rem; color: #a1a1aa; text-align: center;
-            font-weight: 700;
-        }
-        .import-spinner {
-            width: 50px; height: 50px; border: 4px solid rgba(74, 222, 128, 0.2);
-            border-top-color: #4ade80; border-radius: 50%;
-            animation: importSpin 0.8s linear infinite;
-            margin: 0 auto;
-        }
-        @keyframes importSpin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        .api-category-badge {
-            position: absolute; top: 8px; right: 8px;
-            background: linear-gradient(135deg, #f59e0b, #d97706);
-            color: #000; font-size: 0.6rem; font-weight: 800;
-            padding: 3px 8px; border-radius: 10px; z-index: 5;
-        }
-        .price-monitor-badge {
-            position: absolute; top: 8px; left: 8px;
-            background: linear-gradient(135deg, #0284c7, #38bdf8);
-            color: #fff; font-size: 0.6rem; font-weight: 800;
-            padding: 3px 8px; border-radius: 10px; z-index: 5;
-        }
-
-        /* Fullscreen admin login */
-        #adminLoginScreen {
-            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
-            background-color: #050508; z-index: 999999;
-            display: flex; align-items: center; justify-content: center;
-            flex-direction: column; gap: 20px; padding: 20px;
-        }
-        #adminLoginScreen .login-box {
-            background-color: #121212; border: 1px solid #27272a;
-            border-radius: 20px; padding: 40px 30px; width: 100%; max-width: 380px;
-            display: flex; flex-direction: column; gap: 18px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.8);
-        }
-        #adminLoginScreen .login-box h2 {
-            text-align: center; color: #ffffff; font-size: 1.3rem; font-weight: 800;
-            margin-bottom: 10px;
-        }
-        #adminLoginScreen .login-box input {
-            width: 100%; padding: 14px 18px; background-color: #000;
-            border: 1px solid #27272a; border-radius: 12px; color: #ffffff;
-            font-size: 0.95rem; outline: none; text-align: right;
-            transition: border-color 0.2s;
-        }
+        .import-modal-box { background: #121212; border: 1px solid #4ade80; border-radius: 16px; width: 92%; max-width: 400px; padding: 24px; display: flex; flex-direction: column; gap: 16px; }
+        .import-progress-bar { width: 100%; height: 8px; background: #27272a; border-radius: 4px; overflow: hidden; }
+        .import-progress-fill { height: 100%; background: linear-gradient(90deg, #4ade80, #22c55e); border-radius: 4px; transition: width 0.3s ease; width: 0%; }
+        .import-progress-text { font-size: 0.85rem; color: #a1a1aa; text-align: center; font-weight: 700; }
+        .import-spinner { width: 50px; height: 50px; border: 4px solid rgba(74, 222, 128, 0.2); border-top-color: #4ade80; border-radius: 50%; animation: importSpin 0.8s linear infinite; margin: 0 auto; }
+        @keyframes importSpin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .api-category-badge { position: absolute; top: 8px; right: 8px; background: linear-gradient(135deg, #f59e0b, #d97706); color: #000; font-size: 0.6rem; font-weight: 800; padding: 3px 8px; border-radius: 10px; z-index: 5; }
+        .price-monitor-badge { position: absolute; top: 8px; left: 8px; background: linear-gradient(135deg, #0284c7, #38bdf8); color: #fff; font-size: 0.6rem; font-weight: 800; padding: 3px 8px; border-radius: 10px; z-index: 5; }
+        #adminLoginScreen { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background-color: #050508; z-index: 999999; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 20px; padding: 20px; }
+        #adminLoginScreen .login-box { background-color: #121212; border: 1px solid #27272a; border-radius: 20px; padding: 40px 30px; width: 100%; max-width: 380px; display: flex; flex-direction: column; gap: 18px; box-shadow: 0 10px 40px rgba(0,0,0,0.8); }
+        #adminLoginScreen .login-box h2 { text-align: center; color: #ffffff; font-size: 1.3rem; font-weight: 800; margin-bottom: 10px; }
+        #adminLoginScreen .login-box input { width: 100%; padding: 14px 18px; background-color: #000; border: 1px solid #27272a; border-radius: 12px; color: #ffffff; font-size: 0.95rem; outline: none; text-align: right; transition: border-color 0.2s; }
         #adminLoginScreen .login-box input:focus { border-color: #2563eb; }
-        #adminLoginScreen .login-box button {
-            width: 100%; padding: 14px; background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 50%, #3b82f6 100%);
-            border: none; border-radius: 12px; color: #ffffff;
-            font-size: 1.05rem; font-weight: 800; cursor: pointer;
-            box-shadow: 0 4px 15px rgba(37, 99, 235, 0.4);
-            transition: transform 0.1s ease;
-        }
+        #adminLoginScreen .login-box button { width: 100%; padding: 14px; background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 50%, #3b82f6 100%); border: none; border-radius: 12px; color: #ffffff; font-size: 1.05rem; font-weight: 800; cursor: pointer; box-shadow: 0 4px 15px rgba(37, 99, 235, 0.4); transition: transform 0.1s ease; }
         #adminLoginScreen .login-box button:active { transform: scale(0.98); }
-        #adminLoginScreen .error-msg {
-            color: #f87171; font-size: 0.85rem; font-weight: 700;
-            text-align: center; display: none;
-        }
-
-        /* Clients list fullscreen */
-        #clientsListScreen {
-            display: none;
-            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
-            background: #050508; z-index: 9999; overflow-y: auto; padding: 20px;
-            flex-direction: column; gap: 15px;
-        }
+        #adminLoginScreen .error-msg { color: #f87171; font-size: 0.85rem; font-weight: 700; text-align: center; display: none; }
+        #clientsListScreen { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #050508; z-index: 9999; overflow-y: auto; padding: 20px; flex-direction: column; gap: 15px; }
         #clientsListScreen.active { display: flex; }
-        .client-card {
-            background-color: #121212; border: 1px solid #27272a;
-            border-radius: 14px; padding: 14px 18px; cursor: pointer;
-            display: flex; flex-direction: column; gap: 6px;
-            transition: border-color 0.2s;
-        }
+        .client-card { background-color: #121212; border: 1px solid #27272a; border-radius: 14px; padding: 14px 18px; cursor: pointer; display: flex; flex-direction: column; gap: 6px; transition: border-color 0.2s; }
         .client-card:hover { border-color: #38bdf8; }
-        .client-card .cc-email {
-            font-size: 0.85rem; font-weight: 800; color: #38bdf8;
-            direction: ltr; text-align: left; word-break: break-all;
-        }
-        .client-card .cc-id {
-            font-size: 0.75rem; font-weight: 700; color: #a1a1aa;
-            direction: ltr; text-align: left;
-        }
-        .client-card .cc-balance {
-            font-size: 0.9rem; font-weight: 800; color: #4ade80;
-            direction: ltr; text-align: left;
-        }
-
-        /* Client detail fullscreen */
-        #clientDetailScreen {
-            display: none;
-            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
-            background: #050508; z-index: 10000; overflow-y: auto; padding: 20px;
-            flex-direction: column; gap: 15px;
-        }
+        .client-card .cc-email { font-size: 0.85rem; font-weight: 800; color: #38bdf8; direction: ltr; text-align: left; word-break: break-all; }
+        .client-card .cc-id { font-size: 0.75rem; font-weight: 700; color: #a1a1aa; direction: ltr; text-align: left; }
+        .client-card .cc-balance { font-size: 0.9rem; font-weight: 800; color: #4ade80; direction: ltr; text-align: left; }
+        #clientDetailScreen { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #050508; z-index: 10000; overflow-y: auto; padding: 20px; flex-direction: column; gap: 15px; }
         #clientDetailScreen.active { display: flex; }
-        .client-detail-card {
-            background-color: #121212; border: 1px solid #27272a;
-            border-radius: 14px; padding: 20px;
-            display: flex; flex-direction: column; gap: 12px;
-        }
-        .client-detail-row {
-            display: flex; justify-content: space-between;
-            align-items: center; border-bottom: 1px solid #1f1f23;
-            padding: 8px 0;
-        }
+        .client-detail-card { background-color: #121212; border: 1px solid #27272a; border-radius: 14px; padding: 20px; display: flex; flex-direction: column; gap: 12px; }
+        .client-detail-row { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1f1f23; padding: 8px 0; }
         .client-detail-row:last-child { border-bottom: none; }
-        .client-detail-label {
-            font-size: 0.8rem; color: #a1a1aa; font-weight: 700;
-        }
-        .client-detail-value {
-            font-size: 0.85rem; font-weight: 800; color: #ffffff;
-            direction: ltr; text-align: left; word-break: break-all;
-        }
-        .client-action-btns {
-            display: flex; gap: 10px; width: 100%; margin-top: 5px;
-        }
-        .client-action-btn {
-            flex: 1; padding: 12px; border: none; border-radius: 10px;
-            font-size: 0.9rem; font-weight: 800; cursor: pointer;
-            text-align: center; transition: transform 0.1s ease;
-        }
+        .client-detail-label { font-size: 0.8rem; color: #a1a1aa; font-weight: 700; }
+        .client-detail-value { font-size: 0.85rem; font-weight: 800; color: #ffffff; direction: ltr; text-align: left; word-break: break-all; }
+        .client-action-btns { display: flex; gap: 10px; width: 100%; margin-top: 5px; }
+        .client-action-btn { flex: 1; padding: 12px; border: none; border-radius: 10px; font-size: 0.9rem; font-weight: 800; cursor: pointer; text-align: center; transition: transform 0.1s ease; }
         .client-action-btn:active { transform: scale(0.97); }
-        .client-action-btn.add-discount {
-            background: linear-gradient(135deg, #16a34a, #22c55e);
-            color: #ffffff;
+        .client-action-btn.add-discount { background: linear-gradient(135deg, #16a34a, #22c55e); color: #ffffff; }
+        .client-action-btn.remove-discount { background: linear-gradient(135deg, #dc2626, #ef4444); color: #ffffff; }
+        .discount-badge { display: inline-block; background: linear-gradient(135deg, #f59e0b, #d97706); color: #000000; font-size: 0.7rem; font-weight: 800; padding: 3px 10px; border-radius: 8px; }
+
+        /* Maintenance toggle in admin */
+        .maint-toggle-box {
+            display: flex; justify-content: space-between; align-items: center;
+            background: #121212; border: 1px solid #27272a;
+            padding: 14px 16px; border-radius: 12px; margin-top: 8px;
         }
-        .client-action-btn.remove-discount {
+        .maint-toggle-label { font-size: 0.9rem; font-weight: 700; color: #ffffff; }
+        .maint-toggle-sub { font-size: 0.7rem; color: #a1a1aa; margin-top: 2px; }
+        .maint-toggle-switch { position: relative; display: inline-block; width: 56px; height: 30px; flex-shrink: 0; }
+        .maint-toggle-switch input { opacity: 0; width: 0; height: 0; }
+        .maint-slider {
+            position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+            background-color: #dc2626; transition: .3s; border-radius: 34px;
+        }
+        .maint-slider:before {
+            position: absolute; content: ""; height: 22px; width: 22px; left: 4px; bottom: 4px;
+            background-color: white; transition: .3s; border-radius: 50%;
+        }
+        input:checked + .maint-slider { background-color: #16a34a; }
+        input:checked + .maint-slider:before { transform: translateX(26px); }
+        .maint-toggle-btn {
+            width: 100%; padding: 14px; border: none; border-radius: 12px;
+            font-size: 1rem; font-weight: 800; cursor: pointer; margin-top: 10px;
+            transition: all 0.3s ease;
+        }
+        .maint-toggle-btn.shutdown {
             background: linear-gradient(135deg, #dc2626, #ef4444);
-            color: #ffffff;
+            color: #fff; box-shadow: 0 4px 15px rgba(220, 38, 38, 0.4);
         }
-        .discount-badge {
-            display: inline-block;
-            background: linear-gradient(135deg, #f59e0b, #d97706);
-            color: #000000; font-size: 0.7rem; font-weight: 800;
-            padding: 3px 10px; border-radius: 8px;
+        .maint-toggle-btn.restart {
+            background: linear-gradient(135deg, #16a34a, #22c55e);
+            color: #fff; box-shadow: 0 4px 15px rgba(22, 163, 74, 0.4);
         }
+        .maint-toggle-btn:active { transform: scale(0.97); }
+        .maint-active-banner {
+            background: linear-gradient(135deg, #7f1d1d 0%, #dc2626 100%);
+            border: 1px solid #ef4444; border-radius: 12px; padding: 12px 16px;
+            display: flex; align-items: center; gap: 10px; margin-top: 8px;
+        }
+        .maint-active-banner .icon { font-size: 1.3rem; }
+        .maint-active-banner .text { font-size: 0.85rem; font-weight: 700; color: #fff; }
     </style>
 </head>
 <body>
@@ -4700,6 +4810,7 @@ ADMIN_HTML_CONTENT = """
                 <button class="sub-menu-btn" onclick="openAboutUsSettingsModal()">تعيين من نحن</button>
                 <button class="sub-menu-btn" onclick="openSupportSettingsModal()">تعيين التواصل مع دعم</button>
                 <button class="sub-menu-btn" onclick="openAppearanceSettings()" style="color:#4ade80; border-color:#4ade80;">المظهر وضبط</button>
+                <button class="sub-menu-btn" onclick="openMaintenanceModal()" style="color:#f87171; border-color:#f87171; font-weight:800;">⚙️ وضع الصيانة</button>
             </div>
 
             <button class="admin-menu-btn" onclick="toggleSubMenu('designMenu')">
@@ -4838,7 +4949,29 @@ ADMIN_HTML_CONTENT = """
             </div>
         </div>
 
-        <!-- ستايل الواجهات والشاشة الخاصة بالطلبات والتفاصيل المطابقة للصورة تماماً -->
+        <!-- Maintenance Modal -->
+        <div class="modal-overlay" id="maintenanceModalOverlay">
+            <div class="modal-box" style="max-width: 400px;">
+                <div class="modal-title" style="color:#f87171; font-size:1.1rem;">⚙️ وضع الصيانة</div>
+                
+                <div class="maint-active-banner" id="maintActiveBanner" style="display:none;">
+                    <span class="icon">🔧</span>
+                    <span class="text">الموقع حالياً في وضع الصيانة</span>
+                </div>
+
+                <div class="form-group">
+                    <label>رسالة الصيانة التي ستظهر للمستخدمين:</label>
+                    <textarea id="maintMessageInput" rows="3" placeholder="الموقع تحت اعمال الصيانة الرجاء صبر حتى انتهاء التصليحات...">الموقع تحت اعمال الصيانة الرجاء صبر حتى انتهاء التصليحات</textarea>
+                </div>
+
+                <button id="maintToggleBtn" class="maint-toggle-btn shutdown" onclick="toggleMaintenanceMode()">
+                    ⏹️ إيقاف التشغيل
+                </button>
+
+                <button class="btn-secondary" onclick="closeModal('maintenanceModalOverlay')">إغلاق</button>
+            </div>
+        </div>
+
         <style>
             #allOrdersScreen {
                 display: none;
@@ -4847,7 +4980,6 @@ ADMIN_HTML_CONTENT = """
                 flex-direction: column; gap: 15px;
             }
             #allOrdersScreen.active { display: flex; }
-            
             .admin-search-order-box {
                 width: 100%;
                 background: #0f172a;
@@ -4860,7 +4992,6 @@ ADMIN_HTML_CONTENT = """
                 transition: border-color 0.2s;
             }
             .admin-search-order-box:focus { border-color: #38bdf8; }
-
             .admin-order-rect {
                 background: #0f172a;
                 border: 1px solid #1e293b;
@@ -4876,8 +5007,6 @@ ADMIN_HTML_CONTENT = """
                 border-color: #38bdf8;
                 background: #131f37;
             }
-
-            /* شاشة تفاصيل الطلب طبق الأصل عن الصورة */
             #exactOrderDetailModal {
                 position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
                 background: rgba(3, 7, 18, 0.92); backdrop-filter: blur(8px);
@@ -4897,8 +5026,6 @@ ADMIN_HTML_CONTENT = """
                 gap: 16px;
                 box-shadow: 0 10px 40px rgba(0,0,0,0.8);
             }
-
-            /* الشريط العلوي للبطاقة: المنتج، الكمية، الإيميل، الحالة */
             .exact-top-bar {
                 background: #0d1527;
                 border: 1px solid #1e293b;
@@ -4912,7 +5039,6 @@ ADMIN_HTML_CONTENT = """
             .exact-col { display: flex; flex-direction: column; gap: 8px; align-items: center; }
             .exact-col-title { font-size: 0.8rem; color: #64748b; font-weight: 700; }
             .exact-col-val { font-size: 0.95rem; font-weight: 800; color: #ffffff; }
-
             .exact-status-badge {
                 background: rgba(16, 185, 129, 0.1);
                 color: #34d399;
@@ -4932,8 +5058,6 @@ ADMIN_HTML_CONTENT = """
                 color: #fbbf24;
                 border-color: #d97706;
             }
-
-            /* البطاقتان المتقابلتان */
             .exact-body-grid {
                 display: grid;
                 grid-template-columns: 1fr 1fr;
@@ -4942,7 +5066,6 @@ ADMIN_HTML_CONTENT = """
             @media (max-width: 768px) {
                 .exact-body-grid { grid-template-columns: 1fr; }
             }
-
             .exact-card-panel {
                 background: #0d1527;
                 border: 1px solid #1e293b;
@@ -4962,7 +5085,6 @@ ADMIN_HTML_CONTENT = """
                 color: #38bdf8;
                 margin-bottom: 6px;
             }
-
             .exact-detail-row {
                 display: flex;
                 justify-content: space-between;
@@ -4972,7 +5094,6 @@ ADMIN_HTML_CONTENT = """
             .exact-detail-row .lbl { color: #64748b; font-weight: 700; }
             .exact-detail-row .val { color: #f8fafc; font-weight: 800; }
             .exact-detail-row .val.price { color: #34d399; }
-
             .exact-input-box {
                 background: #050914;
                 border: 1px solid #172554;
@@ -4985,7 +5106,6 @@ ADMIN_HTML_CONTENT = """
                 color: #94a3b8;
                 font-weight: 700;
             }
-
             .exact-bot-response-box {
                 background: #050914;
                 border: 1px solid #172554;
@@ -5001,7 +5121,6 @@ ADMIN_HTML_CONTENT = """
                 overflow-y: auto;
                 max-height: 140px;
             }
-
             .exact-close-btn {
                 background: #111b2e;
                 border: 1px solid #1e293b;
@@ -5016,14 +5135,12 @@ ADMIN_HTML_CONTENT = """
             .exact-close-btn:hover { background: #1e293b; }
         </style>
 
-        <!-- واجهة عرض كل الطلبات (ملئ الشاشة) -->
         <div id="allOrdersScreen">
             <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #27272a; padding-bottom:12px;">
                 <span style="font-size:1.15rem; font-weight:800; color:#38bdf8;">📦 كل طلبات المتجر</span>
                 <button class="btn-secondary" onclick="closeAllOrdersScreen()">رجوع</button>
             </div>
 
-            <!-- مستطيل البحث عبر رقم الطلب -->
             <div>
                 <input type="text" id="adminOrderSearchInput" class="admin-search-order-box" placeholder="🔍 ابحث برقم الطلب (Order ID أو UUID)..." oninput="filterAllOrdersList()">
             </div>
@@ -5031,10 +5148,8 @@ ADMIN_HTML_CONTENT = """
             <div id="allOrdersListContainer" style="display:flex; flex-direction:column; gap:10px;"></div>
         </div>
 
-        <!-- مودال تفاصيل الطلب بنفس تصميم الصورة بل ميلي -->
         <div id="exactOrderDetailModal">
             <div class="exact-modal-container">
-                <!-- الشريط العلوي -->
                 <div class="exact-top-bar">
                     <div class="exact-col">
                         <span class="exact-col-title">المنتج</span>
@@ -5054,55 +5169,43 @@ ADMIN_HTML_CONTENT = """
                     </div>
                 </div>
 
-                <!-- البطاقتان المتقابلتان -->
                 <div class="exact-body-grid">
-                    <!-- جهة اليمين: تفاصيل الطلب -->
                     <div class="exact-card-panel">
                         <div class="exact-panel-title">
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>
                             <span>تفاصيل الطلب</span>
                         </div>
-
                         <div class="exact-detail-row">
                             <span class="lbl">رقم الطلب:</span>
                             <span class="val" id="exOrderId" style="direction:ltr; font-family:monospace;">-</span>
                         </div>
-
                         <div class="exact-detail-row">
                             <span class="lbl">الفئة:</span>
                             <span class="val" id="exSubcategory">-</span>
                         </div>
-
                         <div class="exact-detail-row">
                             <span class="lbl">السعر:</span>
                             <span class="val price" id="exPrice" style="direction:ltr;">$0.00</span>
                         </div>
-
                         <div class="exact-detail-row">
                             <span class="lbl">الربح التقديري:</span>
                             <span class="val" id="exProfit">-</span>
                         </div>
-
                         <div class="exact-detail-row">
                             <span class="lbl">التاريخ:</span>
                             <span class="val" id="exDate" style="direction:ltr;">-</span>
                         </div>
                     </div>
 
-                    <!-- جهة اليسار: المدخلات والرد -->
                     <div class="exact-card-panel">
                         <div class="exact-panel-title">
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
                             <span>المدخلات والرد</span>
                         </div>
-
-                        <!-- مستطيل مدخلات الزبون -->
                         <div class="exact-input-box">
                             <span style="cursor:pointer;" onclick="copyExactInput()" title="نسخ">📋</span>
                             <span id="exUserInput">-</span>
                         </div>
-
-                        <!-- مستطيل الرد البرمجي للبوت / السيرفر -->
                         <div class="exact-bot-response-box" id="exBotResponse">
 Activation Success :
 Status : Completed / Verified
@@ -5112,7 +5215,6 @@ Code   : -
                     </div>
                 </div>
 
-                <!-- زر الإغلاق المماثل للتصميم -->
                 <button class="exact-close-btn" onclick="closeExactOrderDetailModal()">إغلاق</button>
             </div>
         </div>
@@ -5956,6 +6058,7 @@ Code   : -
 
     <script>
         let allOrdersAdminCache = [];
+        let maintenanceActive = false;
 
         function handleAdminLogin() {
             var email = document.getElementById('adminEmailInput').value.trim();
@@ -5976,6 +6079,7 @@ Code   : -
         function initAdminApp() {
             loadCategories();
             fetchStatsAndRender();
+            fetchMaintenanceStatus();
             setInterval(fetchStatsAndRender, 30000);
         }
 
@@ -6003,6 +6107,77 @@ Code   : -
             if (isNaN(parsed)) return "0.000";
             return Number(parsed.toFixed(3)).toString();
         }
+
+        // ===== MAINTENANCE FUNCTIONS =====
+        async function fetchMaintenanceStatus() {
+            try {
+                const res = await fetch('/api/maintenance_status');
+                const data = await res.json();
+                maintenanceActive = data.is_active;
+                updateMaintenanceUI(data);
+            } catch (e) {
+                console.error('Failed to fetch maintenance status:', e);
+            }
+        }
+
+        function updateMaintenanceUI(data) {
+            const banner = document.getElementById('maintActiveBanner');
+            const btn = document.getElementById('maintToggleBtn');
+            const msgInput = document.getElementById('maintMessageInput');
+
+            if (data.message) {
+                msgInput.value = data.message;
+            }
+
+            if (data.is_active) {
+                banner.style.display = 'flex';
+                btn.className = 'maint-toggle-btn restart';
+                btn.innerHTML = '▶️ إعادة تشغيل';
+            } else {
+                banner.style.display = 'none';
+                btn.className = 'maint-toggle-btn shutdown';
+                btn.innerHTML = '⏹️ إيقاف التشغيل';
+            }
+        }
+
+        function openMaintenanceModal() {
+            toggleSidebar();
+            fetchMaintenanceStatus();
+            openModal('maintenanceModalOverlay');
+        }
+
+        async function toggleMaintenanceMode() {
+            const msgInput = document.getElementById('maintMessageInput').value.trim();
+            const newState = !maintenanceActive;
+
+            try {
+                const res = await fetch('/api/toggle_maintenance', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        is_active: newState,
+                        message: msgInput || 'الموقع تحت اعمال الصيانة الرجاء صبر حتى انتهاء التصليحات'
+                    })
+                });
+
+                const data = await res.json();
+                if (data.status === 'success') {
+                    maintenanceActive = newState;
+                    updateMaintenanceUI({ is_active: newState, message: msgInput });
+                    
+                    if (newState) {
+                        alert('✅ تم إيقاف الموقع بنجاح! سيظهر للمستخدمين واجهة الصيانة.');
+                    } else {
+                        alert('✅ تم إعادة تشغيل الموقع بنجاح!');
+                    }
+                } else {
+                    alert('حدث خطأ أثناء تغيير حالة الموقع!');
+                }
+            } catch (e) {
+                alert('فشل الاتصال بالخادم!');
+            }
+        }
+        // ===== END MAINTENANCE FUNCTIONS =====
 
         // ===== CLIENTS LIST FUNCTIONS =====
         let clientsListCache = [];
@@ -8332,7 +8507,6 @@ Code   : -
             document.getElementById('exSubcategory').innerText = order.subcategory || '-';
             document.getElementById('exPrice').innerText = '$' + (order.price ? parseFloat(order.price).toFixed(6) : '0.000000');
             
-            // الربح التقديري
             const baseP = parseFloat(order.base_price || 0);
             const saleP = parseFloat(order.price || 0);
             if (baseP > 0 && saleP > baseP) {
@@ -8344,7 +8518,6 @@ Code   : -
             document.getElementById('exDate').innerText = `${order.time || '12:00:00'} ${order.date || ''}`;
             document.getElementById('exUserInput').innerText = order.input || '-';
 
-            // نص رد النظام التابع للبوت والسيرفر
             let replyText = order.replay_api || order.system_response || '';
             if (!replyText) {
                 replyText = `Activation Success :\nStatus : ${st}\nID     : ${order.order_uuid ? order.order_uuid.substring(0, 8) : '-'}\nCode   : ${order.input || '-'}`;
@@ -8416,11 +8589,26 @@ class WebAppHandler(BaseHTTPRequestHandler):
             save_json_file(ORDERS_FILE, ORDERS_DATA)
 
     def do_GET(self):
+        # First, check maintenance mode - but allow admin routes
+        if not self.path.startswith("/admin") and not self.path.startswith("/api/maintenance") and MAINTENANCE_DATA.get("is_active"):
+            self.send_response(503)
+            self.send_header("Content-type", "text/html; charset=utf-8")
+            self.end_headers()
+            # Serve a maintenance page with the user's HTML (which now includes the maintenance screen)
+            self.wfile.write(USER_HTML_CONTENT.encode("utf-8"))
+            return
+
         if self.path == "/admin/1":
             self.send_response(200)
             self.send_header("Content-type", "text/html; charset=utf-8")
             self.end_headers()
             self.wfile.write(ADMIN_HTML_CONTENT.encode("utf-8"))
+
+        elif self.path == "/api/maintenance_status":
+            self.send_response(200)
+            self.send_header("Content-type", "application/json; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(json.dumps(MAINTENANCE_DATA, ensure_ascii=False).encode("utf-8"))
 
         elif self.path == "/api/admin_stats":
             total_users = len(USERS_DATA)
@@ -8710,7 +8898,22 @@ class WebAppHandler(BaseHTTPRequestHandler):
         post_data = self.rfile.read(content_length)
         data = json.loads(post_data.decode('utf-8'))
 
-        if self.path == "/api/register":
+        if self.path == "/api/toggle_maintenance":
+            is_active = bool(data.get('is_active', False))
+            message = data.get('message', 'الموقع تحت اعمال الصيانة الرجاء صبر حتى انتهاء التصليحات')
+            
+            MAINTENANCE_DATA['is_active'] = is_active
+            MAINTENANCE_DATA['message'] = message
+            save_json_file(MAINTENANCE_FILE, MAINTENANCE_DATA)
+            
+            logging.info(f"Maintenance mode {'ACTIVATED' if is_active else 'DEACTIVATED'}")
+            
+            self.send_response(200)
+            self.send_header("Content-type", "application/json; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "success", "is_active": is_active}, ensure_ascii=False).encode("utf-8"))
+
+        elif self.path == "/api/register":
             email = data.get('email', '').strip()
             phone = data.get('phone', '')
             password = data.get('password', '').strip()
