@@ -5,6 +5,7 @@ import os
 import uuid
 import urllib.parse
 import urllib.request
+import secrets
 from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import threading
@@ -51,6 +52,10 @@ ADMIN_PASSWORD = "Ss517!&7ia"
 # --------------------------------------------------
 SITE_BASE_URL = "https://syriacardone.up.railway.app"
 API_BASE_URL = f"{SITE_BASE_URL}/client/api/"
+
+
+def generate_api_token():
+    return secrets.token_hex(16)
 
 
 def send_telegram_notification(product, subcategory, price, email, reason):
@@ -441,6 +446,15 @@ if "sidebar_font_size" not in APPEARANCE_DATA:
 if "sidebar_width" not in APPEARANCE_DATA:
     APPEARANCE_DATA["sidebar_width"] = 300
     save_json_file(APPEARANCE_FILE, APPEARANCE_DATA)
+
+
+def get_user_by_api_token(token):
+    if not token:
+        return None
+    for email, udata in USERS_DATA.items():
+        if udata.get('api_token') == token and udata.get('api_enabled', False):
+            return email, udata
+    return None
 
 
 def make_api_request(url, token, timeout=12):
@@ -2882,15 +2896,6 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
             }
         }
 
-        function generateRandom32CharToken() {
-            const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-            let token = '';
-            for (let i = 0; i < 32; i++) {
-                token += chars.charAt(Math.floor(Math.random() * chars.length));
-            }
-            return token;
-        }
-
         function updateSidebarVisibility(isLoggedIn) {
             const guestCard = document.getElementById('guestAuthCard');
             const profileBox = document.getElementById('userProfileHeader');
@@ -3282,7 +3287,7 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
             }
         }
 
-        function openUserApiModal() {
+        async function openUserApiModal() {
             toggleSidebar();
             const savedEmail = localStorage.getItem('loggedInUserEmail');
             if (!savedEmail) { 
@@ -3290,15 +3295,16 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
                 return; 
             }
 
-            let userToken = localStorage.getItem('api_token_32_' + savedEmail);
-            if (!userToken) {
-                userToken = generateRandom32CharToken();
-                localStorage.setItem('api_token_32_' + savedEmail, userToken);
+            try {
+                const res = await fetch('/api/get_my_api_token?email=' + encodeURIComponent(savedEmail));
+                const data = await res.json();
+                
+                document.getElementById('userApiTokenBox').innerText = data.token || '-';
+                document.getElementById('userApiUrlBox').innerText = data.api_url || 'https://syriacardone.up.railway.app/client/api';
+                document.getElementById('userApiModal').classList.add('active');
+            } catch (e) {
+                alert('فشل جلب التوكن');
             }
-
-            document.getElementById('userApiTokenBox').innerText = userToken;
-            document.getElementById('userApiUrlBox').innerText = "https://syriacardone.up.railway.app/api-docs";
-            document.getElementById('userApiModal').classList.add('active');
         }
 
         function closeUserApiModal() { document.getElementById('userApiModal').classList.remove('active'); }
@@ -8644,49 +8650,323 @@ class WebAppHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(API_DOCS_HTML.encode("utf-8"))
 
-        elif self.path == "/client/api/profile":
+        elif self.path.startswith("/client/api/profile"):
             auth_token = self.headers.get('api-token')
+            user = get_user_by_api_token(auth_token)
+            
             self.send_response(200)
             self.send_header("Content-type", "application/json; charset=utf-8")
             self.end_headers()
+            
             if not auth_token:
                 self.wfile.write(json.dumps({"error": 120, "message": "Api Token is required!"}).encode("utf-8"))
+            elif not user:
+                self.wfile.write(json.dumps({"error": 121, "message": "Token error"}).encode("utf-8"))
             else:
-                self.wfile.write(json.dumps({"balance": "0.0", "email": "user@syriacard.com"}, ensure_ascii=False).encode("utf-8"))
+                email, udata = user
+                self.wfile.write(json.dumps({
+                    "balance": str(round(float(udata.get('balance', 0)), 3)),
+                    "email": email
+                }, ensure_ascii=False).encode("utf-8"))
 
         elif self.path.startswith("/client/api/products"):
             auth_token = self.headers.get('api-token')
+            user = get_user_by_api_token(auth_token)
+            
             self.send_response(200)
             self.send_header("Content-type", "application/json; charset=utf-8")
             self.end_headers()
+            
             if not auth_token:
                 self.wfile.write(json.dumps({"error": 120, "message": "Api Token is required!"}).encode("utf-8"))
-            else:
-                formatted_products = []
-                for idx, sub in enumerate(SUBCATEGORIES_DATA):
-                    product_entry = {
-                        "id": idx + 100,
-                        "name": sub.get('name'),
-                        "price": sub.get('price'),
-                        "params": ["ادخل الايدي الأرقام"],
-                        "category_name": sub.get('product'),
-                        "available": True,
-                        "qty_values": None,
-                        "product_type": "package",
-                        "parent_id": 0,
-                        "base_price": sub.get('price'),
-                        "category_img": sub.get('image', '')
+                return
+            if not user:
+                self.wfile.write(json.dumps({"error": 121, "message": "Token error"}).encode("utf-8"))
+                return
+            
+            email, udata = user
+            discount = float(udata.get('discount_percentage', 0))
+            
+            query = urllib.parse.urlparse(self.path).query
+            params = urllib.parse.parse_qs(query)
+            
+            if params.get('base', ['0'])[0] == '1':
+                result = [{"id": i+100, "name": s.get('name')} for i, s in enumerate(SUBCATEGORIES_DATA)]
+                self.wfile.write(json.dumps(result, ensure_ascii=False).encode("utf-8"))
+                return
+            
+            products_filter = None
+            if 'products_id' in params:
+                products_filter = [x.strip() for x in params['products_id'][0].split(',')]
+            
+            formatted = []
+            for idx, sub in enumerate(SUBCATEGORIES_DATA):
+                pid = str(idx + 100)
+                if products_filter and pid not in products_filter:
+                    continue
+                
+                base_price = float(sub.get('price', 0))
+                final_price = round(base_price * (1 - discount / 100.0), 3)
+                
+                entry = {
+                    "id": idx + 100,
+                    "name": sub.get('name'),
+                    "price": final_price,
+                    "base_price": base_price,
+                    "params": ["ادخل الايدي"],
+                    "category_name": sub.get('product'),
+                    "available": True,
+                    "qty_values": None,
+                    "product_type": "package",
+                    "parent_id": 0,
+                    "category_img": sub.get('image', '')
+                }
+                
+                if sub.get('is_counter') and sub.get('counter_min_qty'):
+                    entry["qty_values"] = {
+                        "min": sub.get('counter_min_qty', 1),
+                        "max": sub.get('counter_max_qty', "999999")
                     }
-                    
-                    if sub.get('is_counter') and sub.get('counter_min_qty'):
-                        product_entry["qty_values"] = {
-                            "min": sub.get('counter_min_qty', 1),
-                            "max": sub.get('counter_max_qty', "999999")
+                    entry["product_type"] = "amount"
+                
+                formatted.append(entry)
+            
+            self.wfile.write(json.dumps(formatted, ensure_ascii=False).encode("utf-8"))
+
+        elif self.path.startswith("/client/api/content/"):
+            auth_token = self.headers.get('api-token')
+            user = get_user_by_api_token(auth_token)
+            
+            self.send_response(200)
+            self.send_header("Content-type", "application/json; charset=utf-8")
+            self.end_headers()
+            
+            if not auth_token:
+                self.wfile.write(json.dumps({"error": 120, "message": "Api Token is required!"}).encode("utf-8"))
+                return
+            if not user:
+                self.wfile.write(json.dumps({"error": 121, "message": "Token error"}).encode("utf-8"))
+                return
+            
+            email, udata = user
+            discount = float(udata.get('discount_percentage', 0))
+            
+            cat_id = self.path.split('/')[-1]
+            
+            if cat_id == '0':
+                categories_list = []
+                for cat_name, cat_img in CATEGORIES_DATA.items():
+                    products_in_cat = [p for p in PRODUCTS_DATA if p.get('category') == cat_name]
+                    cats = []
+                    for pidx, p in enumerate(products_in_cat):
+                        cats.append({"id": 1000 + pidx, "name": p.get('name'), "image": p.get('image', '')})
+                    categories_list.append({
+                        "id": cat_name,
+                        "name": cat_name,
+                        "image": cat_img,
+                        "subcategories": cats
+                    })
+                self.wfile.write(json.dumps({"status": "OK", "data": {"categories": categories_list}}, ensure_ascii=False).encode("utf-8"))
+                return
+            
+            target_cat = cat_id
+            products_in_cat = [p for p in PRODUCTS_DATA if p.get('category') == target_cat]
+            cats = []
+            for pidx, p in enumerate(products_in_cat):
+                cats.append({"id": 1000 + pidx, "name": p.get('name'), "image": p.get('image', '')})
+            
+            self.wfile.write(json.dumps({
+                "status": "OK",
+                "data": {"categories": cats, "products": []}
+            }, ensure_ascii=False).encode("utf-8"))
+
+        elif self.path.startswith("/client/api/newOrder/"):
+            auth_token = self.headers.get('api-token')
+            user = get_user_by_api_token(auth_token)
+            
+            self.send_response(200)
+            self.send_header("Content-type", "application/json; charset=utf-8")
+            self.end_headers()
+            
+            if not auth_token:
+                self.wfile.write(json.dumps({"error": 120, "message": "Api Token is required!"}).encode("utf-8"))
+                return
+            if not user:
+                self.wfile.write(json.dumps({"error": 121, "message": "Token error"}).encode("utf-8"))
+                return
+            
+            email, udata = user
+            
+            try:
+                parts = self.path.split('/')
+                product_id = parts[4]
+                
+                query = urllib.parse.urlparse(self.path).query
+                params = urllib.parse.parse_qs(query)
+                
+                qty = int(params.get('qty', ['1'])[0])
+                player_id = params.get('playerId', [''])[0]
+                order_uuid_in = params.get('order_uuid', [''])[0]
+                
+                if not order_uuid_in:
+                    self.wfile.write(json.dumps({"status": "error", "code": 114, "message": "order_uuid is required"}).encode("utf-8"))
+                    return
+                
+                existing = next((o for o in ORDERS_DATA if o.get('order_uuid') == order_uuid_in), None)
+                if existing:
+                    self.wfile.write(json.dumps({
+                        "status": "OK",
+                        "data": {
+                            "order_id": existing.get('api_order_id', f"ID_{order_uuid_in[:8]}"),
+                            "status": existing.get('status'),
+                            "price": existing.get('price'),
+                            "data": {"playerId": player_id},
+                            "replay_api": existing.get('replay_api')
                         }
-                        product_entry["product_type"] = "amount"
-                    
-                    formatted_products.append(product_entry)
-                self.wfile.write(json.dumps(formatted_products, ensure_ascii=False).encode("utf-8"))
+                    }, ensure_ascii=False).encode("utf-8"))
+                    return
+                
+                sub_idx = int(product_id) - 100
+                if sub_idx < 0 or sub_idx >= len(SUBCATEGORIES_DATA):
+                    self.wfile.write(json.dumps({"status": "error", "code": 109, "message": "Product not found"}).encode("utf-8"))
+                    return
+                
+                sub = SUBCATEGORIES_DATA[sub_idx]
+                base_price = float(sub.get('price', 0))
+                discount = float(udata.get('discount_percentage', 0))
+                
+                if sub.get('is_counter'):
+                    min_qty = int(sub.get('counter_min_qty', 1))
+                    min_price = float(sub.get('counter_min_price', base_price))
+                    if qty < min_qty:
+                        self.wfile.write(json.dumps({"status": "error", "code": 112, "message": "Quantity is too small"}).encode("utf-8"))
+                        return
+                    max_qty = sub.get('counter_max_qty')
+                    if max_qty and qty > int(max_qty):
+                        self.wfile.write(json.dumps({"status": "error", "code": 113, "message": "Quantity is too large"}).encode("utf-8"))
+                        return
+                    total_price = round((qty / min_qty) * min_price * (1 - discount / 100.0), 3)
+                else:
+                    if qty != 1:
+                        self.wfile.write(json.dumps({"status": "error", "code": 106, "message": "Quantity not allowed"}).encode("utf-8"))
+                        return
+                    total_price = round(base_price * (1 - discount / 100.0), 3)
+                
+                current_balance = round(float(udata.get('balance', 0)), 3)
+                if current_balance < total_price:
+                    self.wfile.write(json.dumps({"status": "error", "code": 100, "message": "Insufficient balance"}).encode("utf-8"))
+                    return
+                
+                udata['balance'] = round(current_balance - total_price, 3)
+                save_json_file(USERS_FILE, USERS_DATA)
+                
+                provider_name = sub.get('provider_name', '')
+                api_product_id = sub.get('api_product_id', '')
+                order_status = "قيد الانتظار"
+                api_order_id = f"ID_{order_uuid_in[:8]}"
+                replay_api = None
+                
+                if api_product_id and provider_name:
+                    provider = next((p for p in PROVIDERS_DATA if p.get('name') == provider_name), None)
+                    if provider:
+                        try:
+                            token = provider.get('token')
+                            base_url = provider.get('url', '').rstrip('/') + '/'
+                            player_enc = urllib.parse.quote(str(player_id))
+                            api_url = f"{base_url}client/api/newOrder/{api_product_id}/params?qty={qty}&playerId={player_enc}&order_uuid={order_uuid_in}"
+                            api_res = make_api_request(api_url, token)
+                            if api_res.get('status') == "OK":
+                                res_data = api_res.get('data', {})
+                                order_status = res_data.get('status', 'wait')
+                                api_order_id = res_data.get('order_id', api_order_id)
+                                replay_api = res_data.get('replay_api')
+                        except Exception as e:
+                            logging.error(f"خطأ بالطلب للمزود: {e}")
+                            order_status = "wait"
+                
+                now = datetime.now()
+                new_order = {
+                    "id": 1000 + len(ORDERS_DATA) + 1,
+                    "order_uuid": order_uuid_in,
+                    "api_order_id": api_order_id,
+                    "email": email,
+                    "product": sub.get('product'),
+                    "subcategory": sub.get('name'),
+                    "price": total_price,
+                    "input": player_id,
+                    "provider_name": provider_name,
+                    "api_product_id": api_product_id,
+                    "status": "مكتملة" if order_status == "accept" else ("مرفوضة" if order_status == "reject" else "قيد الانتظار"),
+                    "date": now.strftime("%Y-%m-%d"),
+                    "time": now.strftime("%H:%M:%S"),
+                    "quantity": qty,
+                    "is_counter": sub.get('is_counter', False),
+                    "replay_api": replay_api
+                }
+                ORDERS_DATA.append(new_order)
+                save_json_file(ORDERS_FILE, ORDERS_DATA)
+                
+                self.wfile.write(json.dumps({
+                    "status": "OK",
+                    "data": {
+                        "order_id": api_order_id,
+                        "status": order_status,
+                        "price": total_price,
+                        "data": {"playerId": player_id},
+                        "replay_api": replay_api
+                    }
+                }, ensure_ascii=False).encode("utf-8"))
+                
+            except Exception as e:
+                logging.error(f"خطأ في إنشاء الطلب: {e}")
+                self.wfile.write(json.dumps({"status": "error", "code": 500, "message": str(e)}).encode("utf-8"))
+
+        elif self.path.startswith("/client/api/check"):
+            auth_token = self.headers.get('api-token')
+            user = get_user_by_api_token(auth_token)
+            
+            self.send_response(200)
+            self.send_header("Content-type", "application/json; charset=utf-8")
+            self.end_headers()
+            
+            if not auth_token:
+                self.wfile.write(json.dumps({"error": 120, "message": "Api Token is required!"}).encode("utf-8"))
+                return
+            if not user:
+                self.wfile.write(json.dumps({"error": 121, "message": "Token error"}).encode("utf-8"))
+                return
+            
+            email, udata = user
+            
+            query = urllib.parse.urlparse(self.path).query
+            params = urllib.parse.parse_qs(query)
+            
+            orders_param = params.get('orders', ['[]'])[0]
+            use_uuid = params.get('uuid', ['0'])[0] == '1'
+            
+            orders_param = orders_param.strip('[]')
+            ids_list = [x.strip().strip('"').strip("'") for x in orders_param.split(',') if x.strip()]
+            
+            result = []
+            for oid in ids_list:
+                if use_uuid:
+                    order = next((o for o in ORDERS_DATA if o.get('order_uuid') == oid and o.get('email') == email), None)
+                else:
+                    order = next((o for o in ORDERS_DATA if o.get('api_order_id') == oid and o.get('email') == email), None)
+                
+                if order:
+                    result.append({
+                        "order_id": order.get('api_order_id', order.get('order_uuid', '')[:16]),
+                        "quantity": order.get('quantity', 1),
+                        "data": {"playerId": order.get('input', '')},
+                        "created_at": f"{order.get('date')} {order.get('time')}",
+                        "product_name": order.get('subcategory'),
+                        "price": str(order.get('price', 0)),
+                        "status": order.get('status', 'wait'),
+                        "replay_api": order.get('replay_api')
+                    })
+            
+            self.wfile.write(json.dumps({"status": "OK", "data": result}, ensure_ascii=False).encode("utf-8"))
 
         elif self.path == "/api/categories":
             self.send_response(200)
@@ -8767,6 +9047,33 @@ class WebAppHandler(BaseHTTPRequestHandler):
                     "currency_symbol": user.get('currency_symbol', ''),
                     "currency_rate": user.get('currency_rate', 1)
                 }, ensure_ascii=False).encode("utf-8"))
+            else:
+                self.send_response(200)
+                self.send_header("Content-type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "error", "message": "المستخدم غير موجود"}).encode("utf-8"))
+
+        elif self.path.startswith("/api/get_my_api_token"):
+            query = urllib.parse.urlparse(self.path).query
+            params = urllib.parse.parse_qs(query)
+            email = params.get('email', [''])[0]
+            
+            if email in USERS_DATA:
+                token = USERS_DATA[email].get('api_token', '')
+                if not token:
+                    token = generate_api_token()
+                    USERS_DATA[email]['api_token'] = token
+                    save_json_file(USERS_FILE, USERS_DATA)
+                
+                self.send_response(200)
+                self.send_header("Content-type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(json.dumps({
+                    "status": "success",
+                    "token": token,
+                    "enabled": USERS_DATA[email].get('api_enabled', False),
+                    "api_url": f"{SITE_BASE_URL}/client/api"
+                }).encode("utf-8"))
             else:
                 self.send_response(200)
                 self.send_header("Content-type", "application/json; charset=utf-8")
@@ -8930,6 +9237,7 @@ class WebAppHandler(BaseHTTPRequestHandler):
                 "balance": 0,
                 "profile_completed": False,
                 "api_enabled": False,
+                "api_token": generate_api_token(),
                 "currency_name": "USD",
                 "currency_symbol": "$",
                 "currency_rate": 1,
@@ -10097,6 +10405,8 @@ class WebAppHandler(BaseHTTPRequestHandler):
             enabled = bool(data.get('enabled', False))
             if email in USERS_DATA:
                 USERS_DATA[email]['api_enabled'] = enabled
+                if not USERS_DATA[email].get('api_token'):
+                    USERS_DATA[email]['api_token'] = generate_api_token()
                 save_json_file(USERS_FILE, USERS_DATA)
                 self.send_response(200)
                 self.send_header("Content-type", "application/json; charset=utf-8")
