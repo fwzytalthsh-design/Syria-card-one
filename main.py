@@ -1805,6 +1805,7 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
             justify-content: center;
             padding: 24px;
             overflow: hidden;
+            font-family: 'Cairo', sans-serif;
         }
         #maintenanceScreen.active {
             display: flex;
@@ -2650,7 +2651,6 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
                 const data = await res.json();
                 if (data.is_active) {
                     document.getElementById('maintMessage').innerText = data.message || 'الموقع تحت اعمال الصيانة الرجاء صبر حتى انتهاء التصليحات';
-                    // Set logo
                     try {
                         const splashRes = await fetch('/api/splash');
                         const splashData = await splashRes.json();
@@ -2661,7 +2661,6 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
                         }
                     } catch(e) {}
                     document.getElementById('maintenanceScreen').classList.add('active');
-                    // Hide everything else
                     document.querySelectorAll('body > div:not(#maintenanceScreen)').forEach(el => {
                         el.style.display = 'none';
                     });
@@ -2673,7 +2672,6 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
             }
         }
 
-        // Check maintenance on load and every 15 seconds
         checkMaintenanceMode();
         setInterval(checkMaintenanceMode, 15000);
 
@@ -4576,7 +4574,7 @@ ADMIN_HTML_CONTENT = """
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>لوحة القيادة - Admin</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.rtl.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&family=Tajawal:wght@400;500;700;800&family=Almarai:wght@400;700;800&family=Changa:wght@400;600;700;800&family=El+Messiri:wght@400;600;700&family=Lateef&family=Amiri:wght@400;700&family=Scheherazade+New:wght@400;700&family=Noto+Kufi+Arabic:wght@400;700&family=IBM+Plex+Sans+Arabic:wght@400;600;700&family=Readex+Pro:wght@400;600;700&family=Alexandria:wght@400;600;700&family=Noto+Naskh+Arabic:wght@400;700&family=Harmattan&family=Mada:wght@400;700&display=swap" rel="stylesheet">
     
     <style>
         * { font-family: 'Cairo', sans-serif !important; box-sizing: border-box; }
@@ -4730,7 +4728,6 @@ ADMIN_HTML_CONTENT = """
         .client-action-btn.remove-discount { background: linear-gradient(135deg, #dc2626, #ef4444); color: #ffffff; }
         .discount-badge { display: inline-block; background: linear-gradient(135deg, #f59e0b, #d97706); color: #000000; font-size: 0.7rem; font-weight: 800; padding: 3px 10px; border-radius: 8px; }
 
-        /* Maintenance toggle in admin */
         .maint-toggle-box {
             display: flex; justify-content: space-between; align-items: center;
             background: #121212; border: 1px solid #27272a;
@@ -6108,7 +6105,6 @@ Code   : -
             return Number(parsed.toFixed(3)).toString();
         }
 
-        // ===== MAINTENANCE FUNCTIONS =====
         async function fetchMaintenanceStatus() {
             try {
                 const res = await fetch('/api/maintenance_status');
@@ -6177,9 +6173,7 @@ Code   : -
                 alert('فشل الاتصال بالخادم!');
             }
         }
-        // ===== END MAINTENANCE FUNCTIONS =====
 
-        // ===== CLIENTS LIST FUNCTIONS =====
         let clientsListCache = [];
         let selectedClientEmail = null;
 
@@ -6333,7 +6327,6 @@ Code   : -
             }
         }
 
-        // ===== API IMPORT FUNCTIONS =====
         let apiImportCurrentProvider = '';
         let apiImportCategories = [];
         let apiImportCategoryToImport = null;
@@ -6532,8 +6525,6 @@ Code   : -
         function openApiCategoryInStore(categoryName) {
             alert('سيتم فتح القسم: ' + categoryName + ' في المتجر');
         }
-
-        // ===== END API IMPORT FUNCTIONS =====
 
         function openAddCurrencyModal() {
             toggleSidebar();
@@ -8398,7 +8389,6 @@ Code   : -
             window.location.href = '/';
         }
 
-        // ===== ALL ORDERS SCREEN FUNCTIONS =====
         async function openAllOrdersScreen() {
             toggleSidebar();
             document.getElementById('adminMainSection').style.display = 'none';
