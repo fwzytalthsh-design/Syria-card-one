@@ -35,6 +35,7 @@ CURRENCIES_FILE = "currrenciejs.json"
 API_IMPORTS_FILE = "api_imports.json"
 API_PRICE_TRACKING_FILE = "api_price_tracking.json"
 MAINTENANCE_FILE = "maintenance_mode.json"
+SUB_CATEGORIES_FILE = "sub_categories.json"
 
 # --------------------------------------------------
 # إعدادات بوت التليجرام للإشعارات
@@ -438,6 +439,7 @@ CURRENCIES_DATA = load_json_file(CURRENCIES_FILE, [])
 API_IMPORTS_DATA = load_json_file(API_IMPORTS_FILE, {})
 API_PRICE_TRACKING_DATA = load_json_file(API_PRICE_TRACKING_FILE, {})
 MAINTENANCE_DATA = load_json_file(MAINTENANCE_FILE, DEFAULT_MAINTENANCE)
+SUB_CATEGORIES_DATA = load_json_file(SUB_CATEGORIES_FILE, {})
 
 # Ensure sidebar_font_size & sidebar_width keys exist for backward compatibility
 if "sidebar_font_size" not in APPEARANCE_DATA:
@@ -2627,6 +2629,7 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
         let currentLevel = 'categories';
         let selectedCategory = '';
         let selectedProduct = '';
+        let selectedSubCategory = '';
         let activeSubCategory = null;
         let activeDepositMethod = null;
         let currentStatusFilter = 'all';
@@ -4652,7 +4655,7 @@ ADMIN_HTML_CONTENT = """
         .api-service-row { display: flex; justify-content: space-between; align-items: center; font-size: 0.78rem; }
         .api-copyable-id { color: #38bdf8; font-weight: 700; cursor: pointer; background-color: rgba(56, 189, 248, 0.1); padding: 2px 6px; border-radius: 4px; border: 1px dashed #38bdf8; }
         #apiProductPreviewBox { display: none; background-color: #000; border: 1px solid #38bdf8; border-radius: 6px; padding: 8px 10px; font-size: 0.75rem; color: #38bdf8; font-weight: 700; text-align: center; }
-        #checkDepositsPage, #checkOrdersPage, #viewProvidersPage, #deleteCategoryPage, #deleteProductPage { display: none; flex-direction: column; gap: 12px; width: 100%; }
+        #checkDepositsPage, #checkOrdersPage, #viewProvidersPage, #deleteCategoryPage, #deleteProductPage, #deleteSubCategoryPage { display: none; flex-direction: column; gap: 12px; width: 100%; }
         .grid-container { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; padding: 10px 5px; }
         .category-card { background-color: #121212; border: 1px solid #27272a; border-radius: 10px; aspect-ratio: 1 / 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; padding: 5px; overflow: hidden; position: relative; transform: scale(1.1); transform-origin: center; }
         .category-img { width: 100%; height: calc(100% - 28px); object-fit: cover; border-radius: 6px 6px 0 0; position: absolute; top: 0; left: 0; }
@@ -4774,6 +4777,127 @@ ADMIN_HTML_CONTENT = """
         }
         .maint-active-banner .icon { font-size: 1.3rem; }
         .maint-active-banner .text { font-size: 0.85rem; font-weight: 700; color: #fff; }
+
+        .sub-cat-badge {
+            display: inline-block;
+            background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+            color: #fff;
+            font-size: 0.6rem;
+            font-weight: 800;
+            padding: 2px 8px;
+            border-radius: 10px;
+            margin-right: 4px;
+        }
+        .sub-cat-card {
+            background: #121212;
+            border: 1px solid #27272a;
+            border-radius: 12px;
+            padding: 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .sub-cat-card:hover { border-color: #8b5cf6; }
+        .sub-cat-card .sub-cat-name { font-size: 0.9rem; font-weight: 800; color: #fff; }
+        .sub-cat-card .sub-cat-products-count { font-size: 0.72rem; color: #a1a1aa; }
+        .sub-cat-card .sub-cat-img {
+            width: 100%;
+            height: 80px;
+            object-fit: cover;
+            border-radius: 8px;
+            border: 1px solid #27272a;
+        }
+        .sub-cat-card .sub-cat-actions {
+            display: flex;
+            gap: 8px;
+        }
+        .sub-cat-card .sub-cat-actions button {
+            flex: 1;
+            padding: 8px;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .sub-cat-card .sub-cat-actions .btn-view-sub {
+            background: #2563eb;
+            color: #fff;
+        }
+        .sub-cat-card .sub-cat-actions .btn-delete-sub {
+            background: #dc2626;
+            color: #fff;
+        }
+
+        .add-sub-cat-fullscreen {
+            position: fixed;
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            background: #050508;
+            z-index: 99998;
+            display: none;
+            flex-direction: column;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        .add-sub-cat-fullscreen.active { display: flex; }
+
+        .add-sub-cat-header {
+            display: flex; justify-content: space-between; align-items: center;
+            border-bottom: 1px solid #27272a;
+            padding-bottom: 12px;
+            margin-bottom: 15px;
+        }
+        .add-sub-cat-header .title { font-size: 1.1rem; font-weight: 800; color: #8b5cf6; }
+
+        .form-section {
+            background: #121212;
+            border: 1px solid #27272a;
+            border-radius: 14px;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+        .form-section-title {
+            font-size: 0.85rem;
+            font-weight: 800;
+            color: #8b5cf6;
+            margin-bottom: 4px;
+            padding-bottom: 6px;
+            border-bottom: 1px solid #1f1f23;
+        }
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .sub-cat-product-card {
+            background: #0a0a12;
+            border: 1px solid #27272a;
+            border-radius: 10px;
+            padding: 10px 14px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: border-color 0.2s;
+        }
+        .sub-cat-product-card:hover { border-color: #8b5cf6; }
+        .sub-cat-product-card .p-name { font-size: 0.85rem; font-weight: 700; color: #fff; }
+        .sub-cat-product-card .p-category { font-size: 0.7rem; color: #a1a1aa; }
+        .sub-cat-product-card .p-actions { display: flex; gap: 8px; }
+        .sub-cat-product-card .p-actions button {
+            padding: 6px 10px;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            cursor: pointer;
+        }
     </style>
 </head>
 <body>
@@ -4835,6 +4959,7 @@ ADMIN_HTML_CONTENT = """
             <div class="sub-menu" id="productsMenu">
                 <button class="sub-menu-btn" onclick="openAllOrdersScreen()" style="color:#38bdf8; border-color:#38bdf8; font-weight:800;">عرض الطلبات</button>
                 <button class="sub-menu-btn" onclick="openAddCategoryModal()">اضافة قسم</button>
+                <button class="sub-menu-btn" onclick="openAddSubCategoryMainModal()" style="color:#8b5cf6; border-color:#8b5cf6; font-weight:800;">➕ اضافة قسم فرعي</button>
                 <button class="sub-menu-btn" onclick="openDeleteCategoryModal()">حذف قسم</button>
                 <button class="sub-menu-btn" onclick="openCheckOrdersPage()">تشييك طلبات</button>
                 <button class="sub-menu-btn" onclick="openAddProductModal()">إضافة منتج</button>
@@ -4972,6 +5097,67 @@ ADMIN_HTML_CONTENT = """
                 </button>
 
                 <button class="btn-secondary" onclick="closeModal('maintenanceModalOverlay')">إغلاق</button>
+            </div>
+        </div>
+
+        <!-- Add Sub-Category Main Modal -->
+        <div class="add-sub-cat-fullscreen" id="addSubCategoryMainScreen">
+            <div class="add-sub-cat-header">
+                <span class="title">إدارة الأقسام الفرعية</span>
+                <div style="display:flex; gap:8px;">
+                    <button class="btn-secondary" style="padding:6px 12px; font-size:0.8rem;" onclick="openAddSubCategoryMainForm()">➕ إضافة قسم فرعي</button>
+                    <button class="btn-secondary" onclick="closeAddSubCategoryMainScreen()">رجوع</button>
+                </div>
+            </div>
+
+            <!-- List of existing sub-categories -->
+            <div id="subCategoriesListContainer" style="display:flex; flex-direction:column; gap:10px;"></div>
+
+            <!-- Add/Edit Sub-Category Form -->
+            <div id="addSubCategoryFormContainer" style="display:none;">
+                <div class="form-section">
+                    <div class="form-section-title">بيانات القسم الفرعي</div>
+                    <div class="form-group">
+                        <label>اسم القسم الفرعي:</label>
+                        <input type="text" id="subCatMainNameInput" placeholder="أدخل اسم القسم الفرعي..." required>
+                    </div>
+                    <div class="form-group">
+                        <label>القسم الرئيسي التابع له:</label>
+                        <select id="subCatMainParentSelect"></select>
+                    </div>
+                    <div class="form-group">
+                        <label>صورة القسم الفرعي:</label>
+                        <input type="file" id="subCatMainImageInput" accept="image/*">
+                    </div>
+                </div>
+
+                <div class="form-section">
+                    <div class="form-section-title">المنتجات داخل القسم الفرعي</div>
+                    <div id="subCatMainProductsList" style="display:flex; flex-direction:column; gap:6px;"></div>
+                    <button class="save-btn" style="background:#8b5cf6; margin-top:8px;" onclick="openAddProductToSubCatModal()">➕ إضافة منتج</button>
+                </div>
+
+                <div style="display:flex; gap:10px; margin-top:10px;">
+                    <button class="save-btn" style="flex:1; background:linear-gradient(135deg, #8b5cf6, #7c3aed);" onclick="saveSubCategoryMain()">حفظ القسم الفرعي</button>
+                    <button class="btn-secondary" style="flex:1;" onclick="cancelSubCategoryMainForm()">إلغاء</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Add product to sub-cat modal -->
+        <div class="modal-overlay" id="addProductToSubCatModalOverlay">
+            <div class="modal-box">
+                <div class="modal-title" style="color:#8b5cf6;">إضافة منتج داخل القسم الفرعي</div>
+                <div class="form-group">
+                    <label>اسم المنتج:</label>
+                    <input type="text" id="subCatProductNameInput" placeholder="أدخل اسم المنتج..." required>
+                </div>
+                <div class="form-group">
+                    <label>صورة المنتج:</label>
+                    <input type="file" id="subCatProductImageInput" accept="image/*">
+                </div>
+                <button class="save-btn" style="background:#8b5cf6;" onclick="saveProductToSubCat()">إضافة</button>
+                <button class="btn-secondary" onclick="closeModal('addProductToSubCatModalOverlay')">إلغاء</button>
             </div>
         </div>
 
@@ -6062,6 +6248,12 @@ Code   : -
     <script>
         let allOrdersAdminCache = [];
         let maintenanceActive = false;
+        let allProductsCache = [];
+        let allSubcatsCache = [];
+        let currentSubCatMainId = null;
+        let subCatMainProducts = [];
+        let subCategoriesMainData = {};
+        let allCategoriesForSubCat = {};
 
         function handleAdminLogin() {
             var email = document.getElementById('adminEmailInput').value.trim();
@@ -6083,6 +6275,7 @@ Code   : -
             loadCategories();
             fetchStatsAndRender();
             fetchMaintenanceStatus();
+            loadSubCategoriesMain();
             setInterval(fetchStatsAndRender, 30000);
         }
 
@@ -6179,6 +6372,268 @@ Code   : -
                 alert('فشل الاتصال بالخادم!');
             }
         }
+
+        // ====== Sub-Categories Main Management ======
+        async function loadSubCategoriesMain() {
+            try {
+                const res = await fetch('/api/get_sub_categories_main');
+                subCategoriesMainData = await res.json();
+            } catch (e) {
+                subCategoriesMainData = {};
+            }
+        }
+
+        function openAddSubCategoryMainModal() {
+            toggleSidebar();
+            openAddSubCategoryMainScreen();
+        }
+
+        async function openAddSubCategoryMainScreen() {
+            document.getElementById('addSubCategoryMainScreen').classList.add('active');
+            document.getElementById('subCategoriesListContainer').style.display = 'flex';
+            document.getElementById('addSubCategoryFormContainer').style.display = 'none';
+
+            await loadSubCategoriesMain();
+            renderSubCategoriesMainList();
+        }
+
+        function closeAddSubCategoryMainScreen() {
+            document.getElementById('addSubCategoryMainScreen').classList.remove('active');
+        }
+
+        function renderSubCategoriesMainList() {
+            const container = document.getElementById('subCategoriesListContainer');
+            container.innerHTML = '';
+
+            const entries = Object.entries(subCategoriesMainData);
+            if (entries.length === 0) {
+                container.innerHTML = `
+                    <div style="text-align:center; padding:40px 20px; color:#a1a1aa; font-size:0.9rem; font-weight:700;">
+                        <div style="font-size:2rem; margin-bottom:10px;">📂</div>
+                        لا توجد أقسام فرعية بعد
+                    </div>
+                `;
+                return;
+            }
+
+            for (const [subCatId, subCatData] of entries) {
+                const card = document.createElement('div');
+                card.className = 'sub-cat-card';
+
+                const imgHtml = subCatData.image 
+                    ? `<img src="${subCatData.image}" class="sub-cat-img" />` 
+                    : `<div class="sub-cat-img" style="display:flex; align-items:center; justify-content:center; color:#666; font-size:1.5rem;">📁</div>`;
+
+                card.innerHTML = `
+                    ${imgHtml}
+                    <div class="sub-cat-name">${subCatData.name}</div>
+                    <div class="sub-cat-products-count">📦 ${(subCatData.products || []).length} منتج</div>
+                    <div class="sub-cat-products-count" style="font-size:0.7rem; color:#8b5cf6;">القسم الرئيسي: ${subCatData.parent_category || 'غير محدد'}</div>
+                    <div class="sub-cat-actions">
+                        <button class="btn-view-sub" onclick="editSubCategoryMain('${subCatId}')">✏️ تعديل</button>
+                        <button class="btn-delete-sub" onclick="deleteSubCategoryMain('${subCatId}')">🗑️ حذف</button>
+                    </div>
+                `;
+                container.appendChild(card);
+            }
+        }
+
+        async function openAddSubCategoryMainForm() {
+            document.getElementById('subCategoriesListContainer').style.display = 'none';
+            document.getElementById('addSubCategoryFormContainer').style.display = 'block';
+
+            currentSubCatMainId = null;
+            subCatMainProducts = [];
+            document.getElementById('subCatMainNameInput').value = '';
+            document.getElementById('subCatMainImageInput').value = '';
+
+            // Load main categories into parent select
+            try {
+                const res = await fetch('/api/categories');
+                allCategoriesForSubCat = await res.json();
+                const select = document.getElementById('subCatMainParentSelect');
+                select.innerHTML = '<option value="">-- اختر القسم الرئيسي --</option>';
+                Object.keys(allCategoriesForSubCat).forEach(cat => {
+                    select.innerHTML += `<option value="${cat}">${cat}</option>`;
+                });
+            } catch (e) { console.error(e); }
+
+            renderSubCatMainProductsList();
+        }
+
+        function renderSubCatMainProductsList() {
+            const container = document.getElementById('subCatMainProductsList');
+            container.innerHTML = '';
+
+            if (subCatMainProducts.length === 0) {
+                container.innerHTML = '<div style="text-align:center; color:#a1a1aa; font-size:0.8rem; padding:12px;">لا توجد منتجات بعد</div>';
+                return;
+            }
+
+            subCatMainProducts.forEach((prod, idx) => {
+                const card = document.createElement('div');
+                card.className = 'sub-cat-product-card';
+                card.innerHTML = `
+                    <div>
+                        <div class="p-name">${prod.name}</div>
+                        <div class="p-category">${prod.category || ''}</div>
+                    </div>
+                    <div class="p-actions">
+                        <button style="background:#dc2626; color:#fff;" onclick="removeProductFromSubCat(${idx})">حذف</button>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        function removeProductFromSubCat(idx) {
+            subCatMainProducts.splice(idx, 1);
+            renderSubCatMainProductsList();
+        }
+
+        function openAddProductToSubCatModal() {
+            document.getElementById('subCatProductNameInput').value = '';
+            document.getElementById('subCatProductImageInput').value = '';
+            openModal('addProductToSubCatModalOverlay');
+        }
+
+        async function saveProductToSubCat() {
+            const name = document.getElementById('subCatProductNameInput').value.trim();
+            if (!name) {
+                alert('يرجى إدخال اسم المنتج!');
+                return;
+            }
+
+            const fileInput = document.getElementById('subCatProductImageInput');
+            let imageData = '';
+            if (fileInput.files && fileInput.files[0]) {
+                imageData = await new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => resolve(e.target.result);
+                    reader.readAsDataURL(fileInput.files[0]);
+                });
+            }
+
+            subCatMainProducts.push({
+                name: name,
+                image: imageData,
+                category: document.getElementById('subCatMainNameInput').value.trim() || ''
+            });
+
+            closeModal('addProductToSubCatModalOverlay');
+            renderSubCatMainProductsList();
+        }
+
+        async function saveSubCategoryMain() {
+            const name = document.getElementById('subCatMainNameInput').value.trim();
+            const parentCategory = document.getElementById('subCatMainParentSelect').value;
+            const fileInput = document.getElementById('subCatMainImageInput');
+
+            if (!name) {
+                alert('يرجى إدخال اسم القسم الفرعي!');
+                return;
+            }
+
+            if (!parentCategory) {
+                alert('يرجى اختيار القسم الرئيسي التابع له!');
+                return;
+            }
+
+            let imageData = '';
+            if (fileInput.files && fileInput.files[0]) {
+                imageData = await new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => resolve(e.target.result);
+                    reader.readAsDataURL(fileInput.files[0]);
+                });
+            } else if (currentSubCatMainId && subCategoriesMainData[currentSubCatMainId]) {
+                imageData = subCategoriesMainData[currentSubCatMainId].image || '';
+            }
+
+            const subCatId = currentSubCatMainId || ('subcat_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9));
+
+            const subCatData = {
+                id: subCatId,
+                name: name,
+                image: imageData,
+                parent_category: parentCategory,
+                products: subCatMainProducts.map(p => ({
+                    ...p,
+                    category: name
+                })),
+                created_at: new Date().toISOString()
+            };
+
+            subCategoriesMainData[subCatId] = subCatData;
+
+            try {
+                const res = await fetch('/api/save_sub_categories_main', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sub_categories: subCategoriesMainData })
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    alert('تم حفظ القسم الفرعي بنجاح!');
+                    cancelSubCategoryMainForm();
+                    renderSubCategoriesMainList();
+                } else {
+                    alert('حدث خطأ أثناء الحفظ!');
+                }
+            } catch (e) {
+                alert('فشل الاتصال بالخادم!');
+            }
+        }
+
+        function cancelSubCategoryMainForm() {
+            document.getElementById('addSubCategoryFormContainer').style.display = 'none';
+            document.getElementById('subCategoriesListContainer').style.display = 'flex';
+            currentSubCatMainId = null;
+            subCatMainProducts = [];
+        }
+
+        function editSubCategoryMain(subCatId) {
+            const data = subCategoriesMainData[subCatId];
+            if (!data) return;
+
+            currentSubCatMainId = subCatId;
+            subCatMainProducts = (data.products || []).map(p => ({ ...p }));
+
+            document.getElementById('subCategoriesListContainer').style.display = 'none';
+            document.getElementById('addSubCategoryFormContainer').style.display = 'block';
+
+            document.getElementById('subCatMainNameInput').value = data.name || '';
+            document.getElementById('subCatMainImageInput').value = '';
+
+            const select = document.getElementById('subCatMainParentSelect');
+            if (data.parent_category) {
+                select.value = data.parent_category;
+            }
+
+            renderSubCatMainProductsList();
+        }
+
+        async function deleteSubCategoryMain(subCatId) {
+            if (!confirm('هل أنت متأكد من حذف هذا القسم الفرعي؟')) return;
+
+            delete subCategoriesMainData[subCatId];
+
+            try {
+                const res = await fetch('/api/save_sub_categories_main', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sub_categories: subCategoriesMainData })
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    alert('تم حذف القسم الفرعي بنجاح!');
+                    renderSubCategoriesMainList();
+                }
+            } catch (e) {
+                alert('فشل الاتصال بالخادم!');
+            }
+        }
+        // ====== End Sub-Categories Main Management ======
 
         let clientsListCache = [];
         let selectedClientEmail = null;
@@ -6706,8 +7161,7 @@ Code   : -
         }
 
         let deleteCatMode = 'single';
-        let allProductsCache = [];
-        let allSubcatsCache = [];
+        let allSubcatsCacheForDel = [];
 
         function setDeleteCategoryMode(mode) {
             deleteCatMode = mode;
@@ -6726,6 +7180,7 @@ Code   : -
             document.getElementById('deleteProductPage').style.display = 'none';
             document.getElementById('apiImportScreen').classList.remove('active');
             document.getElementById('clientsListScreen').classList.remove('active');
+            document.getElementById('addSubCategoryMainScreen').classList.remove('active');
             document.getElementById('deleteCategoryPage').style.display = 'flex';
 
             try {
@@ -6736,7 +7191,7 @@ Code   : -
                 ]);
                 
                 allProductsCache = prodsRes;
-                allSubcatsCache = subsRes;
+                allSubcatsCacheForDel = subsRes;
 
                 const catSelect = document.getElementById('delCatCategorySelect');
                 const catMultiSelect = document.getElementById('delCatMultiCategorySelect');
@@ -6808,7 +7263,7 @@ Code   : -
                 return;
             }
 
-            const subcats = allSubcatsCache.filter(s => s.product === prod);
+            const subcats = allSubcatsCacheForDel.filter(s => s.product === prod);
             subcatSelect.innerHTML = '<option value="">-- اختر الفئة --</option>';
             subcats.forEach(s => {
                 let priceInfo = s.is_counter ? `عداد - ${s.price}$` : `${s.price}$`;
@@ -6882,7 +7337,7 @@ Code   : -
                 return;
             }
 
-            const subcats = allSubcatsCache.filter(s => s.product === prod);
+            const subcats = allSubcatsCacheForDel.filter(s => s.product === prod);
             listContainer.innerHTML = '';
             
             if (subcats.length === 0) {
@@ -6976,6 +7431,7 @@ Code   : -
             document.getElementById('deleteCategoryPage').style.display = 'none';
             document.getElementById('apiImportScreen').classList.remove('active');
             document.getElementById('clientsListScreen').classList.remove('active');
+            document.getElementById('addSubCategoryMainScreen').classList.remove('active');
             document.getElementById('deleteProductPage').style.display = 'flex';
 
             try {
@@ -7337,6 +7793,7 @@ Code   : -
             document.getElementById('deleteProductPage').style.display = 'none';
             document.getElementById('apiImportScreen').classList.remove('active');
             document.getElementById('clientsListScreen').classList.remove('active');
+            document.getElementById('addSubCategoryMainScreen').classList.remove('active');
             document.getElementById('viewProvidersPage').style.display = 'flex';
 
             fetch('/api/get_providers')
@@ -8041,6 +8498,7 @@ Code   : -
             document.getElementById('deleteProductPage').style.display = 'none';
             document.getElementById('apiImportScreen').classList.remove('active');
             document.getElementById('clientsListScreen').classList.remove('active');
+            document.getElementById('addSubCategoryMainScreen').classList.remove('active');
             document.getElementById('checkOrdersPage').style.display = 'flex';
 
             fetch('/api/get_all_orders')
@@ -8121,6 +8579,7 @@ Code   : -
             document.getElementById('deleteProductPage').style.display = 'none';
             document.getElementById('apiImportScreen').classList.remove('active');
             document.getElementById('clientsListScreen').classList.remove('active');
+            document.getElementById('addSubCategoryMainScreen').classList.remove('active');
             document.getElementById('checkDepositsPage').style.display = 'flex';
 
             fetch('/api/get_deposit_requests')
@@ -8405,6 +8864,7 @@ Code   : -
             document.getElementById('deleteProductPage').style.display = 'none';
             document.getElementById('clientsListScreen').classList.remove('active');
             document.getElementById('apiImportScreen').classList.remove('active');
+            document.getElementById('addSubCategoryMainScreen').classList.remove('active');
             
             document.getElementById('allOrdersScreen').classList.add('active');
             document.getElementById('adminOrderSearchInput').value = '';
@@ -8538,6 +8998,7 @@ Code   : -
 
         loadCategories();
         fetchStatsAndRender();
+        loadSubCategoriesMain();
         setInterval(fetchStatsAndRender, 30000);
     </script>
 </body>
@@ -8643,6 +9104,12 @@ class WebAppHandler(BaseHTTPRequestHandler):
             self.send_header("Content-type", "application/json; charset=utf-8")
             self.end_headers()
             self.wfile.write(json.dumps(CURRENCIES_DATA, ensure_ascii=False).encode("utf-8"))
+
+        elif self.path == "/api/get_sub_categories_main":
+            self.send_response(200)
+            self.send_header("Content-type", "application/json; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(json.dumps(SUB_CATEGORIES_DATA, ensure_ascii=False).encode("utf-8"))
 
         elif self.path == "/api-docs":
             self.send_response(200)
@@ -9209,6 +9676,16 @@ class WebAppHandler(BaseHTTPRequestHandler):
             self.send_header("Content-type", "application/json; charset=utf-8")
             self.end_headers()
             self.wfile.write(json.dumps({"status": "success", "is_active": is_active}, ensure_ascii=False).encode("utf-8"))
+
+        elif self.path == "/api/save_sub_categories_main":
+            sub_cats = data.get('sub_categories', {})
+            global SUB_CATEGORIES_DATA
+            SUB_CATEGORIES_DATA = sub_cats
+            save_json_file(SUB_CATEGORIES_FILE, SUB_CATEGORIES_DATA)
+            self.send_response(200)
+            self.send_header("Content-type", "application/json; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "success"}, ensure_ascii=False).encode("utf-8"))
 
         elif self.path == "/api/register":
             email = data.get('email', '').strip()
