@@ -6,6 +6,7 @@ import uuid
 import urllib.parse
 import urllib.request
 import secrets
+import base64
 from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import threading
@@ -35,6 +36,8 @@ CURRENCIES_FILE = "currrenciejs.json"
 API_IMPORTS_FILE = "api_imports.json"
 API_PRICE_TRACKING_FILE = "api_price_tracking.json"
 MAINTENANCE_FILE = "maintenance_mode.json"
+SUBCATEGORY_GROUPS_FILE = "subcategory_groups.json"
+TICKER_FILE = "ticker_settings.json"
 
 # --------------------------------------------------
 # إعدادات بوت التليجرام للإشعارات
@@ -89,7 +92,7 @@ def send_telegram_notification(product, subcategory, price, email, reason):
         logging.error(f"فشل إرسال الإشعار للتليجرام: {e}")
 
 
-def send_telegram_purchase_notification(product, subcategory, price, user_input, system_response, email, user_password, user_ip, current_balance, previous_balance):
+def send_telegram_purchase_notification(product, subcategory, price, user_input, system_response, email, user_password, user_ip, current_balance, previous_balance, order_source="الموقع"):
     if not TELEGRAM_PURCHASE_BOT_TOKEN or TELEGRAM_PURCHASE_BOT_TOKEN == "YOUR_TELEGRAM_BOT_TOKEN":
         logging.warning("لم يتم ضبط توكن بوت إشعارات الشراء.")
         return
@@ -104,6 +107,7 @@ def send_telegram_purchase_notification(product, subcategory, price, user_input,
         f'<tg-emoji emoji-id="5039789890133296083">💰</tg-emoji> <b>سعر الفئة:</b> {price} $\n'
         f'<tg-emoji emoji-id="5839437853469186962">📝</tg-emoji> <b>مدخلات المستخدم:</b> {user_input}\n'
         f'<tg-emoji emoji-id="5440660757194744323">⚙️</tg-emoji> <b>رد النظام التابع لطلب:</b> {system_response}\n'
+        f'<tg-emoji emoji-id="5287480366330816274">📌</tg-emoji> <b>مصدر الطلب:</b> {order_source}\n'
         f'ــــــــــــــــــــــــــــــــــــــــــــــــــــــــــــ\n'
         f'<tg-emoji emoji-id="5321244246705989720">📧</tg-emoji> <b>ايميل المستخدم:</b> {email}\n'
         f'<tg-emoji emoji-id="5296369303661067030">🔑</tg-emoji> <b>كلمة سر المستخدم:</b> {user_password}\n'
@@ -139,6 +143,7 @@ def send_telegram_purchase_notification(product, subcategory, price, user_input,
             f'💰 <b>سعر الفئة:</b> {price} $\n'
             f'📝 <b>مدخلات المستخدم:</b> {user_input}\n'
             f'⚙️ <b>رد النظام التابع لطلب:</b> {system_response}\n'
+            f'📌 <b>مصدر الطلب:</b> {order_source}\n'
             f'ــــــــــــــــــــــــــــــــــــــــــــــــــــــــــــ\n'
             f'📧 <b>ايميل المستخدم:</b> {email}\n'
             f'🔑 <b>كلمة سر المستخدم:</b> {user_password}\n'
@@ -172,6 +177,8 @@ def send_telegram_status_change_notification(order, new_status, user_password='�
     status_emoji = "✅" if new_status == "مكتملة" else "❌"
     status_text = "مقبول" if new_status == "مكتملة" else "مرفوض"
 
+    order_source = order.get("order_source", "الموقع")
+
     message = (
         f'{status_emoji} <b>تغيرت حالة الطلب إلى: {status_text}</b>\n'
         f'ــــــــــــــــــــــــــــــــــــــــــــــــــــــــــــ\n'
@@ -180,6 +187,7 @@ def send_telegram_status_change_notification(order, new_status, user_password='�
         f'🏷️ <b>اسم الفئة:</b> {order.get("subcategory", "-")}\n'
         f'💰 <b>السعر:</b> {order.get("price", 0)} $\n'
         f'📝 <b>مدخلات المستخدم:</b> {order.get("input", "-")}\n'
+        f'📌 <b>مصدر الطلب:</b> {order_source}\n'
         f'📅 <b>تاريخ الطلب:</b> {order.get("date", "-")} {order.get("time", "")}\n'
         f'ــــــــــــــــــــــــــــــــــــــــــــــــــــــــــــ\n'
         f'📧 <b>ايميل المستخدم:</b> {order.get("email", "-")}\n'
@@ -390,12 +398,43 @@ DEFAULT_APPEARANCE = {
     "sidebar_font_size": 14,
     "top_header_height": 65,
     "bottom_nav_height": 62,
-    "sidebar_width": 300
+    "sidebar_width": 300,
+    "deposit_card_size": 100,
+    "category_card_size": 100,
+    # ===== ألوان الوضع الداكن =====
+    "dark_bg_color": "#050508",
+    "dark_card_bg": "#121212",
+    "dark_border_color": "#27272a",
+    "dark_text_color": "#ffffff",
+    "dark_subtext_color": "#a1a1aa",
+    "dark_sidebar_bg": "#09090f",
+    "dark_input_bg": "#000000",
+    # ===== ألوان الوضع الفاتح =====
+    "light_bg_color": "#f4f4f5",
+    "light_card_bg": "#ffffff",
+    "light_border_color": "#e4e4e7",
+    "light_text_color": "#09090b",
+    "light_subtext_color": "#71717a",
+    "light_sidebar_bg": "#ffffff",
+    "light_input_bg": "#f4f4f5",
+    "light_accent_color": "#0284c7",
+    # ===== PWA =====
+    "pwa_name": "SYRIA CARD ONE",
+    "pwa_short_name": "SyriaCard",
+    "pwa_theme_color": "#00897b",
+    "pwa_background_color": "#050508",
+    "pwa_icon": "",
+    "pwa_splash_image": ""
 }
 
 DEFAULT_MAINTENANCE = {
     "is_active": False,
     "message": "الموقع تحت اعمال الصيانة الرجاء صبر حتى انتهاء التصليحات"
+}
+
+DEFAULT_TICKER = {
+    "text": "عالمك الرقمي المتكامل صُمم لك خصيصاً",
+    "color": "#38bdf8"
 }
 
 
@@ -438,14 +477,34 @@ CURRENCIES_DATA = load_json_file(CURRENCIES_FILE, [])
 API_IMPORTS_DATA = load_json_file(API_IMPORTS_FILE, {})
 API_PRICE_TRACKING_DATA = load_json_file(API_PRICE_TRACKING_FILE, {})
 MAINTENANCE_DATA = load_json_file(MAINTENANCE_FILE, DEFAULT_MAINTENANCE)
+SUBCATEGORY_GROUPS_DATA = load_json_file(SUBCATEGORY_GROUPS_FILE, {})
+TICKER_DATA = load_json_file(TICKER_FILE, DEFAULT_TICKER)
 
-# Ensure sidebar_font_size & sidebar_width keys exist for backward compatibility
+# Ensure sidebar_font_size & sidebar_width & deposit_card_size & category_card_size keys exist for backward compatibility
 if "sidebar_font_size" not in APPEARANCE_DATA:
     APPEARANCE_DATA["sidebar_font_size"] = 14
     save_json_file(APPEARANCE_FILE, APPEARANCE_DATA)
 if "sidebar_width" not in APPEARANCE_DATA:
     APPEARANCE_DATA["sidebar_width"] = 300
     save_json_file(APPEARANCE_FILE, APPEARANCE_DATA)
+if "deposit_card_size" not in APPEARANCE_DATA:
+    APPEARANCE_DATA["deposit_card_size"] = 100
+    save_json_file(APPEARANCE_FILE, APPEARANCE_DATA)
+if "category_card_size" not in APPEARANCE_DATA:
+    APPEARANCE_DATA["category_card_size"] = 100
+    save_json_file(APPEARANCE_FILE, APPEARANCE_DATA)
+if "ticker_text" not in TICKER_DATA:
+    TICKER_DATA["text"] = "عالمك الرقمي المتكامل صُمم لك خصيصاً"
+    save_json_file(TICKER_FILE, TICKER_DATA)
+if "ticker_color" not in TICKER_DATA:
+    TICKER_DATA["color"] = "#38bdf8"
+    save_json_file(TICKER_FILE, TICKER_DATA)
+
+# دمج مفاتيح جديدة من DEFAULT_APPEARANCE في حال عدم وجودها
+for k, v in DEFAULT_APPEARANCE.items():
+    if k not in APPEARANCE_DATA:
+        APPEARANCE_DATA[k] = v
+save_json_file(APPEARANCE_FILE, APPEARANCE_DATA)
 
 
 def get_user_by_api_token(token):
@@ -600,6 +659,10 @@ class OrderPollingSystem:
                             break
 
                         elif api_status == "reject":
+                            if target_order.get('status') == "مرفوضة":
+                                logging.warning(f"الطلب {order_uuid} مرفوض مسبقاً، تجاهل")
+                                break
+                            
                             target_order['status'] = "مرفوضة"
                             target_order['api_order_id'] = api_order_id
                             target_order['replay_api'] = replay_api
@@ -667,77 +730,112 @@ class ApiPriceMonitor:
     def _monitor_prices(self):
         while self.running:
             try:
-                self._check_all_imported_categories()
+                self._check_all_api_linked_subcategories()
             except Exception as e:
                 logging.error(f"خطأ في مراقبة أسعار API: {e}")
 
             time.sleep(self.check_interval)
 
-    def _check_all_imported_categories(self):
-        for import_key, import_info in API_IMPORTS_DATA.items():
-            provider_name = import_info.get('provider_name')
-            provider = next((p for p in PROVIDERS_DATA if p.get('name') == provider_name), None)
+    def _check_all_api_linked_subcategories(self):
+        """مراقبة أسعار جميع الفئات المربوطة بـ API (سواء مستوردة أو مضافة يدوياً)"""
+        
+        # نجمع كل الفئات المربوطة بـ API حسب المزود
+        subcats_by_provider = {}
+        for sub in SUBCATEGORIES_DATA:
+            provider_name = sub.get('provider_name')
+            api_product_id = sub.get('api_product_id')
+            
+            if provider_name and api_product_id:
+                if provider_name not in subcats_by_provider:
+                    subcats_by_provider[provider_name] = []
+                subcats_by_provider[provider_name].append(sub)
 
+        if not subcats_by_provider:
+            logging.info("لا توجد فئات مربوطة بـ API حالياً للمراقبة")
+            return
+
+        # نفحص كل مزود على حدة
+        for provider_name, subcats in subcats_by_provider.items():
+            provider = next((p for p in PROVIDERS_DATA if p.get('name') == provider_name), None)
             if not provider:
+                logging.warning(f"المزود {provider_name} غير موجود في القائمة")
                 continue
 
             token = provider.get('token')
             base_url = provider.get('url', '').rstrip('/') + '/'
-            category_name = import_info.get('category_name')
-            profit_margin = import_info.get('profit_margin', 0)
 
             try:
                 products_url = f"{base_url}client/api/products"
                 api_products = make_api_request(products_url, token, timeout=15)
 
                 if not isinstance(api_products, list):
+                    logging.warning(f"استجابة المزود {provider_name} ليست قائمة منتجات")
                     continue
+
+                # نبني قاموس للوصول السريع
+                api_map = {}
+                for ap in api_products:
+                    api_map[str(ap.get('id'))] = ap
 
                 updated_count = 0
                 price_changes = []
 
-                for subcat in SUBCATEGORIES_DATA:
-                    if subcat.get('imported_from_api') and subcat.get('api_import_key') == import_key:
-                        api_id = str(subcat.get('api_product_id', ''))
+                for subcat in subcats:
+                    api_id = str(subcat.get('api_product_id', ''))
+                    api_product = api_map.get(api_id)
 
-                        api_product = None
-                        for ap in api_products:
-                            if str(ap.get('id')) == api_id:
-                                api_product = ap
-                                break
+                    if not api_product:
+                        logging.warning(f"لم يتم العثور على المنتج {api_id} لدى المزود {provider_name}")
+                        continue
 
-                        if api_product:
-                            old_price = float(subcat.get('price', 0))
-                            base_price = float(api_product.get('base_price', api_product.get('price', 0)))
+                    old_price = float(subcat.get('price', 0))
+                    old_base = float(subcat.get('base_price', 0))
+                    
+                    # السعر الأساسي الجديد من المزود
+                    new_base = float(api_product.get('base_price', api_product.get('price', old_base)))
+                    
+                    # نسبة الربح المخزنة للفئة
+                    profit_margin = float(subcat.get('profit_margin', 0))
+                    
+                    # السعر النهائي بعد الربح
+                    new_price = round(new_base * (1 + (profit_margin / 100.0)), 3)
 
-                            new_price = round(base_price * (1 + (profit_margin / 100.0)), 3)
+                    # إذا كان في تغيير
+                    if abs(new_price - old_price) > 0.001 or abs(new_base - old_base) > 0.001:
+                        subcat['base_price'] = new_base
+                        subcat['price'] = new_price
+                        
+                        # نحدث counter_min_price إذا كانت عداد
+                        if subcat.get('is_counter'):
+                            subcat['counter_min_price'] = new_price
+                        
+                        updated_count += 1
 
-                            if abs(new_price - old_price) > 0.001:
-                                subcat['base_price'] = base_price
-                                subcat['price'] = new_price
-                                updated_count += 1
-
-                                change_type = "ارتفاع" if new_price > old_price else "انخفاض"
-                                price_changes.append({
-                                    "name": subcat.get('name'),
-                                    "old_price": old_price,
-                                    "new_price": new_price,
-                                    "change_type": change_type
-                                })
+                        change_type = "ارتفاع" if new_price > old_price else "انخفاض"
+                        price_changes.append({
+                            "name": subcat.get('name'),
+                            "old_price": old_price,
+                            "new_price": new_price,
+                            "change_type": change_type
+                        })
 
                 if updated_count > 0:
                     save_json_file(SUBCATEGORIES_FILE, SUBCATEGORIES_DATA)
-                    logging.info(f"تم تحديث {updated_count} سعر للقسم المستورد: {category_name}")
+                    logging.info(f"تم تحديث {updated_count} سعر من المزود: {provider_name}")
+                    self._send_price_change_notification(provider_name, price_changes)
+                else:
+                    logging.info(f"لا توجد تغييرات في أسعار المزود {provider_name} - عدد الفئات المفحوصة: {len(subcats)}")
 
-                    self._send_price_change_notification(category_name, price_changes)
-
-                API_IMPORTS_DATA[import_key]['last_price_check'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                # نحدث وقت آخر فحص للمستوردين
+                for import_key, import_info in API_IMPORTS_DATA.items():
+                    if import_info.get('provider_name') == provider_name:
+                        API_IMPORTS_DATA[import_key]['last_price_check'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 save_json_file(API_IMPORTS_FILE, API_IMPORTS_DATA)
 
             except Exception as e:
-                logging.error(f"خطأ في فحص أسعار القسم {category_name}: {e}")
+                logging.error(f"خطأ في فحص أسعار المزود {provider_name}: {e}")
 
-    def _send_price_change_notification(self, category_name, price_changes):
+    def _send_price_change_notification(self, provider_name, price_changes):
         if not TELEGRAM_PURCHASE_BOT_TOKEN or TELEGRAM_PURCHASE_BOT_TOKEN == "YOUR_TELEGRAM_BOT_TOKEN":
             return
 
@@ -758,7 +856,7 @@ class ApiPriceMonitor:
         message = (
             f'<tg-emoji emoji-id="5409048419211682843">💰</tg-emoji> <b>تحديث أسعار API</b>\n'
             f'ــــــــــــــــــــــــــــــــــــــــــــــــــــــــــــ\n'
-            f'<tg-emoji emoji-id="5253742260054409879">🏷️</tg-emoji> <b>القسم:</b> {category_name}\n'
+            f'<tg-emoji emoji-id="5253742260054409879">🏷️</tg-emoji> <b>المزود:</b> {provider_name}\n'
             f'<tg-emoji emoji-id="5839437853469186962">📊</tg-emoji> <b>عدد التغييرات:</b> {len(price_changes)}\n'
             f'ــــــــــــــــــــــــــــــــــــــــــــــــــــــــــــ\n'
             f'{changes_text}'
@@ -773,7 +871,7 @@ class ApiPriceMonitor:
         try:
             req = urllib.request.Request(telegram_url, data=payload, headers=headers, method="POST")
             with urllib.request.urlopen(req, timeout=8) as res:
-                logging.info(f"تم إرسال إشعار تغييرات الأسعار للقسم {category_name}")
+                logging.info(f"تم إرسال إشعار تغييرات الأسعار للمزود {provider_name}")
         except Exception as e:
             logging.error(f"فشل إرسال إشعار تغييرات الأسعار: {e}")
 
@@ -966,6 +1064,7 @@ API_DOCS_HTML = """
 </html>
 """
 
+
 # --------------------------------------------------
 # 2. واجهة المستخدم العادية
 # --------------------------------------------------
@@ -973,58 +1072,99 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <meta name="theme-color" content="#00897b">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="SYRIA CARD ONE">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="application-name" content="SYRIA CARD ONE">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="apple-touch-icon" href="/pwa-icon">
+    <link rel="icon" type="image/png" href="/pwa-icon">
     <title>SYRIA CARD ONE</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&family=Tajawal:wght@400;500;700;800&family=Almarai:wght@400;700;800&family=Changa:wght@400;600;700;800&family=El+Messiri:wght@400;600;700&family=Lateef&family=Amiri:wght@400;700&family=Scheherazade+New:wght@400;700&family=Noto+Kufi+Arabic:wght@400;700&family=IBM+Plex+Sans+Arabic:wght@400;600;700&family=Readex+Pro:wght@400;600;700&family=Alexandria:wght@400;600;700&family=Noto+Naskh+Arabic:wght@400;700&family=Harmattan&family=Mada:wght@400;700&display=swap" rel="stylesheet">
     <style id="dynamicStyles">
         :root {
-            --bg-color: #050508;
-            --card-bg: #121212;
-            --border-color: #27272a;
+            /* ألوان الوضع الداكن (افتراضية) */
+            --dark-bg-color: #050508;
+            --dark-card-bg: #121212;
+            --dark-border-color: #27272a;
+            --dark-text-color: #ffffff;
+            --dark-subtext-color: #a1a1aa;
+            --dark-sidebar-bg: #09090f;
+            --dark-input-bg: #000000;
+
+            /* ألوان الوضع الفاتح (افتراضية) */
+            --light-bg-color: #f4f4f5;
+            --light-card-bg: #ffffff;
+            --light-border-color: #e4e4e7;
+            --light-text-color: #09090b;
+            --light-subtext-color: #71717a;
+            --light-sidebar-bg: #ffffff;
+            --light-input-bg: #f4f4f5;
+            --light-accent-color: #0284c7;
+
+            /* الألوان النشطة (تتغير حسب الثيم) */
+            --bg-color: var(--dark-bg-color);
+            --card-bg: var(--dark-card-bg);
+            --border-color: var(--dark-border-color);
             --accent-color: #38bdf8;
-            --text-color: #ffffff;
-            --subtext-color: #a1a1aa;
-            --sidebar-bg: #09090f;
-            --input-bg: #000000;
+            --text-color: var(--dark-text-color);
+            --subtext-color: var(--dark-subtext-color);
+            --sidebar-bg: var(--dark-sidebar-bg);
+            --input-bg: var(--dark-input-bg);
             --item-label-color: #ffffff;
             --deposit-label-color: #ffffff;
             --sidebar-item-color: #ffffff;
+
+            /* ألوان الهيدر */
             --top-header-c1: #004d40;
             --top-header-c2: #00897b;
             --top-header-c3: #26a69a;
             --bottom-nav-c1: #022c22;
             --bottom-nav-c2: #059669;
             --bottom-nav-c3: #0d9488;
+
+            /* الأحجام */
             --general-font-size: 14px;
             --sidebar-font-size: 14px;
             --top-header-height: 65px;
             --bottom-nav-height: 62px;
             --sidebar-width: 300px;
+            --deposit-card-scale: 1;
+            --category-card-scale: 1;
+            --ticker-color: #38bdf8;
         }
 
         body.light-mode {
-            --bg-color: #f4f4f5;
-            --card-bg: #ffffff;
-            --border-color: #e4e4e7;
-            --accent-color: #0284c7;
-            --text-color: #09090b;
-            --subtext-color: #71717a;
-            --sidebar-bg: #ffffff;
-            --input-bg: #f4f4f5;
+            --bg-color: var(--light-bg-color);
+            --card-bg: var(--light-card-bg);
+            --border-color: var(--light-border-color);
+            --text-color: var(--light-text-color);
+            --subtext-color: var(--light-subtext-color);
+            --sidebar-bg: var(--light-sidebar-bg);
+            --input-bg: var(--light-input-bg);
             --item-label-color: #000000;
             --deposit-label-color: #000000;
             --sidebar-item-color: #000000;
+            --accent-color: var(--light-accent-color);
         }
 
         * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        html, body {
+            width: 100%;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
 
         body {
             background-color: var(--bg-color);
             color: var(--text-color);
             padding: 0 0 85px 0;
-            max-width: 420px;
             margin: 0 auto;
             display: flex;
             flex-direction: column;
@@ -1032,6 +1172,118 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
             position: relative;
             min-height: 100vh;
             font-size: var(--general-font-size);
+        }
+
+        .app-container {
+            width: 100%;
+            max-width: 100%;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        /* للأجهزة اللوحية والكمبيوتر */
+        @media (min-width: 768px) {
+            body {
+                max-width: 750px;
+                margin: 0 auto;
+            }
+            
+            .grid-container {
+                grid-template-columns: repeat(4, 1fr) !important;
+                gap: 20px 16px !important;
+            }
+            
+            .header {
+                border-radius: 0 0 16px 16px;
+            }
+            
+            .banner-container {
+                max-width: 90%;
+                height: 180px;
+            }
+            
+            .sidebar {
+                max-width: 380px;
+            }
+        }
+
+        /* للشاشات الكبيرة (لابتوب/كمبيوتر) */
+        @media (min-width: 1024px) {
+            body {
+                max-width: 900px;
+            }
+            
+            .grid-container {
+                grid-template-columns: repeat(5, 1fr) !important;
+                gap: 24px 18px !important;
+            }
+            
+            .banner-container {
+                max-width: 880px;
+                height: 220px;
+            }
+            
+            .bottom-nav-bar {
+                max-width: 900px;
+                left: 50%;
+                transform: translateX(-50%);
+                border-radius: 20px 20px 0 0;
+            }
+            
+            .main-content-wrapper {
+                max-width: 880px;
+                margin: 0 auto;
+            }
+            
+            .ticker-wrapper {
+                max-width: 880px;
+            }
+        }
+
+        /* للشاشات الكبيرة جداً */
+        @media (min-width: 1440px) {
+            body {
+                max-width: 1100px;
+            }
+            
+            .grid-container {
+                grid-template-columns: repeat(6, 1fr) !important;
+            }
+            
+            .banner-container {
+                max-width: 1080px;
+                height: 280px;
+            }
+            
+            .bottom-nav-bar {
+                max-width: 1100px;
+            }
+            
+            .main-content-wrapper {
+                max-width: 1080px;
+            }
+            
+            .ticker-wrapper {
+                max-width: 1080px;
+            }
+        }
+
+        /* للهواتف الصغيرة */
+        @media (max-width: 360px) {
+            .store-name {
+                font-size: 0.85rem !important;
+            }
+            
+            .balance-text {
+                font-size: 0.7rem !important;
+            }
+            
+            .grid-container {
+                grid-template-columns: repeat(2, 1fr) !important;
+                gap: 12px 8px !important;
+            }
         }
 
         #pageTransitionLoader {
@@ -1318,7 +1570,7 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
             padding: 8px 0; overflow: hidden;
         }
         .ticker-text {
-            display: inline-block; white-space: nowrap; color: var(--accent-color);
+            display: inline-block; white-space: nowrap; color: var(--ticker-color);
             font-size: 0.85rem; font-weight: 700; animation: marquee 12s linear infinite;
         }
         @keyframes marquee { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
@@ -1991,6 +2243,139 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
             0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.3); }
             50% { box-shadow: 0 0 0 8px rgba(245, 158, 11, 0); }
         }
+
+        /* ====== SUBCATEGORY GROUP STYLES ====== */
+        .group-item-card {
+            background: transparent;
+            border: none;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            cursor: pointer;
+            padding: 0;
+            width: 100%;
+            position: relative;
+        }
+        .group-item-img {
+            width: 100%;
+            aspect-ratio: 1 / 1;
+            object-fit: cover;
+            border-radius: 14px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            background-color: var(--card-bg);
+            transition: transform 0.15s ease;
+        }
+        .group-item-card:active .group-item-img {
+            transform: scale(0.95);
+        }
+        .group-item-label {
+            width: 100%;
+            padding: 6px 2px 0 2px;
+            text-align: center;
+            font-size: 0.82rem;
+            font-weight: 700;
+            color: var(--item-label-color);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* ====== PWA Install Banner ====== */
+        #pwaInstallBanner {
+            display: none;
+            position: fixed;
+            bottom: calc(var(--bottom-nav-height) + 10px);
+            left: 50%;
+            transform: translateX(-50%);
+            width: 92%;
+            max-width: 400px;
+            background: linear-gradient(135deg, #00897b 0%, #26a69a 100%);
+            border-radius: 16px;
+            padding: 14px 18px;
+            box-shadow: 0 8px 25px rgba(0, 137, 123, 0.4);
+            z-index: 9000;
+            align-items: center;
+            gap: 12px;
+        }
+        #pwaInstallBanner.active {
+            display: flex;
+        }
+        #pwaInstallIcon {
+            width: 48px;
+            height: 48px;
+            border-radius: 12px;
+            border: 2px solid #fff;
+        }
+        .pwa-banner-text {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+        .pwa-banner-title {
+            font-size: 0.9rem;
+            font-weight: 800;
+            color: #fff;
+        }
+        .pwa-banner-desc {
+            font-size: 0.72rem;
+            color: #d1fae5;
+        }
+        .pwa-install-btn {
+            background: #fff;
+            color: #00897b;
+            border: none;
+            border-radius: 10px;
+            padding: 8px 14px;
+            font-size: 0.8rem;
+            font-weight: 800;
+            cursor: pointer;
+        }
+        .pwa-dismiss-btn {
+            background: transparent;
+            border: none;
+            color: #fff;
+            font-size: 1.3rem;
+            cursor: pointer;
+            padding: 0 4px;
+        }
+
+        /* ====== PWA Splash Screen ====== */
+        #pwaSplashScreen {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: #050508;
+            z-index: 999999;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 24px;
+        }
+        #pwaSplashScreen.active {
+            display: flex;
+        }
+        #pwaSplashImg {
+            width: 150px;
+            height: 150px;
+            border-radius: 30px;
+            object-fit: cover;
+            box-shadow: 0 0 60px rgba(0, 137, 123, 0.5);
+            animation: pwaSplashPulse 2s ease-in-out infinite;
+        }
+        @keyframes pwaSplashPulse {
+            0%, 100% { transform: scale(1); box-shadow: 0 0 60px rgba(0, 137, 123, 0.5); }
+            50% { transform: scale(1.05); box-shadow: 0 0 80px rgba(0, 137, 123, 0.8); }
+        }
+        .pwa-splash-title {
+            font-size: 1.4rem;
+            font-weight: 800;
+            color: #fff;
+        }
     </style>
 </head>
 <body>
@@ -2328,7 +2713,7 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
     </div>
 
     <div class="ticker-wrapper" id="tickerWrapper">
-        <div class="ticker-text">عالمك الرقمي الكامل صُمم لك خصيصاً</div>
+        <div class="ticker-text" id="tickerText">عالمك الرقمي الكامل صُمم لك خصيصاً</div>
     </div>
 
     <div class="main-content-wrapper">
@@ -2604,6 +2989,24 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
         </div>
     </div>
 
+    <!-- PWA Install Banner -->
+    <div id="pwaInstallBanner">
+        <img id="pwaInstallIcon" src="" alt="App Icon" />
+        <div class="pwa-banner-text">
+            <span class="pwa-banner-title">ثبّت التطبيق</span>
+            <span class="pwa-banner-desc">تجربة أسرع وأفضل على جهازك</span>
+        </div>
+        <button class="pwa-install-btn" onclick="installPWA()">تثبيت</button>
+        <button class="pwa-dismiss-btn" onclick="dismissPwaBanner()">×</button>
+    </div>
+
+    <!-- PWA Splash Screen -->
+    <div id="pwaSplashScreen">
+        <img id="pwaSplashImg" src="" alt="Splash" />
+        <div class="pwa-splash-title">SYRIA CARD ONE</div>
+        <div class="splash-spinner"></div>
+    </div>
+
     <div class="bottom-nav-bar">
         <button class="bottom-nav-btn bottom-btn-gradient-search" onclick="focusSearchInput()" title="بحث">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
@@ -2633,6 +3036,8 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
         let currentTypeFilter = 'all';
         let currentNotifFilter = 'all';
         let isCounterCategory = false;
+        let currentGroupId = null;
+        let subcategoryGroups = {};
 
         let dataStore = {
             categories: {},
@@ -2697,6 +3102,7 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
                 const a = await res.json();
                 const root = document.documentElement;
                 
+                // الخط
                 if (a.font_family) {
                     const fontLink = document.getElementById('dynamicFontLink');
                     const familyString = a.font_family.replace(/ /g, '+');
@@ -2709,18 +3115,107 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
                         styleEl.innerHTML = `* { font-family: '${a.font_family}', sans-serif !important; }`;
                     }
                 }
+                
+                // ألوان الهيدر
                 if (a.top_header_color1) root.style.setProperty('--top-header-c1', a.top_header_color1);
                 if (a.top_header_color2) root.style.setProperty('--top-header-c2', a.top_header_color2);
                 if (a.top_header_color3) root.style.setProperty('--top-header-c3', a.top_header_color3);
                 if (a.bottom_nav_color1) root.style.setProperty('--bottom-nav-c1', a.bottom_nav_color1);
                 if (a.bottom_nav_color2) root.style.setProperty('--bottom-nav-c2', a.bottom_nav_color2);
                 if (a.bottom_nav_color3) root.style.setProperty('--bottom-nav-c3', a.bottom_nav_color3);
+                
+                // الأحجام
                 if (a.general_font_size) root.style.setProperty('--general-font-size', a.general_font_size + 'px');
                 if (a.sidebar_font_size) root.style.setProperty('--sidebar-font-size', a.sidebar_font_size + 'px');
                 if (a.top_header_height) root.style.setProperty('--top-header-height', a.top_header_height + 'px');
                 if (a.bottom_nav_height) root.style.setProperty('--bottom-nav-height', a.bottom_nav_height + 'px');
                 if (a.sidebar_width) root.style.setProperty('--sidebar-width', a.sidebar_width + 'px');
+                if (a.deposit_card_size) root.style.setProperty('--deposit-card-scale', (a.deposit_card_size / 100).toFixed(2));
+                if (a.category_card_size) root.style.setProperty('--category-card-scale', (a.category_card_size / 100).toFixed(2));
+
+                // ===== ألوان الوضع الداكن =====
+                if (a.dark_bg_color) root.style.setProperty('--dark-bg-color', a.dark_bg_color);
+                if (a.dark_card_bg) root.style.setProperty('--dark-card-bg', a.dark_card_bg);
+                if (a.dark_border_color) root.style.setProperty('--dark-border-color', a.dark_border_color);
+                if (a.dark_text_color) root.style.setProperty('--dark-text-color', a.dark_text_color);
+                if (a.dark_subtext_color) root.style.setProperty('--dark-subtext-color', a.dark_subtext_color);
+                if (a.dark_sidebar_bg) root.style.setProperty('--dark-sidebar-bg', a.dark_sidebar_bg);
+                if (a.dark_input_bg) root.style.setProperty('--dark-input-bg', a.dark_input_bg);
+
+                // ===== ألوان الوضع الفاتح =====
+                if (a.light_bg_color) root.style.setProperty('--light-bg-color', a.light_bg_color);
+                if (a.light_card_bg) root.style.setProperty('--light-card-bg', a.light_card_bg);
+                if (a.light_border_color) root.style.setProperty('--light-border-color', a.light_border_color);
+                if (a.light_text_color) root.style.setProperty('--light-text-color', a.light_text_color);
+                if (a.light_subtext_color) root.style.setProperty('--light-subtext-color', a.light_subtext_color);
+                if (a.light_sidebar_bg) root.style.setProperty('--light-sidebar-bg', a.light_sidebar_bg);
+                if (a.light_input_bg) root.style.setProperty('--light-input-bg', a.light_input_bg);
+                if (a.light_accent_color) root.style.setProperty('--light-accent-color', a.light_accent_color);
+
+                // تطبيق الوضع الحالي
+                applyCurrentTheme();
+
+                // ===== PWA =====
+                if (a.pwa_name) {
+                    const appNameMeta = document.querySelector('meta[name="apple-mobile-web-app-title"]');
+                    if (appNameMeta) appNameMeta.content = a.pwa_name;
+                }
+                if (a.pwa_theme_color) {
+                    const themeMeta = document.querySelector('meta[name="theme-color"]');
+                    if (themeMeta) themeMeta.content = a.pwa_theme_color;
+                }
             } catch (e) { console.error('فشل تحميل إعدادات المظهر', e); }
+        }
+
+        // تطبيق الثيم الحالي (داكن أو فاتح)
+        function applyCurrentTheme() {
+            const isLight = document.body.classList.contains('light-mode');
+            const root = document.documentElement;
+            
+            if (isLight) {
+                root.style.setProperty('--bg-color', getComputedStyle(root).getPropertyValue('--light-bg-color').trim() || '#f4f4f5');
+                root.style.setProperty('--card-bg', getComputedStyle(root).getPropertyValue('--light-card-bg').trim() || '#ffffff');
+                root.style.setProperty('--border-color', getComputedStyle(root).getPropertyValue('--light-border-color').trim() || '#e4e4e7');
+                root.style.setProperty('--text-color', getComputedStyle(root).getPropertyValue('--light-text-color').trim() || '#09090b');
+                root.style.setProperty('--subtext-color', getComputedStyle(root).getPropertyValue('--light-subtext-color').trim() || '#71717a');
+                root.style.setProperty('--sidebar-bg', getComputedStyle(root).getPropertyValue('--light-sidebar-bg').trim() || '#ffffff');
+                root.style.setProperty('--input-bg', getComputedStyle(root).getPropertyValue('--light-input-bg').trim() || '#f4f4f5');
+                root.style.setProperty('--accent-color', getComputedStyle(root).getPropertyValue('--light-accent-color').trim() || '#0284c7');
+            } else {
+                root.style.setProperty('--bg-color', getComputedStyle(root).getPropertyValue('--dark-bg-color').trim() || '#050508');
+                root.style.setProperty('--card-bg', getComputedStyle(root).getPropertyValue('--dark-card-bg').trim() || '#121212');
+                root.style.setProperty('--border-color', getComputedStyle(root).getPropertyValue('--dark-border-color').trim() || '#27272a');
+                root.style.setProperty('--text-color', getComputedStyle(root).getPropertyValue('--dark-text-color').trim() || '#ffffff');
+                root.style.setProperty('--subtext-color', getComputedStyle(root).getPropertyValue('--dark-subtext-color').trim() || '#a1a1aa');
+                root.style.setProperty('--sidebar-bg', getComputedStyle(root).getPropertyValue('--dark-sidebar-bg').trim() || '#09090f');
+                root.style.setProperty('--input-bg', getComputedStyle(root).getPropertyValue('--dark-input-bg').trim() || '#000000');
+                root.style.setProperty('--accent-color', '#38bdf8');
+            }
+        }
+
+        function toggleDarkMode(isDark) {
+            if (isDark) {
+                document.body.classList.remove('light-mode');
+                localStorage.setItem('theme', 'dark');
+            } else {
+                document.body.classList.add('light-mode');
+                localStorage.setItem('theme', 'light');
+            }
+            applyCurrentTheme();
+        }
+
+        async function loadTickerSettings() {
+            try {
+                const res = await fetch('/api/get_ticker_settings');
+                const data = await res.json();
+                const tickerEl = document.getElementById('tickerText');
+                if (tickerEl) {
+                    tickerEl.innerText = data.text || 'عالمك الرقمي المتكامل صُمم لك خصيصاً';
+                    if (data.color) {
+                        document.documentElement.style.setProperty('--ticker-color', data.color);
+                    }
+                }
+            } catch (e) { console.error('فشل تحميل إعدادات الشريط', e); }
         }
 
         function triggerPageTransition(callback) {
@@ -2771,16 +3266,6 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
             }
         }
 
-        function toggleDarkMode(isDark) {
-            if (isDark) {
-                document.body.classList.remove('light-mode');
-                localStorage.setItem('theme', 'dark');
-            } else {
-                document.body.classList.add('light-mode');
-                localStorage.setItem('theme', 'light');
-            }
-        }
-
         function initTheme() {
             const savedTheme = localStorage.getItem('theme');
             const toggleBtn = document.getElementById('darkModeToggle');
@@ -2791,6 +3276,7 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
                 document.body.classList.remove('light-mode');
                 if (toggleBtn) toggleBtn.checked = true;
             }
+            applyCurrentTheme();
         }
 
         function formatBalance(num) {
@@ -3392,18 +3878,20 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
 
         async function initData() {
             try {
-                const [cRes, pRes, sRes, dRes, cbRes] = await Promise.all([
+                const [cRes, pRes, sRes, dRes, cbRes, sgRes] = await Promise.all([
                     fetch('/api/categories'),
                     fetch('/api/products'),
                     fetch('/api/subcategories'),
                     fetch('/api/get_deposit_methods'),
-                    fetch('/api/category_banners')
+                    fetch('/api/category_banners'),
+                    fetch('/api/get_subcategory_groups')
                 ]);
                 dataStore.categories = await cRes.json();
                 dataStore.products = await pRes.json();
                 dataStore.subcategories = await sRes.json();
                 dataStore.depositMethods = await dRes.json();
                 dataStore.categoryBanners = await cbRes.json();
+                subcategoryGroups = await sgRes.json();
                 await loadCurrencies();
             } catch (e) { console.error(e); }
             renderCategories();
@@ -3440,6 +3928,7 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
             closeMyDepositsPage();
             closeMyWalletPage();
             closeNotificationsPage();
+            currentGroupId = null;
             renderCategories();
         }
 
@@ -3773,6 +4262,7 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
 
         function renderCategories(filterQuery = '') {
             currentLevel = 'categories';
+            currentGroupId = null;
             document.getElementById('backBtn').style.display = 'none';
             loadBanners();
             document.getElementById('tickerWrapper').style.display = 'block';
@@ -3796,6 +4286,7 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
             for (const [name, img] of entries) {
                 const card = document.createElement('div');
                 card.className = 'item-card';
+                card.style.transform = `scale(var(--category-card-scale))`;
                 card.onclick = () => openProductsView(name);
 
                 let imgHTML = img ? `<img src="${img}" class="item-img" />` : `<div class="item-img" style="display:flex;align-items:center;justify-content:center;color:#666;">🎮</div>`;
@@ -3808,6 +4299,7 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
             triggerPageTransition(() => {
                 currentLevel = 'products';
                 selectedCategory = categoryName;
+                currentGroupId = null;
 
                 document.getElementById('backBtn').style.display = 'block';
                 
@@ -3841,6 +4333,7 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
                 filteredProducts.forEach(p => {
                     const card = document.createElement('div');
                     card.className = 'item-card';
+                    card.style.transform = `scale(var(--category-card-scale))`;
                     card.onclick = () => openSubcategoriesView(p.name);
 
                     let imgHTML = p.image ? `<img src="${p.image}" class="item-img" />` : `<div class="item-img" style="display:flex;align-items:center;justify-content:center;color:#666;">📦</div>`;
@@ -3854,6 +4347,7 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
             triggerPageTransition(() => {
                 currentLevel = 'subcategories';
                 selectedProduct = productName;
+                currentGroupId = null;
 
                 document.getElementById('backBtn').style.display = 'block';
                 document.getElementById('bannerContainer').style.display = 'none';
@@ -3866,18 +4360,90 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
                 const grid = document.getElementById('userGrid');
                 grid.innerHTML = '';
 
-                const filteredSubcats = dataStore.subcategories.filter(s => 
-                    s.product === productName && s.name.toLowerCase().includes(filterQuery.toLowerCase())
+                const productGroups = subcategoryGroups[productName] || [];
+                const filteredGroups = productGroups.filter(g => 
+                    g.name.toLowerCase().includes(filterQuery.toLowerCase())
                 );
 
-                if (filteredSubcats.length === 0) {
+                const directSubcats = dataStore.subcategories.filter(s => 
+                    s.product === productName && 
+                    !s.group_id &&
+                    s.name.toLowerCase().includes(filterQuery.toLowerCase())
+                );
+
+                if (filteredGroups.length === 0 && directSubcats.length === 0) {
                     grid.innerHTML = `<div style="grid-column: 1 / -1; text-align:center; padding:20px; color:var(--text-color); font-size:0.8rem;">لا توجد فئات لهذه الخدمة بعد</div>`;
                     return;
                 }
 
-                filteredSubcats.forEach(s => {
+                filteredGroups.forEach(g => {
+                    const card = document.createElement('div');
+                    card.className = 'group-item-card';
+                    card.style.transform = `scale(var(--category-card-scale))`;
+                    card.onclick = () => openGroupView(productName, g.id, g.name);
+
+                    let imgHTML = g.image ? `<img src="${g.image}" class="group-item-img" />` : `<div class="group-item-img" style="display:flex;align-items:center;justify-content:center;color:#666;font-size:2rem;">📁</div>`;
+
+                    card.innerHTML = `
+                        ${imgHTML}
+                        <div class="group-item-label">${g.name}</div>
+                    `;
+                    grid.appendChild(card);
+                });
+
+                directSubcats.forEach(s => {
                     const card = document.createElement('div');
                     card.className = 'item-card';
+                    card.style.transform = `scale(var(--category-card-scale))`;
+                    card.onclick = () => openPurchaseModal(s);
+
+                    let imgHTML = s.image ? `<img src="${s.image}" class="item-img" />` : `<div class="item-img" style="display:flex;align-items:center;justify-content:center;color:#666;">💎</div>`;
+
+                    let priceDisplay = `$ ${formatBalance(s.price)}`;
+                    if (s.is_counter && s.counter_min_price) {
+                        priceDisplay = `$ ${formatBalance(s.counter_min_price)} / ${s.counter_min_qty}`;
+                    }
+
+                    card.innerHTML = `
+                        ${imgHTML}
+                        <div class="item-label">${s.name}</div>
+                        <div class="item-price-tag">${priceDisplay}</div>
+                    `;
+                    grid.appendChild(card);
+                });
+            });
+        }
+
+        function openGroupView(productName, groupId, groupName, filterQuery = '') {
+            triggerPageTransition(() => {
+                currentLevel = 'group';
+                currentGroupId = groupId;
+
+                document.getElementById('backBtn').style.display = 'block';
+                document.getElementById('bannerContainer').style.display = 'none';
+                document.getElementById('tickerWrapper').style.display = 'none';
+
+                const searchInput = document.getElementById('searchInput');
+                if (!filterQuery) searchInput.value = '';
+                searchInput.placeholder = 'ابحث داخل ' + groupName + '...';
+
+                const grid = document.getElementById('userGrid');
+                grid.innerHTML = '';
+
+                const groupSubcats = dataStore.subcategories.filter(s => 
+                    s.group_id === groupId && 
+                    s.name.toLowerCase().includes(filterQuery.toLowerCase())
+                );
+
+                if (groupSubcats.length === 0) {
+                    grid.innerHTML = `<div style="grid-column: 1 / -1; text-align:center; padding:20px; color:var(--text-color); font-size:0.8rem;">لا توجد فئات في هذه المجموعة</div>`;
+                    return;
+                }
+
+                groupSubcats.forEach(s => {
+                    const card = document.createElement('div');
+                    card.className = 'item-card';
+                    card.style.transform = `scale(var(--category-card-scale))`;
                     card.onclick = () => openPurchaseModal(s);
 
                     let imgHTML = s.image ? `<img src="${s.image}" class="item-img" />` : `<div class="item-img" style="display:flex;align-items:center;justify-content:center;color:#666;">💎</div>`;
@@ -3899,7 +4465,9 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
 
         function goBack() {
             triggerPageTransition(() => {
-                if (currentLevel === 'subcategories') {
+                if (currentLevel === 'group') {
+                    openSubcategoriesView(selectedProduct);
+                } else if (currentLevel === 'subcategories') {
                     openProductsView(selectedCategory);
                 } else if (currentLevel === 'products') {
                     renderCategories();
@@ -3915,6 +4483,8 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
                 openProductsView(selectedCategory, query);
             } else if (currentLevel === 'subcategories') {
                 openSubcategoriesView(selectedProduct, query);
+            } else if (currentLevel === 'group') {
+                openGroupView(selectedProduct, currentGroupId, '', query);
             }
         }
 
@@ -3961,6 +4531,7 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
             filtered.forEach(m => {
                 const card = document.createElement('div');
                 card.className = 'item-card';
+                card.style.transform = `scale(var(--deposit-card-scale))`;
                 card.onclick = () => openDepositDetailModal(m);
 
                 let imgHTML = m.image ? `<img src="${m.image}" class="item-img" />` : `<div class="item-img" style="display:flex;align-items:center;justify-content:center;color:#666;">💳</div>`;
@@ -4395,9 +4966,15 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
             if (order.status === "مكتملة") {
                 statusText = 'مقبول';
                 statusClass = 'status-accept';
-            } else if (order.status === "مرفوضة" || order.status === "تم الارسال للتشيك") {
+            } else if (order.status === "مرفوضة") {
                 statusText = 'مرفوض';
                 statusClass = 'status-reject';
+            } else if (order.status === "تم الارسال للتشيك") {
+                statusText = 'قيد المراجعة';
+                statusClass = 'status-pending';
+            } else {
+                statusText = 'قيد الانتظار';
+                statusClass = 'status-pending';
             }
 
             statusEl.innerText = statusText;
@@ -4476,7 +5053,7 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
             }
 
             let countAll = filtered.length;
-            let countChanged = filtered.filter(o => o.status === "مكتملة" || o.status === "مرفوضة" || o.status === "تم الارسال للتشيك").length;
+            let countChanged = filtered.filter(o => o.status === "مكتملة" || o.status === "مرفوضة").length;
             let countAccept = filtered.filter(o => o.status === "مكتملة").length;
 
             let typeAll = countAll;
@@ -4492,7 +5069,7 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
             document.getElementById('typeCountApi').innerText = typeApi;
 
             if (currentStatusFilter === 'changed') {
-                filtered = filtered.filter(o => o.status === "مكتملة" || o.status === "مرفوضة" || o.status === "تم الارسال للتشيك");
+                filtered = filtered.filter(o => o.status === "مكتملة" || o.status === "مرفوضة");
             } else if (currentStatusFilter === 'accept') {
                 filtered = filtered.filter(o => o.status === "مكتملة");
             }
@@ -4531,9 +5108,18 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
                     statusColor = '#4ade80';
                     statusText = 'مقبول';
                     statusIcon = '✓';
-                } else if (o.status === "مرفوضة" || o.status === "تم الارسال للتشيك") {
+                } else if (o.status === "مرفوضة") {
                     statusColor = '#f87171';
                     statusText = 'مرفوض';
+                    statusIcon = '✕';
+                } else if (o.status === "تم الارسال للتشيك") {
+                    statusColor = '#38bdf8';
+                    statusText = 'قيد المراجعة';
+                    statusIcon = '⏳';
+                } else if (o.status === "قيد الانتظار") {
+                    statusColor = '#f59e0b';
+                    statusText = 'قيد الانتظار';
+                    statusIcon = '⏳';
                 }
 
                 card.innerHTML = `
@@ -4556,8 +5142,86 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
             });
         }
 
+        // ====== PWA INSTALLATION ======
+        let deferredPrompt = null;
+
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            
+            // لا تظهر البانر إذا تم إغلاقه سابقاً
+            if (!localStorage.getItem('pwaBannerDismissed')) {
+                setTimeout(() => {
+                    const banner = document.getElementById('pwaInstallBanner');
+                    if (banner) {
+                        banner.style.display = 'flex';
+                        const icon = document.getElementById('pwaInstallIcon');
+                        const headerLogo = document.getElementById('headerLogoImg');
+                        if (headerLogo && headerLogo.src) {
+                            icon.src = headerLogo.src;
+                        }
+                    }
+                }, 5000);
+            }
+        });
+
+        function installPWA() {
+            if (!deferredPrompt) {
+                alert('التثبيت غير متاح حالياً. يمكنك استخدام خيار "إضافة إلى الشاشة الرئيسية" من قائمة المتصفح.');
+                return;
+            }
+            
+            deferredPrompt.prompt();
+            deferredPrompt.userChoice.then((choiceResult) => {
+                if (choiceResult.outcome === 'accepted') {
+                    console.log('تم تثبيت التطبيق');
+                }
+                deferredPrompt = null;
+                const banner = document.getElementById('pwaInstallBanner');
+                if (banner) banner.style.display = 'none';
+            });
+        }
+
+        function dismissPwaBanner() {
+            const banner = document.getElementById('pwaInstallBanner');
+            if (banner) banner.style.display = 'none';
+            localStorage.setItem('pwaBannerDismissed', 'true');
+        }
+
+        // عرض شاشة الترحيب عند فتح التطبيق المثبت
+        if (window.matchMedia('(display-mode: standalone)').matches) {
+            const splash = document.getElementById('pwaSplashScreen');
+            const splashImg = document.getElementById('pwaSplashImg');
+            const headerLogo = document.getElementById('headerLogoImg');
+            
+            if (splash) {
+                splash.style.display = 'flex';
+                if (headerLogo && headerLogo.src) {
+                    splashImg.src = headerLogo.src;
+                }
+                
+                setTimeout(() => {
+                    splash.style.transition = 'opacity 0.5s ease';
+                    splash.style.opacity = '0';
+                    setTimeout(() => {
+                        splash.style.display = 'none';
+                    }, 500);
+                }, 2000);
+            }
+        }
+
+        // تسجيل Service Worker
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/service-worker.js')
+                    .then(reg => console.log('Service Worker مسجل بنجاح'))
+                    .catch(err => console.log('فشل تسجيل Service Worker:', err));
+            });
+        }
+
         initTheme();
         applyAppearanceSettings();
+        loadTickerSettings();
         loadSplashScreen();
         checkSavedSession();
         loadBanners();
@@ -4678,6 +5342,7 @@ ADMIN_HTML_CONTENT = """
         .delete-mode-btn.active { background-color: #2563eb; color: #fff; border-color: #2563eb; }
         .currency-list-item { background-color: #121212; border: 1px solid #27272a; border-radius: 10px; padding: 12px 14px; display: flex; justify-content: space-between; align-items: center; }
         .counter-badge { display: inline-block; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: #000; font-size: 0.65rem; font-weight: 800; padding: 2px 6px; border-radius: 4px; margin-right: 4px; }
+        .group-badge-admin { display: inline-block; background: linear-gradient(135deg, #a855f7 0%, #9333ea 100%); color: #fff; font-size: 0.65rem; font-weight: 800; padding: 2px 6px; border-radius: 4px; margin-right: 4px; }
         .api-import-fullscreen { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #050508; z-index: 99999; display: none; flex-direction: column; overflow-y: auto; padding: 20px; }
         .api-import-fullscreen.active { display: flex; }
         .api-provider-select-box { width: 100%; padding: 16px; background: #121212; border: 1px solid #27272a; border-radius: 12px; display: flex; flex-direction: column; gap: 10px; }
@@ -4774,6 +5439,20 @@ ADMIN_HTML_CONTENT = """
         }
         .maint-active-banner .icon { font-size: 1.3rem; }
         .maint-active-banner .text { font-size: 0.85rem; font-weight: 700; color: #fff; }
+
+        /* Subcategory Group Styles */
+        .group-item-card-admin { background-color: #121212; border: 1px solid #27272a; border-radius: 10px; padding: 12px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+        .group-item-card-admin .g-name { font-size: 0.9rem; font-weight: 700; color: #a855f7; }
+        .group-item-card-admin .g-count { font-size: 0.75rem; color: #a1a1aa; }
+        .group-item-card-admin .g-actions { display: flex; gap: 6px; }
+        .group-item-card-admin .g-actions button { padding: 6px 10px; border: none; border-radius: 6px; font-size: 0.7rem; font-weight: 700; cursor: pointer; }
+        .group-item-card-admin .g-actions .edit-group-btn { background: #2563eb; color: #fff; }
+        .group-item-card-admin .g-actions .delete-group-btn { background: #dc2626; color: #fff; }
+        .group-selector-box { background: #000; border: 1px solid #27272a; border-radius: 8px; padding: 12px; margin-top: 8px; }
+        .group-selector-box .group-selector-label { font-size: 0.8rem; color: #a855f7; font-weight: 700; margin-bottom: 8px; }
+        .group-selector-box select { width: 100%; padding: 10px; background: #121212; border: 1px solid #27272a; border-radius: 6px; color: #fff; font-size: 0.85rem; }
+        .group-selector-box .add-group-btn { margin-top: 8px; width: 100%; padding: 10px; background: linear-gradient(135deg, #a855f7, #9333ea); border: none; border-radius: 8px; color: #fff; font-size: 0.85rem; font-weight: 700; cursor: pointer; }
+        .group-badge { display: inline-block; background: linear-gradient(135deg, #a855f7, #9333ea); color: #fff; font-size: 0.65rem; font-weight: 800; padding: 2px 8px; border-radius: 8px; margin-right: 4px; }
     </style>
 </head>
 <body>
@@ -4813,6 +5492,7 @@ ADMIN_HTML_CONTENT = """
                 <button class="sub-menu-btn" onclick="openAboutUsSettingsModal()">تعيين من نحن</button>
                 <button class="sub-menu-btn" onclick="openSupportSettingsModal()">تعيين التواصل مع دعم</button>
                 <button class="sub-menu-btn" onclick="openAppearanceSettings()" style="color:#4ade80; border-color:#4ade80;">المظهر وضبط</button>
+                <button class="sub-menu-btn" onclick="openTickerSettingsModal()" style="color:#38bdf8; border-color:#38bdf8;">إعداد الشريط العلوي</button>
                 <button class="sub-menu-btn" onclick="openMaintenanceModal()" style="color:#f87171; border-color:#f87171; font-weight:800;">⚙️ وضع الصيانة</button>
             </div>
 
@@ -4840,6 +5520,8 @@ ADMIN_HTML_CONTENT = """
                 <button class="sub-menu-btn" onclick="openAddProductModal()">إضافة منتج</button>
                 <button class="sub-menu-btn" onclick="openAddSubCategoryModal()">إضافة فئة</button>
                 <button class="sub-menu-btn" onclick="openAddCounterCategoryModal()" style="color:#f59e0b; border-color:#f59e0b;">إضافة فئة عداد</button>
+                <button class="sub-menu-btn" onclick="openAddGroupModal()" style="color:#a855f7; border-color:#a855f7;">إضافة مجموعة فرعية</button>
+                <button class="sub-menu-btn" onclick="openManageGroupsModal()" style="color:#a855f7; border-color:#a855f7;">إدارة المجموعات الفرعية</button>
                 <button class="sub-menu-btn" onclick="openDeleteSubCategoryPage()" style="color:#f87171; border-color:#f87171;">حذف فئة</button>
                 <button class="sub-menu-btn" onclick="openDeleteProductPage()" style="color:#f87171; border-color:#f87171;">حذف منتج</button>
             </div>
@@ -4949,6 +5631,76 @@ ADMIN_HTML_CONTENT = """
                 </div>
                 <button class="save-btn" onclick="saveClientDiscount()">حفظ</button>
                 <button class="btn-secondary" onclick="closeModal('addDiscountModalOverlay')">إلغاء</button>
+            </div>
+        </div>
+
+        <div class="modal-overlay" id="tickerSettingsModalOverlay">
+            <div class="modal-box">
+                <div class="modal-title" style="color:#38bdf8;">إعداد الشريط العلوي</div>
+                <div class="form-group">
+                    <label>نص الشريط:</label>
+                    <textarea id="tickerTextInput" rows="3" placeholder="أدخل نص الشريط..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label>لون النص:</label>
+                    <input type="color" id="tickerColorInput" value="#38bdf8" style="width:100%; height:45px; border:none; border-radius:8px; cursor:pointer; background:#000;">
+                </div>
+                <button class="save-btn" onclick="saveTickerSettings()">حفظ</button>
+                <button class="btn-secondary" onclick="closeModal('tickerSettingsModalOverlay')">إلغاء</button>
+            </div>
+        </div>
+
+        <!-- Group Modals -->
+        <div class="modal-overlay" id="addGroupModalOverlay">
+            <div class="modal-box">
+                <div class="modal-title" style="color:#a855f7;">إضافة مجموعة فرعية جديدة</div>
+                <div class="form-group">
+                    <label>1. اسم المجموعة:</label>
+                    <input type="text" id="groupNameInput" placeholder="أدخل اسم المجموعة..." required>
+                </div>
+                <div class="form-group">
+                    <label>2. اختر المنتج التابع له:</label>
+                    <select id="groupProductSelect" onchange="loadGroupCategoryPreview()"></select>
+                </div>
+                <div class="form-group">
+                    <label>3. اختر القسم (اختياري للعرض فقط):</label>
+                    <select id="groupCategorySelect" onchange="loadGroupProductPreview()"></select>
+                </div>
+                <div class="form-group">
+                    <label>4. صورة المجموعة:</label>
+                    <input type="file" id="groupImageInput" accept="image/*">
+                </div>
+                <div id="groupCategoryPreviewBox" style="display:none; background:#000; border:1px solid #a855f7; border-radius:6px; padding:8px; font-size:0.75rem; color:#a855f7; font-weight:700; text-align:center;"></div>
+                <button class="save-btn" style="background:linear-gradient(135deg,#a855f7,#9333ea);" onclick="saveGroup()">حفظ المجموعة</button>
+                <button class="btn-secondary" onclick="closeModal('addGroupModalOverlay')">إلغاء</button>
+            </div>
+        </div>
+
+        <div class="modal-overlay" id="manageGroupsModalOverlay">
+            <div class="modal-box" style="max-height:80vh; overflow-y:auto;">
+                <div class="modal-title" style="color:#a855f7;">إدارة المجموعات الفرعية</div>
+                <div class="form-group">
+                    <label>اختر المنتج:</label>
+                    <select id="manageGroupsProductSelect" onchange="loadGroupsForManage()"></select>
+                </div>
+                <div id="groupsListContainer" style="display:flex; flex-direction:column; gap:8px; margin-top:5px;"></div>
+                <button class="btn-secondary" onclick="closeModal('manageGroupsModalOverlay')">إغلاق</button>
+            </div>
+        </div>
+
+        <div class="modal-overlay" id="editGroupModalOverlay">
+            <div class="modal-box">
+                <div class="modal-title" style="color:#a855f7;">تعديل المجموعة</div>
+                <div class="form-group">
+                    <label>اسم المجموعة:</label>
+                    <input type="text" id="editGroupNameInput" required>
+                </div>
+                <div class="form-group">
+                    <label>صورة المجموعة:</label>
+                    <input type="file" id="editGroupImageInput" accept="image/*">
+                </div>
+                <button class="save-btn" style="background:linear-gradient(135deg,#a855f7,#9333ea);" onclick="saveEditedGroup()">حفظ التعديلات</button>
+                <button class="btn-secondary" onclick="closeModal('editGroupModalOverlay')">إلغاء</button>
             </div>
         </div>
 
@@ -5193,6 +5945,10 @@ ADMIN_HTML_CONTENT = """
                         <div class="exact-detail-row">
                             <span class="lbl">الربح التقديري:</span>
                             <span class="val" id="exProfit">-</span>
+                        </div>
+                        <div class="exact-detail-row">
+                            <span class="lbl">مصدر الطلب:</span>
+                            <span class="val" id="exOrderSource">الموقع</span>
                         </div>
                         <div class="exact-detail-row">
                             <span class="lbl">التاريخ:</span>
@@ -5674,7 +6430,7 @@ Code   : -
                     <input type="text" id="subCatNameInput" placeholder="أدخل اسم الفئة..." required>
                 </div>
                 <div class="form-group">
-                    <label>2. السعر ($):</label>
+                    <label>2. السعر ($) - سيتم جلبه من API إذا كان مربوطاً:</label>
                     <input type="number" id="subCatPriceInput" placeholder="أدخل السعر..." step="0.001" required>
                 </div>
                 <div class="form-group">
@@ -5693,12 +6449,23 @@ Code   : -
                 </div>
                 <div id="apiProductPreviewBox"></div>
                 <div class="form-group">
-                    <label>6. وصف الفئة (ملاحظات الشراء):</label>
+                    <label>6. نسبة الربح (%) - تُطبق تلقائياً على سعر الـ API:</label>
+                    <input type="number" id="subCatProfitMarginInput" placeholder="مثال: 10" step="0.1" min="0" value="0">
+                </div>
+                <div class="form-group">
+                    <label>7. وصف الفئة (ملاحظات الشراء):</label>
                     <textarea id="subCatDescriptionInput" rows="2" placeholder="أدخل وصف الفئة الذي سيظهر للزبون..."></textarea>
                 </div>
                 <div class="form-group">
-                    <label>7. صورة الفئة:</label>
+                    <label>8. صورة الفئة:</label>
                     <input type="file" id="subCatImageInput" accept="image/*">
+                </div>
+                <div class="group-selector-box">
+                    <div class="group-selector-label">📁 إضافة إلى مجموعة فرعية (اختياري):</div>
+                    <select id="subCatGroupSelect">
+                        <option value="">بدون مجموعة (تظهر مباشرة)</option>
+                    </select>
+                    <button class="add-group-btn" onclick="openAddGroupFromSubcat()">➕ إضافة مجموعة جديدة</button>
                 </div>
                 <button class="save-btn" onclick="saveSubCategory()">حفظ الفئة</button>
                 <button class="btn-secondary" onclick="closeModal('addSubCategoryModalOverlay')">إلغاء</button>
@@ -5844,6 +6611,10 @@ Code   : -
                     <label>5. الكمية:</label>
                     <div class="admin-field-box" id="revOrdQuantity">-</div>
                 </div>
+                <div class="form-group">
+                    <label>6. مصدر الطلب:</label>
+                    <div class="admin-field-box" id="revOrdSource" style="color:#f59e0b; font-weight:800;">الموقع</div>
+                </div>
                 <div class="action-btns-row">
                     <button class="btn-accept" onclick="processOrderDecision('accept')">قبول الطلب</button>
                     <button class="btn-reject" onclick="processOrderDecision('reject')">رفض الطلب</button>
@@ -5946,7 +6717,7 @@ Code   : -
                 <button onclick="closeAppearanceSettings()" style="background:rgba(255,255,255,0.15); border:none; color:#fff; width:36px; height:36px; border-radius:50%; font-size:1.2rem; cursor:pointer;">✕</button>
             </div>
 
-            <div style="padding:20px; display:flex; flex-direction:column; gap:20px; max-width:600px; margin:0 auto; width:100%;">
+            <div style="padding:20px; display:flex; flex-direction:column; gap:20px; max-width:600px; margin: 0 auto; width:100%;">
 
                 <div style="background:#12121a; border:1px solid #2a2a3a; border-radius:16px; padding:18px;">
                     <div style="font-size:0.95rem; font-weight:700; color:#4ade80; margin-bottom:14px;">نوع الخط</div>
@@ -6011,7 +6782,7 @@ Code   : -
                 </div>
 
                 <div style="background:#12121a; border:1px solid #2a2a3a; border-radius:16px; padding:18px;">
-                    <div style="font-size:0.95rem; font-weight:700; color:#a855f7; margin-bottom:14px;">حجم الخط والأشرطة</div>
+                    <div style="font-size:0.95rem; font-weight:700; color:#a855f7; margin-bottom:14px;">حجم الخط والأشرطة والكروت</div>
 
                     <div style="margin-bottom:16px;">
                         <label style="font-size:0.8rem; color:#a1a1aa; display:flex; justify-content:space-between;">
@@ -6045,12 +6816,123 @@ Code   : -
                         <input type="range" id="topHeaderSizeRange" min="45" max="120" value="65" step="1" oninput="previewAppearance()" style="width:100%; margin-top:8px; accent-color:#a855f7;">
                     </div>
 
-                    <div>
+                    <div style="margin-bottom:16px;">
                         <label style="font-size:0.8rem; color:#a1a1aa; display:flex; justify-content:space-between;">
                             <span>حجم الهيدر السفلي</span>
                             <span id="bottomNavSizeValue" style="color:#4ade80; font-weight:700;">62px</span>
                         </label>
                         <input type="range" id="bottomNavSizeRange" min="45" max="120" value="62" step="1" oninput="previewAppearance()" style="width:100%; margin-top:8px; accent-color:#a855f7;">
+                    </div>
+
+                    <div style="margin-bottom:16px;">
+                        <label style="font-size:0.8rem; color:#a1a1aa; display:flex; justify-content:space-between;">
+                            <span>حجم كروت الأقسام والمنتجات</span>
+                            <span id="categoryCardSizeValue" style="color:#4ade80; font-weight:700;">100%</span>
+                        </label>
+                        <input type="range" id="categoryCardSizeRange" min="50" max="150" value="100" step="5" oninput="previewAppearance()" style="width:100%; margin-top:8px; accent-color:#a855f7;">
+                    </div>
+
+                    <div>
+                        <label style="font-size:0.8rem; color:#a1a1aa; display:flex; justify-content:space-between;">
+                            <span>حجم كروت طرق الإيداع</span>
+                            <span id="depositCardSizeValue" style="color:#4ade80; font-weight:700;">100%</span>
+                        </label>
+                        <input type="range" id="depositCardSizeRange" min="50" max="150" value="100" step="5" oninput="previewAppearance()" style="width:100%; margin-top:8px; accent-color:#a855f7;">
+                    </div>
+                </div>
+
+                <div style="background:#12121a; border:1px solid #2a2a3a; border-radius:16px; padding:18px;">
+                    <div style="font-size:0.95rem; font-weight:700; color:#a1a1aa; margin-bottom:14px;">🌙 ألوان الوضع الداكن</div>
+                    
+                    <div style="display:grid; grid-template-columns:repeat(2, 1fr); gap:12px;">
+                        <div>
+                            <label style="font-size:0.7rem; color:#a1a1aa;">خلفية الموقع</label>
+                            <input type="color" id="darkBgColor" value="#050508" oninput="previewAppearance()" style="width:100%; height:45px; border:none; border-radius:8px; cursor:pointer; background:#000;">
+                        </div>
+                        <div>
+                            <label style="font-size:0.7rem; color:#a1a1aa;">خلفية الكروت</label>
+                            <input type="color" id="darkCardBg" value="#121212" oninput="previewAppearance()" style="width:100%; height:45px; border:none; border-radius:8px; cursor:pointer; background:#000;">
+                        </div>
+                        <div>
+                            <label style="font-size:0.7rem; color:#a1a1aa;">لون الحدود</label>
+                            <input type="color" id="darkBorderColor" value="#27272a" oninput="previewAppearance()" style="width:100%; height:45px; border:none; border-radius:8px; cursor:pointer; background:#000;">
+                        </div>
+                        <div>
+                            <label style="font-size:0.7rem; color:#a1a1aa;">لون النص</label>
+                            <input type="color" id="darkTextColor" value="#ffffff" oninput="previewAppearance()" style="width:100%; height:45px; border:none; border-radius:8px; cursor:pointer; background:#000;">
+                        </div>
+                        <div>
+                            <label style="font-size:0.7rem; color:#a1a1aa;">النص الثانوي</label>
+                            <input type="color" id="darkSubtextColor" value="#a1a1aa" oninput="previewAppearance()" style="width:100%; height:45px; border:none; border-radius:8px; cursor:pointer; background:#000;">
+                        </div>
+                        <div>
+                            <label style="font-size:0.7rem; color:#a1a1aa;">خلفية القائمة الجانبية</label>
+                            <input type="color" id="darkSidebarBg" value="#09090f" oninput="previewAppearance()" style="width:100%; height:45px; border:none; border-radius:8px; cursor:pointer; background:#000;">
+                        </div>
+                    </div>
+                </div>
+
+                <div style="background:#12121a; border:1px solid #2a2a3a; border-radius:16px; padding:18px;">
+                    <div style="font-size:0.95rem; font-weight:700; color:#facc15; margin-bottom:14px;">☀️ ألوان الوضع الفاتح</div>
+                    
+                    <div style="display:grid; grid-template-columns:repeat(2, 1fr); gap:12px;">
+                        <div>
+                            <label style="font-size:0.7rem; color:#a1a1aa;">خلفية الموقع</label>
+                            <input type="color" id="lightBgColor" value="#f4f4f5" oninput="previewAppearance()" style="width:100%; height:45px; border:none; border-radius:8px; cursor:pointer; background:#000;">
+                        </div>
+                        <div>
+                            <label style="font-size:0.7rem; color:#a1a1aa;">خلفية الكروت</label>
+                            <input type="color" id="lightCardBg" value="#ffffff" oninput="previewAppearance()" style="width:100%; height:45px; border:none; border-radius:8px; cursor:pointer; background:#000;">
+                        </div>
+                        <div>
+                            <label style="font-size:0.7rem; color:#a1a1aa;">لون الحدود</label>
+                            <input type="color" id="lightBorderColor" value="#e4e4e7" oninput="previewAppearance()" style="width:100%; height:45px; border:none; border-radius:8px; cursor:pointer; background:#000;">
+                        </div>
+                        <div>
+                            <label style="font-size:0.7rem; color:#a1a1aa;">لون النص</label>
+                            <input type="color" id="lightTextColor" value="#09090b" oninput="previewAppearance()" style="width:100%; height:45px; border:none; border-radius:8px; cursor:pointer; background:#000;">
+                        </div>
+                        <div>
+                            <label style="font-size:0.7rem; color:#a1a1aa;">النص الثانوي</label>
+                            <input type="color" id="lightSubtextColor" value="#71717a" oninput="previewAppearance()" style="width:100%; height:45px; border:none; border-radius:8px; cursor:pointer; background:#000;">
+                        </div>
+                        <div>
+                            <label style="font-size:0.7rem; color:#a1a1aa;">خلفية القائمة الجانبية</label>
+                            <input type="color" id="lightSidebarBg" value="#ffffff" oninput="previewAppearance()" style="width:100%; height:45px; border:none; border-radius:8px; cursor:pointer; background:#000;">
+                        </div>
+                        <div>
+                            <label style="font-size:0.7rem; color:#a1a1aa;">اللون المميز (Accent)</label>
+                            <input type="color" id="lightAccentColor" value="#0284c7" oninput="previewAppearance()" style="width:100%; height:45px; border:none; border-radius:8px; cursor:pointer; background:#000;">
+                        </div>
+                    </div>
+                </div>
+
+                <div style="background:#12121a; border:1px solid #2a2a3a; border-radius:16px; padding:18px;">
+                    <div style="font-size:0.95rem; font-weight:700; color:#4ade80; margin-bottom:14px;">📱 إعدادات التطبيق (PWA)</div>
+                    
+                    <div style="margin-bottom:12px;">
+                        <label style="font-size:0.75rem; color:#a1a1aa;">اسم التطبيق:</label>
+                        <input type="text" id="pwaName" value="SYRIA CARD ONE" style="width:100%; padding:10px; background:#000; border:1px solid #2a2a3a; border-radius:8px; color:#fff; margin-top:4px;">
+                    </div>
+                    
+                    <div style="margin-bottom:12px;">
+                        <label style="font-size:0.75rem; color:#a1a1aa;">الاسم المختصر:</label>
+                        <input type="text" id="pwaShortName" value="SyriaCard" style="width:100%; padding:10px; background:#000; border:1px solid #2a2a3a; border-radius:8px; color:#fff; margin-top:4px;">
+                    </div>
+                    
+                    <div style="margin-bottom:12px;">
+                        <label style="font-size:0.75rem; color:#a1a1aa;">لون الثيم:</label>
+                        <input type="color" id="pwaThemeColor" value="#00897b" style="width:100%; height:45px; border:none; border-radius:8px; cursor:pointer; background:#000; margin-top:4px;">
+                    </div>
+                    
+                    <div style="margin-bottom:12px;">
+                        <label style="font-size:0.75rem; color:#a1a1aa;">صورة أيقونة التطبيق:</label>
+                        <input type="file" id="pwaIconInput" accept="image/*" style="width:100%; padding:8px; background:#000; border:1px solid #2a2a3a; border-radius:8px; color:#fff; margin-top:4px;">
+                    </div>
+                    
+                    <div>
+                        <label style="font-size:0.75rem; color:#a1a1aa;">صورة الترحيب (Splash):</label>
+                        <input type="file" id="pwaSplashInput" accept="image/*" style="width:100%; padding:8px; background:#000; border:1px solid #2a2a3a; border-radius:8px; color:#fff; margin-top:4px;">
                     </div>
                 </div>
 
@@ -6175,6 +7057,34 @@ Code   : -
                 } else {
                     alert('حدث خطأ أثناء تغيير حالة الموقع!');
                 }
+            } catch (e) {
+                alert('فشل الاتصال بالخادم!');
+            }
+        }
+
+        async function openTickerSettingsModal() {
+            toggleSidebar();
+            try {
+                const res = await fetch('/api/get_ticker_settings');
+                const data = await res.json();
+                document.getElementById('tickerTextInput').value = data.text || '';
+                document.getElementById('tickerColorInput').value = data.color || '#38bdf8';
+            } catch (e) { console.error(e); }
+            openModal('tickerSettingsModalOverlay');
+        }
+
+        async function saveTickerSettings() {
+            const text = document.getElementById('tickerTextInput').value.trim();
+            const color = document.getElementById('tickerColorInput').value;
+
+            try {
+                await fetch('/api/update_ticker_settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text, color })
+                });
+                alert('تم حفظ إعدادات الشريط بنجاح!');
+                closeModal('tickerSettingsModalOverlay');
             } catch (e) {
                 alert('فشل الاتصال بالخادم!');
             }
@@ -6630,7 +7540,31 @@ Code   : -
                 if (a.sidebar_width) document.getElementById('sidebarWidthRange').value = a.sidebar_width;
                 if (a.top_header_height) document.getElementById('topHeaderSizeRange').value = a.top_header_height;
                 if (a.bottom_nav_height) document.getElementById('bottomNavSizeRange').value = a.bottom_nav_height;
-                
+                if (a.deposit_card_size) document.getElementById('depositCardSizeRange').value = a.deposit_card_size;
+                if (a.category_card_size) document.getElementById('categoryCardSizeRange').value = a.category_card_size;
+
+                // ألوان الوضع الداكن
+                if (a.dark_bg_color) document.getElementById('darkBgColor').value = a.dark_bg_color;
+                if (a.dark_card_bg) document.getElementById('darkCardBg').value = a.dark_card_bg;
+                if (a.dark_border_color) document.getElementById('darkBorderColor').value = a.dark_border_color;
+                if (a.dark_text_color) document.getElementById('darkTextColor').value = a.dark_text_color;
+                if (a.dark_subtext_color) document.getElementById('darkSubtextColor').value = a.dark_subtext_color;
+                if (a.dark_sidebar_bg) document.getElementById('darkSidebarBg').value = a.dark_sidebar_bg;
+
+                // ألوان الوضع الفاتح
+                if (a.light_bg_color) document.getElementById('lightBgColor').value = a.light_bg_color;
+                if (a.light_card_bg) document.getElementById('lightCardBg').value = a.light_card_bg;
+                if (a.light_border_color) document.getElementById('lightBorderColor').value = a.light_border_color;
+                if (a.light_text_color) document.getElementById('lightTextColor').value = a.light_text_color;
+                if (a.light_subtext_color) document.getElementById('lightSubtextColor').value = a.light_subtext_color;
+                if (a.light_sidebar_bg) document.getElementById('lightSidebarBg').value = a.light_sidebar_bg;
+                if (a.light_accent_color) document.getElementById('lightAccentColor').value = a.light_accent_color;
+
+                // PWA
+                if (a.pwa_name) document.getElementById('pwaName').value = a.pwa_name;
+                if (a.pwa_short_name) document.getElementById('pwaShortName').value = a.pwa_short_name;
+                if (a.pwa_theme_color) document.getElementById('pwaThemeColor').value = a.pwa_theme_color;
+
                 previewFontFamily();
                 previewAppearance();
             } catch (e) {
@@ -6661,6 +7595,8 @@ Code   : -
             const sw = document.getElementById('sidebarWidthRange').value;
             const th = document.getElementById('topHeaderSizeRange').value;
             const bh = document.getElementById('bottomNavSizeRange').value;
+            const ccs = document.getElementById('categoryCardSizeRange').value;
+            const dcs = document.getElementById('depositCardSizeRange').value;
 
             document.getElementById('topHeaderPreview').style.background = `linear-gradient(135deg, ${c1} 0%, ${c2} 50%, ${c3} 100%)`;
             document.getElementById('bottomNavPreview').style.background = `linear-gradient(135deg, ${b1} 0%, ${b2} 50%, ${b3} 100%)`;
@@ -6669,9 +7605,56 @@ Code   : -
             document.getElementById('sidebarWidthValue').innerText = sw + 'px';
             document.getElementById('topHeaderSizeValue').innerText = th + 'px';
             document.getElementById('bottomNavSizeValue').innerText = bh + 'px';
+            document.getElementById('categoryCardSizeValue').innerText = ccs + '%';
+            document.getElementById('depositCardSizeValue').innerText = dcs + '%';
         }
 
         async function saveAppearanceSettings() {
+            // قراءة ألوان الوضع الداكن
+            const darkBgColor = document.getElementById('darkBgColor').value;
+            const darkCardBg = document.getElementById('darkCardBg').value;
+            const darkBorderColor = document.getElementById('darkBorderColor').value;
+            const darkTextColor = document.getElementById('darkTextColor').value;
+            const darkSubtextColor = document.getElementById('darkSubtextColor').value;
+            const darkSidebarBg = document.getElementById('darkSidebarBg').value;
+            
+            // قراءة ألوان الوضع الفاتح
+            const lightBgColor = document.getElementById('lightBgColor').value;
+            const lightCardBg = document.getElementById('lightCardBg').value;
+            const lightBorderColor = document.getElementById('lightBorderColor').value;
+            const lightTextColor = document.getElementById('lightTextColor').value;
+            const lightSubtextColor = document.getElementById('lightSubtextColor').value;
+            const lightSidebarBg = document.getElementById('lightSidebarBg').value;
+            const lightAccentColor = document.getElementById('lightAccentColor').value;
+            
+            // قراءة إعدادات PWA
+            const pwaName = document.getElementById('pwaName').value;
+            const pwaShortName = document.getElementById('pwaShortName').value;
+            const pwaThemeColor = document.getElementById('pwaThemeColor').value;
+            
+            // قراءة صور PWA
+            const pwaIconInput = document.getElementById('pwaIconInput');
+            const pwaSplashInput = document.getElementById('pwaSplashInput');
+            
+            let pwaIconData = '';
+            let pwaSplashData = '';
+            
+            if (pwaIconInput.files && pwaIconInput.files[0]) {
+                pwaIconData = await new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => resolve(e.target.result);
+                    reader.readAsDataURL(pwaIconInput.files[0]);
+                });
+            }
+            
+            if (pwaSplashInput.files && pwaSplashInput.files[0]) {
+                pwaSplashData = await new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => resolve(e.target.result);
+                    reader.readAsDataURL(pwaSplashInput.files[0]);
+                });
+            }
+            
             const data = {
                 font_family: document.getElementById('fontFamilySelect').value,
                 top_header_color1: document.getElementById('topHeaderColor1').value,
@@ -6684,7 +7667,30 @@ Code   : -
                 sidebar_font_size: parseInt(document.getElementById('sidebarFontSizeRange').value),
                 sidebar_width: parseInt(document.getElementById('sidebarWidthRange').value),
                 top_header_height: parseInt(document.getElementById('topHeaderSizeRange').value),
-                bottom_nav_height: parseInt(document.getElementById('bottomNavSizeRange').value)
+                bottom_nav_height: parseInt(document.getElementById('bottomNavSizeRange').value),
+                deposit_card_size: parseInt(document.getElementById('depositCardSizeRange').value),
+                category_card_size: parseInt(document.getElementById('categoryCardSizeRange').value),
+                // الوضع الداكن
+                dark_bg_color: darkBgColor,
+                dark_card_bg: darkCardBg,
+                dark_border_color: darkBorderColor,
+                dark_text_color: darkTextColor,
+                dark_subtext_color: darkSubtextColor,
+                dark_sidebar_bg: darkSidebarBg,
+                // الوضع الفاتح
+                light_bg_color: lightBgColor,
+                light_card_bg: lightCardBg,
+                light_border_color: lightBorderColor,
+                light_text_color: lightTextColor,
+                light_subtext_color: lightSubtextColor,
+                light_sidebar_bg: lightSidebarBg,
+                light_accent_color: lightAccentColor,
+                // PWA
+                pwa_name: pwaName,
+                pwa_short_name: pwaShortName,
+                pwa_theme_color: pwaThemeColor,
+                pwa_icon: pwaIconData,
+                pwa_splash_image: pwaSplashData
             };
 
             try {
@@ -6891,7 +7897,9 @@ Code   : -
                 subcats.forEach((s, idx) => {
                     const item = document.createElement('div');
                     item.className = 'multi-select-item';
-                    let badge = s.is_counter ? '<span class="counter-badge">عداد</span>' : '';
+                    let badge = '';
+                    if (s.is_counter) badge += '<span class="counter-badge">عداد</span>';
+                    if (s.group_id) badge += '<span class="group-badge">مجموعة</span>';
                     item.innerHTML = `
                         <input type="checkbox" id="delCatSub_${idx}" value="${s.name}" onchange="updateDelCatMultiCount()">
                         <label class="ms-label" for="delCatSub_${idx}">${badge}${s.name} (${formatBalance(s.price)}$)</label>
@@ -7551,6 +8559,215 @@ Code   : -
             }, 600);
         }
 
+        // ====== Subcategory Group Management ======
+        let groupsCache = {};
+
+        function openAddGroupModal() {
+            toggleSidebar();
+            document.getElementById('groupNameInput').value = '';
+            document.getElementById('groupImageInput').value = '';
+            document.getElementById('groupCategoryPreviewBox').style.display = 'none';
+
+            fetch('/api/products')
+                .then(r => r.json())
+                .then(products => {
+                    const prodSelect = document.getElementById('groupProductSelect');
+                    prodSelect.innerHTML = '<option value="">-- اختر المنتج --</option>';
+                    products.forEach(p => {
+                        prodSelect.innerHTML += `<option value="${p.name}">${p.name}</option>`;
+                    });
+                });
+
+            fetch('/api/categories')
+                .then(r => r.json())
+                .then(cats => {
+                    const catSelect = document.getElementById('groupCategorySelect');
+                    catSelect.innerHTML = '<option value="">-- اختر القسم --</option>';
+                    Object.keys(cats).forEach(cat => {
+                        catSelect.innerHTML += `<option value="${cat}">${cat}</option>`;
+                    });
+                });
+
+            openModal('addGroupModalOverlay');
+        }
+
+        function loadGroupCategoryPreview() {
+            const prod = document.getElementById('groupProductSelect').value;
+            if (!prod) {
+                document.getElementById('groupCategoryPreviewBox').style.display = 'none';
+                return;
+            }
+            const box = document.getElementById('groupCategoryPreviewBox');
+            box.style.display = 'block';
+            box.innerText = 'سيتم إضافة المجموعة تحت المنتج: ' + prod;
+        }
+
+        function loadGroupProductPreview() {
+            const cat = document.getElementById('groupCategorySelect').value;
+            if (!cat) return;
+            const box = document.getElementById('groupCategoryPreviewBox');
+            box.style.display = 'block';
+            box.innerText = 'القسم المختار: ' + cat;
+        }
+
+        async function saveGroup() {
+            const name = document.getElementById('groupNameInput').value.trim();
+            const product = document.getElementById('groupProductSelect').value;
+            const fileInput = document.getElementById('groupImageInput');
+
+            if (!name || !product) {
+                alert('يرجى إدخال اسم المجموعة واختيار المنتج!');
+                return;
+            }
+
+            let imageData = '';
+            if (fileInput.files && fileInput.files[0]) {
+                const reader = new FileReader();
+                imageData = await new Promise((resolve) => {
+                    reader.onload = (e) => resolve(e.target.result);
+                    reader.readAsDataURL(fileInput.files[0]);
+                });
+            }
+
+            try {
+                const res = await fetch('/api/add_subcategory_group', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, product, image: imageData })
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    alert('تم إضافة المجموعة بنجاح!');
+                    closeModal('addGroupModalOverlay');
+                    fetchStatsAndRender();
+                } else {
+                    alert(data.message || 'حدث خطأ أثناء الحفظ!');
+                }
+            } catch (e) {
+                alert('فشل الاتصال بالخادم!');
+            }
+        }
+
+        function openManageGroupsModal() {
+            toggleSidebar();
+            fetch('/api/products')
+                .then(r => r.json())
+                .then(products => {
+                    const prodSelect = document.getElementById('manageGroupsProductSelect');
+                    prodSelect.innerHTML = '<option value="">-- اختر المنتج --</option>';
+                    products.forEach(p => {
+                        prodSelect.innerHTML += `<option value="${p.name}">${p.name}</option>`;
+                    });
+                });
+            document.getElementById('groupsListContainer').innerHTML = '';
+            openModal('manageGroupsModalOverlay');
+        }
+
+        async function loadGroupsForManage() {
+            const product = document.getElementById('manageGroupsProductSelect').value;
+            const container = document.getElementById('groupsListContainer');
+            container.innerHTML = '';
+
+            if (!product) return;
+
+            try {
+                const res = await fetch('/api/get_subcategory_groups');
+                groupsCache = await res.json();
+                const groups = groupsCache[product] || [];
+
+                if (groups.length === 0) {
+                    container.innerHTML = '<div style="text-align:center; color:#a1a1aa; font-size:0.8rem; padding:15px;">لا توجد مجموعات في هذا المنتج</div>';
+                    return;
+                }
+
+                groups.forEach(g => {
+                    const item = document.createElement('div');
+                    item.className = 'group-item-card-admin';
+                    item.innerHTML = `
+                        <div style="display:flex; flex-direction:column; gap:2px;">
+                            <span class="g-name">${g.name}</span>
+                            <span class="g-count">ID: ${g.id}</span>
+                        </div>
+                        <div class="g-actions">
+                            <button class="edit-group-btn" onclick="openEditGroupModal('${g.id}', '${g.name.replace(/'/g, "\\'")}')">تعديل</button>
+                            <button class="delete-group-btn" onclick="deleteGroup('${g.id}')">حذف</button>
+                        </div>
+                    `;
+                    container.appendChild(item);
+                });
+            } catch (e) {
+                container.innerHTML = '<div style="text-align:center; color:#f87171; font-size:0.8rem; padding:15px;">فشل تحميل المجموعات!</div>';
+            }
+        }
+
+        function openEditGroupModal(groupId, groupName) {
+            document.getElementById('editGroupNameInput').value = groupName;
+            document.getElementById('editGroupImageInput').value = '';
+            window._editingGroupId = groupId;
+            openModal('editGroupModalOverlay');
+        }
+
+        async function saveEditedGroup() {
+            const name = document.getElementById('editGroupNameInput').value.trim();
+            const fileInput = document.getElementById('editGroupImageInput');
+            const groupId = window._editingGroupId;
+
+            if (!name) {
+                alert('يرجى إدخال اسم المجموعة!');
+                return;
+            }
+
+            let imageData = '';
+            if (fileInput.files && fileInput.files[0]) {
+                const reader = new FileReader();
+                imageData = await new Promise((resolve) => {
+                    reader.onload = (e) => resolve(e.target.result);
+                    reader.readAsDataURL(fileInput.files[0]);
+                });
+            }
+
+            try {
+                const res = await fetch('/api/update_subcategory_group', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: groupId, name, image: imageData })
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    alert('تم تعديل المجموعة بنجاح!');
+                    closeModal('editGroupModalOverlay');
+                    loadGroupsForManage();
+                } else {
+                    alert(data.message || 'حدث خطأ أثناء التعديل!');
+                }
+            } catch (e) {
+                alert('فشل الاتصال بالخادم!');
+            }
+        }
+
+        async function deleteGroup(groupId) {
+            if (!confirm('هل أنت متأكد من حذف هذه المجموعة؟ ستنزل الفئات التابعة لها إلى المستوى الرئيسي.')) return;
+
+            try {
+                const res = await fetch('/api/delete_subcategory_group', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: groupId })
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    alert('تم حذف المجموعة بنجاح!');
+                    loadGroupsForManage();
+                } else {
+                    alert(data.message || 'حدث خطأ أثناء الحذف!');
+                }
+            } catch (e) {
+                alert('فشل الاتصال بالخادم!');
+            }
+        }
+
+        // ====== End Subcategory Group Management ======
+
         function openAddCategoryModal() {
             toggleSidebar();
             document.getElementById('newCategoryNameInput').value = '';
@@ -7856,8 +9073,10 @@ Code   : -
             toggleSidebar();
             Promise.all([
                 fetch('/api/products').then(r => r.json()),
-                fetch('/api/get_providers').then(r => r.json())
-            ]).then(([products, providers]) => {
+                fetch('/api/get_providers').then(r => r.json()),
+                fetch('/api/get_subcategory_groups').then(r => r.json())
+            ]).then(([products, providers, groups]) => {
+                groupsCache = groups;
                 const prodSelect = document.getElementById('subCatProductSelect');
                 prodSelect.innerHTML = '';
                 products.forEach(p => {
@@ -7868,26 +9087,55 @@ Code   : -
                 providers.forEach(p => {
                     provSelect.innerHTML += `<option value="${p.name}">${p.name}</option>`;
                 });
+                updateSubCatGroupSelect();
             });
             document.getElementById('subCatNameInput').value = '';
             document.getElementById('subCatPriceInput').value = '';
             document.getElementById('subCatApiProductIdInput').value = '';
+            document.getElementById('subCatProfitMarginInput').value = '0';
             document.getElementById('subCatDescriptionInput').value = '';
             document.getElementById('subCatImageInput').value = '';
             document.getElementById('apiProductPreviewBox').style.display = 'none';
             openModal('addSubCategoryModalOverlay');
         }
 
+        function updateSubCatGroupSelect() {
+            const product = document.getElementById('subCatProductSelect').value;
+            const groupSelect = document.getElementById('subCatGroupSelect');
+            groupSelect.innerHTML = '<option value="">بدون مجموعة (تظهر مباشرة)</option>';
+            const groups = groupsCache[product] || [];
+            groups.forEach(g => {
+                groupSelect.innerHTML += `<option value="${g.id}">${g.name}</option>`;
+            });
+        }
+
+        function openAddGroupFromSubcat() {
+            const product = document.getElementById('subCatProductSelect').value;
+            if (!product) {
+                alert('يرجى اختيار المنتج أولاً!');
+                return;
+            }
+            closeModal('addSubCategoryModalOverlay');
+            document.getElementById('groupProductSelect').value = product;
+            document.getElementById('groupNameInput').value = '';
+            document.getElementById('groupImageInput').value = '';
+            openModal('addGroupModalOverlay');
+            loadGroupCategoryPreview();
+        }
+
         async function saveSubCategory() {
             const name = document.getElementById('subCatNameInput').value.trim();
-            const price = parseFloat(document.getElementById('subCatPriceInput').value);
+            const price = parseFloat(document.getElementById('subCatPriceInput').value) || 0;
             const product = document.getElementById('subCatProductSelect').value;
             const providerName = document.getElementById('subCatProviderSelect').value;
             const apiProductId = document.getElementById('subCatApiProductIdInput').value.trim();
+            const profitMargin = parseFloat(document.getElementById('subCatProfitMarginInput').value) || 0;
             const description = document.getElementById('subCatDescriptionInput').value.trim();
+            const groupId = document.getElementById('subCatGroupSelect').value;
             const fileInput = document.getElementById('subCatImageInput');
 
-            if (!name || isNaN(price) || !product) { alert('يرجى تعبئة جميع الحقول المطلوبة!'); return; }
+            if (!name || !product) { alert('يرجى تعبئة اسم الفئة واختيار المنتج!'); return; }
+            if (!apiProductId && (isNaN(price) || price <= 0)) { alert('يرجى إدخال سعر صحيح أو ربط الفئة بـ API!'); return; }
 
             const processSave = async (image) => {
                 await fetch('/api/add_subcategory', {
@@ -7897,8 +9145,10 @@ Code   : -
                         name, price, product, 
                         provider_name: providerName, 
                         api_product_id: apiProductId, 
+                        profit_margin: profitMargin,
                         description, image,
-                        is_counter: false
+                        is_counter: false,
+                        group_id: groupId || null
                     })
                 });
                 alert('تم إضافة الفئة بنجاح!');
@@ -7974,6 +9224,7 @@ Code   : -
                         product, 
                         provider_name: providerName, 
                         api_product_id: apiProductId, 
+                        profit_margin: 0,
                         description, 
                         image,
                         is_counter: true,
@@ -8089,6 +9340,7 @@ Code   : -
             document.getElementById('revOrdEmail').innerText = order.email || 'غير معروف';
             document.getElementById('revOrdInput').innerText = order.input || 'لا يوجد';
             document.getElementById('revOrdQuantity').innerText = order.quantity || '1';
+            document.getElementById('revOrdSource').innerText = order.order_source || 'الموقع';
             openModal('reviewOrderModal');
         }
 
@@ -8511,6 +9763,7 @@ Code   : -
                 document.getElementById('exProfit').innerText = '-';
             }
 
+            document.getElementById('exOrderSource').innerText = order.order_source || 'الموقع';
             document.getElementById('exDate').innerText = `${order.time || '12:00:00'} ${order.date || ''}`;
             document.getElementById('exUserInput').innerText = order.input || '-';
 
@@ -8571,6 +9824,8 @@ class WebAppHandler(BaseHTTPRequestHandler):
                             order['status'] = "مكتملة"
                             changed = True
                         elif api_status == "reject":
+                            if order.get('status') == "مرفوضة":
+                                continue
                             order['status'] = "مرفوضة"
                             u_email = order.get('email')
                             if u_email in USERS_DATA:
@@ -8590,7 +9845,6 @@ class WebAppHandler(BaseHTTPRequestHandler):
             self.send_response(503)
             self.send_header("Content-type", "text/html; charset=utf-8")
             self.end_headers()
-            # Serve a maintenance page with the user's HTML (which now includes the maintenance screen)
             self.wfile.write(USER_HTML_CONTENT.encode("utf-8"))
             return
 
@@ -8605,6 +9859,158 @@ class WebAppHandler(BaseHTTPRequestHandler):
             self.send_header("Content-type", "application/json; charset=utf-8")
             self.end_headers()
             self.wfile.write(json.dumps(MAINTENANCE_DATA, ensure_ascii=False).encode("utf-8"))
+
+        elif self.path == "/manifest.json":
+            pwa_name = APPEARANCE_DATA.get('pwa_name', 'SYRIA CARD ONE')
+            pwa_short = APPEARANCE_DATA.get('pwa_short_name', 'SyriaCard')
+            pwa_theme = APPEARANCE_DATA.get('pwa_theme_color', '#00897b')
+            pwa_bg = APPEARANCE_DATA.get('pwa_background_color', '#050508')
+            
+            manifest = {
+                "name": pwa_name,
+                "short_name": pwa_short,
+                "description": "منصة رقمية متكاملة لخدمات الشحن والبطاقات الرقمية",
+                "start_url": "/",
+                "display": "standalone",
+                "orientation": "portrait",
+                "background_color": pwa_bg,
+                "theme_color": pwa_theme,
+                "lang": "ar",
+                "dir": "rtl",
+                "icons": [
+                    {
+                        "src": "/pwa-icon",
+                        "sizes": "192x192",
+                        "type": "image/png",
+                        "purpose": "any maskable"
+                    },
+                    {
+                        "src": "/pwa-icon",
+                        "sizes": "512x512",
+                        "type": "image/png",
+                        "purpose": "any maskable"
+                    }
+                ],
+                "screenshots": [
+                    {
+                        "src": "/pwa-splash",
+                        "sizes": "1080x1920",
+                        "type": "image/png",
+                        "form_factor": "narrow"
+                    }
+                ]
+            }
+            
+            self.send_response(200)
+            self.send_header("Content-type", "application/manifest+json; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(json.dumps(manifest, ensure_ascii=False).encode("utf-8"))
+
+        elif self.path == "/pwa-icon":
+            icon_data = APPEARANCE_DATA.get('pwa_icon', '') or SPLASH_DATA.get('image', '')
+            
+            if icon_data and icon_data.startswith('data:image'):
+                try:
+                    header, base64_data = icon_data.split(',', 1)
+                    img_bytes = base64.b64decode(base64_data)
+                    img_type = header.split(';')[0].split(':')[1]
+                    
+                    self.send_response(200)
+                    self.send_header("Content-type", img_type)
+                    self.send_header("Cache-Control", "public, max-age=86400")
+                    self.end_headers()
+                    self.wfile.write(img_bytes)
+                except Exception as e:
+                    logging.error(f"خطأ في تحويل أيقونة PWA: {e}")
+                    self.send_response(404)
+                    self.end_headers()
+            else:
+                # أيقونة افتراضية SVG
+                default_svg = '''<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+                    <rect width="512" height="512" rx="100" fill="#00897b"/>
+                    <text x="50%" y="45%" fill="#fff" font-size="80" text-anchor="middle" dominant-baseline="middle" font-weight="bold" font-family="Arial">SYRIA</text>
+                    <text x="50%" y="60%" fill="#fff" font-size="60" text-anchor="middle" dominant-baseline="middle" font-weight="bold" font-family="Arial">CARD ONE</text>
+                </svg>'''
+                self.send_response(200)
+                self.send_header("Content-type", "image/svg+xml")
+                self.end_headers()
+                self.wfile.write(default_svg.encode("utf-8"))
+
+        elif self.path == "/pwa-splash":
+            splash_data = APPEARANCE_DATA.get('pwa_splash_image', '') or SPLASH_DATA.get('image', '')
+            
+            if splash_data and splash_data.startswith('data:image'):
+                try:
+                    header, base64_data = splash_data.split(',', 1)
+                    img_bytes = base64.b64decode(base64_data)
+                    img_type = header.split(';')[0].split(':')[1]
+                    
+                    self.send_response(200)
+                    self.send_header("Content-type", img_type)
+                    self.end_headers()
+                    self.wfile.write(img_bytes)
+                except:
+                    self.send_response(404)
+                    self.end_headers()
+            else:
+                self.send_response(404)
+                self.end_headers()
+
+        elif self.path == "/service-worker.js":
+            sw_code = '''
+const CACHE_NAME = 'syria-card-v1';
+const urlsToCache = ['/', '/api-docs'];
+
+self.addEventListener('install', event => {
+    event.waitUntil(
+        caches.open(CACHE_NAME).then(cache => cache.addAll(urlsToCache))
+    );
+    self.skipWaiting();
+});
+
+self.addEventListener('activate', event => {
+    event.waitUntil(
+        caches.keys().then(cacheNames => {
+            return Promise.all(
+                cacheNames.map(cacheName => {
+                    if (cacheName !== CACHE_NAME) {
+                        return caches.delete(cacheName);
+                    }
+                })
+            );
+        })
+    );
+    self.clients.claim();
+});
+
+self.addEventListener('fetch', event => {
+    if (event.request.method !== 'GET') return;
+    if (event.request.url.includes('/api/')) return;
+    
+    event.respondWith(
+        caches.match(event.request).then(response => {
+            return response || fetch(event.request).then(fetchRes => {
+                return caches.open(CACHE_NAME).then(cache => {
+                    if (event.request.url.startsWith(self.location.origin)) {
+                        cache.put(event.request, fetchRes.clone());
+                    }
+                    return fetchRes;
+                });
+            });
+        }).catch(() => caches.match('/'))
+    );
+});
+'''
+            self.send_response(200)
+            self.send_header("Content-type", "application/javascript; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(sw_code.encode("utf-8"))
+
+        elif self.path == "/api/get_appearance_settings":
+            self.send_response(200)
+            self.send_header("Content-type", "application/json; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(json.dumps(APPEARANCE_DATA, ensure_ascii=False).encode("utf-8"))
 
         elif self.path == "/api/admin_stats":
             total_users = len(USERS_DATA)
@@ -8632,17 +10038,23 @@ class WebAppHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps(SETTINGS_DATA, ensure_ascii=False).encode("utf-8"))
 
-        elif self.path == "/api/get_appearance_settings":
+        elif self.path == "/api/get_ticker_settings":
             self.send_response(200)
             self.send_header("Content-type", "application/json; charset=utf-8")
             self.end_headers()
-            self.wfile.write(json.dumps(APPEARANCE_DATA, ensure_ascii=False).encode("utf-8"))
+            self.wfile.write(json.dumps(TICKER_DATA, ensure_ascii=False).encode("utf-8"))
 
         elif self.path == "/api/get_currencies":
             self.send_response(200)
             self.send_header("Content-type", "application/json; charset=utf-8")
             self.end_headers()
             self.wfile.write(json.dumps(CURRENCIES_DATA, ensure_ascii=False).encode("utf-8"))
+
+        elif self.path == "/api/get_subcategory_groups":
+            self.send_response(200)
+            self.send_header("Content-type", "application/json; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(json.dumps(SUBCATEGORY_GROUPS_DATA, ensure_ascii=False).encode("utf-8"))
 
         elif self.path == "/api-docs":
             self.send_response(200)
@@ -8901,7 +10313,8 @@ class WebAppHandler(BaseHTTPRequestHandler):
                     "time": now.strftime("%H:%M:%S"),
                     "quantity": qty,
                     "is_counter": sub.get('is_counter', False),
-                    "replay_api": replay_api
+                    "replay_api": replay_api,
+                    "order_source": "api"
                 }
                 ORDERS_DATA.append(new_order)
                 save_json_file(ORDERS_FILE, ORDERS_DATA)
@@ -9210,6 +10623,15 @@ class WebAppHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps({"status": "success", "is_active": is_active}, ensure_ascii=False).encode("utf-8"))
 
+        elif self.path == "/api/update_ticker_settings":
+            TICKER_DATA['text'] = data.get('text', 'عالمك الرقمي المتكامل صُمم لك خصيصاً')
+            TICKER_DATA['color'] = data.get('color', '#38bdf8')
+            save_json_file(TICKER_FILE, TICKER_DATA)
+            self.send_response(200)
+            self.send_header("Content-type", "application/json; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "success"}).encode("utf-8"))
+
         elif self.path == "/api/register":
             email = data.get('email', '').strip()
             phone = data.get('phone', '')
@@ -9361,6 +10783,35 @@ class WebAppHandler(BaseHTTPRequestHandler):
             APPEARANCE_DATA['sidebar_width'] = int(data.get('sidebar_width', 300))
             APPEARANCE_DATA['top_header_height'] = int(data.get('top_header_height', 65))
             APPEARANCE_DATA['bottom_nav_height'] = int(data.get('bottom_nav_height', 62))
+            APPEARANCE_DATA['deposit_card_size'] = int(data.get('deposit_card_size', 100))
+            APPEARANCE_DATA['category_card_size'] = int(data.get('category_card_size', 100))
+            
+            # الوضع الداكن
+            APPEARANCE_DATA['dark_bg_color'] = data.get('dark_bg_color', '#050508')
+            APPEARANCE_DATA['dark_card_bg'] = data.get('dark_card_bg', '#121212')
+            APPEARANCE_DATA['dark_border_color'] = data.get('dark_border_color', '#27272a')
+            APPEARANCE_DATA['dark_text_color'] = data.get('dark_text_color', '#ffffff')
+            APPEARANCE_DATA['dark_subtext_color'] = data.get('dark_subtext_color', '#a1a1aa')
+            APPEARANCE_DATA['dark_sidebar_bg'] = data.get('dark_sidebar_bg', '#09090f')
+            APPEARANCE_DATA['dark_input_bg'] = data.get('dark_input_bg', '#000000')
+            
+            # الوضع الفاتح
+            APPEARANCE_DATA['light_bg_color'] = data.get('light_bg_color', '#f4f4f5')
+            APPEARANCE_DATA['light_card_bg'] = data.get('light_card_bg', '#ffffff')
+            APPEARANCE_DATA['light_border_color'] = data.get('light_border_color', '#e4e4e7')
+            APPEARANCE_DATA['light_text_color'] = data.get('light_text_color', '#09090b')
+            APPEARANCE_DATA['light_subtext_color'] = data.get('light_subtext_color', '#71717a')
+            APPEARANCE_DATA['light_sidebar_bg'] = data.get('light_sidebar_bg', '#ffffff')
+            APPEARANCE_DATA['light_input_bg'] = data.get('light_input_bg', '#f4f4f5')
+            APPEARANCE_DATA['light_accent_color'] = data.get('light_accent_color', '#0284c7')
+            
+            # PWA
+            if data.get('pwa_name'): APPEARANCE_DATA['pwa_name'] = data.get('pwa_name')
+            if data.get('pwa_short_name'): APPEARANCE_DATA['pwa_short_name'] = data.get('pwa_short_name')
+            if data.get('pwa_theme_color'): APPEARANCE_DATA['pwa_theme_color'] = data.get('pwa_theme_color')
+            if data.get('pwa_icon'): APPEARANCE_DATA['pwa_icon'] = data.get('pwa_icon')
+            if data.get('pwa_splash_image'): APPEARANCE_DATA['pwa_splash_image'] = data.get('pwa_splash_image')
+            
             save_json_file(APPEARANCE_FILE, APPEARANCE_DATA)
             self.send_response(200)
             self.send_header("Content-type", "application/json; charset=utf-8")
@@ -9909,6 +11360,10 @@ class WebAppHandler(BaseHTTPRequestHandler):
                                 USERS_DATA[email]['balance'] = current_balance
                                 save_json_file(USERS_FILE, USERS_DATA)
                                 new_balance = current_balance
+                            elif st == 'wait':
+                                order_status = "قيد الانتظار"
+                            else:
+                                order_status = "قيد الانتظار"
                         else:
                             fail_reason = api_res.get('message') or api_res.get('code') or 'خطأ بالاستجابة من المزود'
                             order_status = "تم الارسال للتشيك"
@@ -9934,7 +11389,8 @@ class WebAppHandler(BaseHTTPRequestHandler):
                     "date": now.strftime("%Y-%m-%d"),
                     "time": now.strftime("%H:%M:%S"),
                     "quantity": quantity,
-                    "is_counter": is_counter
+                    "is_counter": is_counter,
+                    "order_source": "الموقع"
                 }
                 ORDERS_DATA.append(order)
                 save_json_file(ORDERS_FILE, ORDERS_DATA)
@@ -9961,7 +11417,8 @@ class WebAppHandler(BaseHTTPRequestHandler):
                     user_password=user_pwd,
                     user_ip=user_ip,
                     current_balance=new_balance,
-                    previous_balance=current_balance
+                    previous_balance=current_balance,
+                    order_source="الموقع"
                 )
 
                 u_id = USERS_DATA[email].get("id", 1001)
@@ -10244,29 +11701,176 @@ class WebAppHandler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps({"status": "success"}).encode("utf-8"))
 
         elif self.path == "/api/add_subcategory":
+            name = data.get('name')
+            raw_price = float(data.get('price', 0))
+            product = data.get('product')
+            provider_name = data.get('provider_name', '')
+            api_product_id = data.get('api_product_id', '')
+            description = data.get('description', '')
+            image = data.get('image', '')
+            is_counter = data.get('is_counter', False)
+            profit_margin = float(data.get('profit_margin', 0))
+
+            base_price = raw_price
+            final_price = raw_price
+
+            if api_product_id and provider_name:
+                provider = next((p for p in PROVIDERS_DATA if p.get('name') == provider_name), None)
+                if provider:
+                    try:
+                        token = provider.get('token')
+                        base_url = provider.get('url', '').rstrip('/') + '/'
+                        products_url = f"{base_url}client/api/products"
+                        api_products = make_api_request(products_url, token, timeout=15)
+
+                        if isinstance(api_products, list):
+                            found_prod = None
+                            for ap in api_products:
+                                if str(ap.get('id')) == str(api_product_id):
+                                    found_prod = ap
+                                    break
+
+                            if found_prod:
+                                base_price = float(found_prod.get('base_price', found_prod.get('price', raw_price)))
+                                final_price = round(base_price * (1 + (profit_margin / 100.0)), 3)
+                                logging.info(f"تم جلب سعر الفئة '{name}' من المزود: base={base_price}$، final={final_price}$ (ربح {profit_margin}%)")
+                            else:
+                                logging.warning(f"لم يتم العثور على المنتج {api_product_id} لدى المزود {provider_name}")
+                        else:
+                            logging.warning(f"استجابة المزود ليست قائمة منتجات صحيحة")
+                    except Exception as e:
+                        logging.error(f"فشل جلب السعر من المزود {provider_name}: {e}")
+
             new_sub = {
-                "name": data.get('name'),
-                "price": round(float(data.get('price', 0)), 3),
-                "base_price": round(float(data.get('price', 0)), 3),
-                "product": data.get('product'),
-                "provider_name": data.get('provider_name', ''),
-                "api_product_id": data.get('api_product_id', ''),
-                "description": data.get('description', ''),
-                "image": data.get('image', ''),
-                "is_counter": data.get('is_counter', False)
+                "name": name,
+                "price": final_price if not is_counter else round(float(data.get('counter_min_price', final_price)), 3),
+                "base_price": base_price,
+                "product": product,
+                "provider_name": provider_name,
+                "api_product_id": api_product_id,
+                "description": description,
+                "image": image,
+                "is_counter": is_counter,
+                "profit_margin": profit_margin if api_product_id else 0
             }
-            
-            if data.get('is_counter'):
+
+            group_id = data.get('group_id')
+            if group_id:
+                new_sub['group_id'] = group_id
+
+            if is_counter:
+                counter_min_price = final_price if api_product_id else float(data.get('counter_min_price', 0))
                 new_sub['counter_min_qty'] = int(data.get('counter_min_qty', 1))
                 new_sub['counter_max_qty'] = int(data.get('counter_max_qty', 0)) if data.get('counter_max_qty') else None
-                new_sub['counter_min_price'] = round(float(data.get('counter_min_price', 0)), 3)
-            
+                new_sub['counter_min_price'] = round(counter_min_price, 3)
+                new_sub['price'] = round(counter_min_price, 3)
+
             SUBCATEGORIES_DATA.append(new_sub)
             save_json_file(SUBCATEGORIES_FILE, SUBCATEGORIES_DATA)
+
             self.send_response(200)
             self.send_header("Content-type", "application/json; charset=utf-8")
             self.end_headers()
-            self.wfile.write(json.dumps({"status": "success"}).encode("utf-8"))
+            self.wfile.write(json.dumps({
+                "status": "success",
+                "base_price": base_price,
+                "final_price": final_price
+            }, ensure_ascii=False).encode("utf-8"))
+
+        elif self.path == "/api/add_subcategory_group":
+            name = data.get('name', '').strip()
+            product = data.get('product', '').strip()
+            image = data.get('image', '')
+            
+            if not name or not product:
+                self.send_response(200)
+                self.send_header("Content-type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "error", "message": "يرجى إدخال اسم المجموعة والمنتج!"}).encode("utf-8"))
+                return
+            
+            if product not in SUBCATEGORY_GROUPS_DATA:
+                SUBCATEGORY_GROUPS_DATA[product] = []
+            
+            group_id = str(uuid.uuid4())
+            new_group = {
+                "id": group_id,
+                "name": name,
+                "image": image,
+                "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+            SUBCATEGORY_GROUPS_DATA[product].append(new_group)
+            save_json_file(SUBCATEGORY_GROUPS_FILE, SUBCATEGORY_GROUPS_DATA)
+            
+            self.send_response(200)
+            self.send_header("Content-type", "application/json; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "success", "group_id": group_id}, ensure_ascii=False).encode("utf-8"))
+
+        elif self.path == "/api/update_subcategory_group":
+            group_id = data.get('id')
+            new_name = data.get('name', '').strip()
+            new_image = data.get('image', '')
+            
+            if not group_id or not new_name:
+                self.send_response(200)
+                self.send_header("Content-type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "error", "message": "بيانات غير مكتملة!"}).encode("utf-8"))
+                return
+            
+            found = False
+            for product, groups in SUBCATEGORY_GROUPS_DATA.items():
+                for g in groups:
+                    if g.get('id') == group_id:
+                        g['name'] = new_name
+                        if new_image:
+                            g['image'] = new_image
+                        found = True
+                        break
+                if found:
+                    break
+            
+            if found:
+                save_json_file(SUBCATEGORY_GROUPS_FILE, SUBCATEGORY_GROUPS_DATA)
+                self.send_response(200)
+                self.send_header("Content-type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "success"}).encode("utf-8"))
+            else:
+                self.send_response(200)
+                self.send_header("Content-type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "error", "message": "المجموعة غير موجودة!"}).encode("utf-8"))
+
+        elif self.path == "/api/delete_subcategory_group":
+            group_id = data.get('id')
+            
+            found = False
+            for product, groups in SUBCATEGORY_GROUPS_DATA.items():
+                for i, g in enumerate(groups):
+                    if g.get('id') == group_id:
+                        groups.pop(i)
+                        found = True
+                        break
+                if found:
+                    break
+            
+            if found:
+                for sub in SUBCATEGORIES_DATA:
+                    if sub.get('group_id') == group_id:
+                        del sub['group_id']
+                save_json_file(SUBCATEGORY_GROUPS_FILE, SUBCATEGORY_GROUPS_DATA)
+                save_json_file(SUBCATEGORIES_FILE, SUBCATEGORIES_DATA)
+                self.send_response(200)
+                self.send_header("Content-type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "success"}).encode("utf-8"))
+            else:
+                self.send_response(200)
+                self.send_header("Content-type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "error", "message": "المجموعة غير موجودة!"}).encode("utf-8"))
 
         elif self.path == "/api/delete_subcategory":
             name = data.get('name')
@@ -10308,9 +11912,13 @@ class WebAppHandler(BaseHTTPRequestHandler):
             for i in reversed(sub_to_delete):
                 SUBCATEGORIES_DATA.pop(i)
             
+            if name in SUBCATEGORY_GROUPS_DATA:
+                del SUBCATEGORY_GROUPS_DATA[name]
+            
             if prod_to_delete:
                 save_json_file(PRODUCTS_FILE, PRODUCTS_DATA)
                 save_json_file(SUBCATEGORIES_FILE, SUBCATEGORIES_DATA)
+                save_json_file(SUBCATEGORY_GROUPS_FILE, SUBCATEGORY_GROUPS_DATA)
                 self.send_response(200)
                 self.send_header("Content-type", "application/json; charset=utf-8")
                 self.end_headers()
@@ -10331,8 +11939,13 @@ class WebAppHandler(BaseHTTPRequestHandler):
             for i in reversed(sub_to_delete):
                 SUBCATEGORIES_DATA.pop(i)
             
+            for name in names:
+                if name in SUBCATEGORY_GROUPS_DATA:
+                    del SUBCATEGORY_GROUPS_DATA[name]
+            
             save_json_file(PRODUCTS_FILE, PRODUCTS_DATA)
             save_json_file(SUBCATEGORIES_FILE, SUBCATEGORIES_DATA)
+            save_json_file(SUBCATEGORY_GROUPS_FILE, SUBCATEGORY_GROUPS_DATA)
             self.send_response(200)
             self.send_header("Content-type", "application/json; charset=utf-8")
             self.end_headers()
