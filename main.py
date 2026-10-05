@@ -5535,6 +5535,7 @@ ADMIN_HTML_CONTENT = """
                 <button class="sub-menu-btn" onclick="openProfitMarginModal()">نسبة الربح</button>
                 <button class="sub-menu-btn" onclick="openViewProvidersPage()">عرض المزودات</button>
                 <button class="sub-menu-btn" onclick="openApiImportScreen()" style="color:#4ade80; border-color:#4ade80; font-weight:800;">سحب API</button>
+                <button class="sub-menu-btn" onclick="openEditImportedScreen()" style="color:#f59e0b; border-color:#f59e0b; font-weight:800;">تعديل العناصر المستوردة</button>
             </div>
 
             <button class="admin-menu-btn" onclick="toggleSubMenu('usersMenu')">
@@ -6939,6 +6940,74 @@ Code   : -
                 <button onclick="saveAppearanceSettings()" style="width:100%; padding:16px; background:linear-gradient(135deg, #16a34a 0%, #22c55e 100%); border:none; border-radius:14px; color:#fff; font-size:1.05rem; font-weight:800; cursor:pointer; box-shadow:0 6px 20px rgba(34,197,94,0.4); margin-bottom:30px;">حفظ الإعدادات</button>
             </div>
         </div>
+
+        <!-- ================= EDIT IMPORTED ITEMS SCREEN ================= -->
+        <div id="editImportedScreen" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:#050508; z-index:99999; overflow-y:auto; flex-direction:column; padding:20px;">
+            <div style="position:sticky; top:0; background:linear-gradient(135deg, #1e1b4b 0%, #312e81 100%); padding:16px 20px; display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #f59e0b; z-index:10; margin:-20px -20px 20px -20px;">
+                <div style="display:flex; align-items:center; gap:10px;">
+                    <button id="editImportedBackBtn" onclick="editImportedGoBack()" style="background:rgba(255,255,255,0.15); border:none; color:#fff; padding:8px 14px; border-radius:8px; font-size:0.85rem; font-weight:700; cursor:pointer; display:none;">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:middle; margin-left:4px;"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+                        رجوع
+                    </button>
+                    <div style="font-size:1.1rem; font-weight:800; color:#fff;" id="editImportedTitle">📦 الأقسام المستوردة</div>
+                </div>
+                <button onclick="closeEditImportedScreen()" style="background:rgba(255,255,255,0.15); border:none; color:#fff; width:36px; height:36px; border-radius:50%; font-size:1.2rem; cursor:pointer;">✕</button>
+            </div>
+
+            <!-- مسار التنقل -->
+            <div id="editImportedBreadcrumb" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:15px; font-size:0.8rem; color:#a1a1aa; align-items:center;"></div>
+
+            <!-- قائمة العناصر -->
+            <div id="editImportedListContainer" style="display:flex; flex-direction:column; gap:12px;"></div>
+
+            <!-- حالة فارغة -->
+            <div id="editImportedEmpty" style="display:none; text-align:center; padding:60px 20px; color:#a1a1aa; font-size:0.9rem; font-weight:700;">
+                لا توجد عناصر مستوردة حتى الآن
+            </div>
+        </div>
+
+        <!-- ================= EDIT ITEM MODAL ================= -->
+        <div class="modal-overlay" id="editImportedItemModal">
+            <div class="modal-box">
+                <div class="modal-title" style="color:#f59e0b;">✏️ تعديل العنصر</div>
+
+                <div class="form-group">
+                    <label>الاسم:</label>
+                    <input type="text" id="editImportedNameInput" placeholder="أدخل الاسم الجديد...">
+                </div>
+
+                <div class="form-group" id="editImportedProfitGroup">
+                    <label>نسبة الربح (%):</label>
+                    <input type="number" id="editImportedProfitInput" placeholder="مثال: 10" step="0.1" min="0">
+                    <div style="font-size:0.72rem; color:#a1a1aa; margin-top:4px;">تُطبق على السعر الأساسي القادم من المزود.</div>
+                </div>
+
+                <div class="form-group">
+                    <label>الصورة (اتركها فارغة للاحتفاظ بالصورة الحالية):</label>
+                    <input type="file" id="editImportedImageInput" accept="image/*">
+                    <div id="editImportedImagePreview" style="margin-top:8px; display:none;">
+                        <img id="editImportedImagePreviewImg" style="width:100%; max-height:150px; object-fit:cover; border-radius:8px; border:1px solid #27272a;">
+                    </div>
+                </div>
+
+                <button class="save-btn" style="background:linear-gradient(135deg, #b45309, #f59e0b);" onclick="saveEditImportedItem()">💾 حفظ التعديلات</button>
+                <button class="btn-secondary" onclick="closeModal('editImportedItemModal')">إلغاء</button>
+            </div>
+        </div>
+
+        <!-- ================= DELETE CONFIRM MODAL ================= -->
+        <div class="modal-overlay" id="deleteImportedItemModal">
+            <div class="modal-box">
+                <div class="modal-title" style="color:#f87171;">⚠️ تأكيد الحذف</div>
+                <div style="text-align:center; padding:15px; font-size:0.9rem; color:#fff; line-height:1.7;" id="deleteImportedItemMsg">
+                    هل أنت متأكد من حذف هذا العنصر وكل ما يحتويه؟
+                </div>
+                <div class="action-btns-row">
+                    <button class="btn-reject" onclick="confirmDeleteImportedItem()">🗑️ نعم، احذف</button>
+                    <button class="btn-secondary" onclick="closeModal('deleteImportedItemModal')">إلغاء</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -7243,6 +7312,510 @@ Code   : -
             }
         }
 
+        // ==================== EDIT IMPORTED ITEMS ====================
+        let editImportedState = {
+            path: [],          // مسار التنقل: [{type, id, name}, ...]
+            currentLevel: 'root',  // root | category | product | subcategory
+            currentId: null,       // معرّف المستوى الحالي
+            parentProduct: null,   // اسم المنتج الأب (للفئات)
+            cache: null            // كاش للبيانات
+        };
+
+        // أيقونات SVG
+        const ICON_EDIT = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
+        const ICON_DELETE = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>`;
+        const ICON_FOLDER = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>`;
+        const ICON_BOX = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 8h-3V4H3c-1.1 0-2 .9-2 2v11h2c0 1.66 1.34 3 3 3s3-1.34 3-3h6c0 1.66 1.34 3 3 3s3-1.34 3-3h2v-5l-3-4z"/></svg>`;
+        const ICON_TAG = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M21.41 11.58l-9-9C12.05 2.22 11.55 2 11 2H4c-1.1 0-2 .9-2 2v7c0 .55.22 1.05.59 1.42l9 9c.36.36.86.58 1.41.58.55 0 1.05-.22 1.41-.59l7-7c.37-.36.59-.86.59-1.41 0-.55-.23-1.06-.59-1.42zM5.5 7C4.67 7 4 6.33 4 5.5S4.67 4 5.5 4 7 4.67 7 5.5 6.33 7 5.5 7z"/></svg>`;
+
+        function openEditImportedScreen() {
+            toggleSidebar();
+            document.getElementById('adminMainSection').style.display = 'none';
+            document.getElementById('checkOrdersPage').style.display = 'none';
+            document.getElementById('checkDepositsPage').style.display = 'none';
+            document.getElementById('viewProvidersPage').style.display = 'none';
+            document.getElementById('deleteCategoryPage').style.display = 'none';
+            document.getElementById('deleteProductPage').style.display = 'none';
+            document.getElementById('clientsListScreen').classList.remove('active');
+            document.getElementById('apiImportScreen').classList.remove('active');
+
+            editImportedState = {
+                path: [],
+                currentLevel: 'root',
+                currentId: null,
+                parentProduct: null,
+                cache: null
+            };
+
+            document.getElementById('editImportedScreen').style.display = 'flex';
+            loadImportedRoot();
+        }
+
+        function closeEditImportedScreen() {
+            document.getElementById('editImportedScreen').style.display = 'none';
+            document.getElementById('adminMainSection').style.display = 'block';
+        }
+
+        // تحديث مسار التنقل (breadcrumb)
+        function renderEditImportedBreadcrumb() {
+            const container = document.getElementById('editImportedBreadcrumb');
+            container.innerHTML = '';
+
+            // زر الجذر
+            const rootCrumb = document.createElement('div');
+            rootCrumb.className = 'imported-crumb' + (editImportedState.path.length === 0 ? ' current' : '');
+            rootCrumb.innerHTML = `${ICON_FOLDER} الأقسام الرئيسية`;
+            if (editImportedState.path.length > 0) {
+                rootCrumb.onclick = () => {
+                    editImportedState.path = [];
+                    loadImportedRoot();
+                };
+            }
+            container.appendChild(rootCrumb);
+
+            // باقي المسار
+            editImportedState.path.forEach((node, idx) => {
+                const sep = document.createElement('span');
+                sep.className = 'imported-crumb-sep';
+                sep.innerText = '◀';
+                container.appendChild(sep);
+
+                const crumb = document.createElement('div');
+                const isLast = idx === editImportedState.path.length - 1;
+                crumb.className = 'imported-crumb' + (isLast ? ' current' : '');
+                crumb.innerText = node.name;
+                if (!isLast) {
+                    crumb.onclick = () => {
+                        editImportedState.path = editImportedState.path.slice(0, idx + 1);
+                        navigateToNode(node);
+                    };
+                }
+                container.appendChild(crumb);
+            });
+
+            // إظهار/إخفاء زر الرجوع
+            const backBtn = document.getElementById('editImportedBackBtn');
+            backBtn.style.display = editImportedState.path.length > 0 ? 'block' : 'none';
+        }
+
+        function editImportedGoBack() {
+            if (editImportedState.path.length === 0) return;
+            editImportedState.path.pop();
+            if (editImportedState.path.length === 0) {
+                loadImportedRoot();
+            } else {
+                navigateToNode(editImportedState.path[editImportedState.path.length - 1]);
+            }
+        }
+
+        // تحديد نوع العنصر من مساره
+        function navigateToNode(node) {
+            if (node.type === 'category') {
+                loadImportedCategoryProducts(node.id, node.name);
+            } else if (node.type === 'product') {
+                loadImportedProductChildren(node.id, node.name, node.parentCategory);
+            } else if (node.type === 'subcategory') {
+                // إذا كان للفئة أبناء، نعرضهم، وإلا لا شيء
+                loadImportedProductChildren(node.id, node.name, node.parentCategory);
+            }
+        }
+
+        // ==================== التحميل من الجذر ====================
+        async function loadImportedRoot() {
+            editImportedState.currentLevel = 'root';
+            editImportedState.currentId = null;
+
+            const container = document.getElementById('editImportedListContainer');
+            const emptyMsg = document.getElementById('editImportedEmpty');
+            container.innerHTML = '<div style="text-align:center; padding:40px; color:#a1a1aa; font-weight:700;">جاري التحميل...</div>';
+            emptyMsg.style.display = 'none';
+
+            document.getElementById('editImportedTitle').innerText = '📦 الأقسام المستوردة';
+
+            try {
+                const res = await fetch('/api/get_imported_categories');
+                const data = await res.json();
+
+                renderEditImportedBreadcrumb();
+                container.innerHTML = '';
+
+                if (!data || data.length === 0) {
+                    emptyMsg.style.display = 'block';
+                    return;
+                }
+
+                data.forEach(cat => {
+                    const rect = buildImportedItemRect({
+                        type: 'category',
+                        id: cat.name,        // اسم القسم هو المعرّف
+                        name: cat.name,
+                        image: cat.image || '',
+                        extra: `منتج: ${cat.products_count || 0} | فئة: ${cat.subcategories_count || 0}`,
+                        badge: 'قسم رئيسي',
+                        badgeClass: 'badge-category',
+                        parentCategory: cat.name
+                    });
+                    container.appendChild(rect);
+                });
+            } catch (e) {
+                console.error(e);
+                container.innerHTML = '<div style="text-align:center; color:#f87171; padding:30px; font-weight:700;">فشل التحميل!</div>';
+            }
+        }
+
+        // ==================== تحميل منتجات قسم رئيسي ====================
+        async function loadImportedCategoryProducts(categoryName, categoryDisplayName) {
+            editImportedState.currentLevel = 'category';
+            editImportedState.currentId = categoryName;
+
+            document.getElementById('editImportedTitle').innerText = `📁 ${categoryDisplayName}`;
+
+            const container = document.getElementById('editImportedListContainer');
+            const emptyMsg = document.getElementById('editImportedEmpty');
+            container.innerHTML = '<div style="text-align:center; padding:40px; color:#a1a1aa; font-weight:700;">جاري التحميل...</div>';
+            emptyMsg.style.display = 'none';
+
+            try {
+                const res = await fetch('/api/get_imported_items?category=' + encodeURIComponent(categoryName));
+                const data = await res.json();
+
+                renderEditImportedBreadcrumb();
+                container.innerHTML = '';
+
+                const products = data.products || [];
+                const subcats = data.subcategories || [];
+
+                if (products.length === 0 && subcats.length === 0) {
+                    emptyMsg.style.display = 'block';
+                    return;
+                }
+
+                // المنتجات الفرعية
+                products.forEach(p => {
+                    const rect = buildImportedItemRect({
+                        type: 'product',
+                        id: p.name,
+                        name: p.name,
+                        image: p.image || '',
+                        extra: p.has_children ? 'يحتوي على عناصر فرعية' : 'منتج',
+                        badge: 'منتج',
+                        badgeClass: 'badge-product',
+                        parentCategory: categoryName
+                    });
+                    container.appendChild(rect);
+                });
+
+                // الفئات المباشرة (بدون منتج أب)
+                subcats.forEach(s => {
+                    const rect = buildImportedItemRect({
+                        type: 'subcategory',
+                        id: s.name,
+                        name: s.name,
+                        image: s.image || '',
+                        extra: `السعر: ${formatBalance(s.price)}$ | ربح: ${s.profit_margin || 0}%`,
+                        badge: 'فئة',
+                        badgeClass: 'badge-subcategory',
+                        parentCategory: categoryName,
+                        parentProduct: s.product
+                    });
+                    container.appendChild(rect);
+                });
+            } catch (e) {
+                console.error(e);
+                container.innerHTML = '<div style="text-align:center; color:#f87171; padding:30px; font-weight:700;">فشل التحميل!</div>';
+            }
+        }
+
+        // ==================== تحميل أبناء منتج أو فئة ====================
+        async function loadImportedProductChildren(productName, productDisplayName, parentCategory) {
+            editImportedState.currentLevel = 'product';
+            editImportedState.currentId = productName;
+            editImportedState.parentProduct = productName;
+
+            document.getElementById('editImportedTitle').innerText = `📦 ${productDisplayName}`;
+
+            const container = document.getElementById('editImportedListContainer');
+            const emptyMsg = document.getElementById('editImportedEmpty');
+            container.innerHTML = '<div style="text-align:center; padding:40px; color:#a1a1aa; font-weight:700;">جاري التحميل...</div>';
+            emptyMsg.style.display = 'none';
+
+            try {
+                const res = await fetch('/api/get_imported_items?category=' + encodeURIComponent(parentCategory) + '&product=' + encodeURIComponent(productName));
+                const data = await res.json();
+
+                renderEditImportedBreadcrumb();
+                container.innerHTML = '';
+
+                const products = data.products || [];
+                const subcats = data.subcategories || [];
+
+                if (products.length === 0 && subcats.length === 0) {
+                    emptyMsg.style.display = 'block';
+                    return;
+                }
+
+                products.forEach(p => {
+                    const rect = buildImportedItemRect({
+                        type: 'product',
+                        id: p.name,
+                        name: p.name,
+                        image: p.image || '',
+                        extra: p.has_children ? 'يحتوي على عناصر فرعية' : 'منتج فرعي',
+                        badge: 'منتج',
+                        badgeClass: 'badge-product',
+                        parentCategory: parentCategory
+                    });
+                    container.appendChild(rect);
+                });
+
+                subcats.forEach(s => {
+                    const rect = buildImportedItemRect({
+                        type: 'subcategory',
+                        id: s.name,
+                        name: s.name,
+                        image: s.image || '',
+                        extra: `السعر: ${formatBalance(s.price)}$ | ربح: ${s.profit_margin || 0}%`,
+                        badge: 'فئة',
+                        badgeClass: 'badge-subcategory',
+                        parentCategory: parentCategory,
+                        parentProduct: s.product
+                    });
+                    container.appendChild(rect);
+                });
+            } catch (e) {
+                console.error(e);
+                container.innerHTML = '<div style="text-align:center; color:#f87171; padding:30px; font-weight:700;">فشل التحميل!</div>';
+            }
+        }
+
+        // ==================== بناء مستطيل عنصر ====================
+        function buildImportedItemRect(opts) {
+            const rect = document.createElement('div');
+            rect.className = 'imported-item-rect';
+
+            const thumbHTML = opts.image
+                ? `<img src="${opts.image}" class="item-thumb" onerror="this.outerHTML='<div class=\\'item-thumb-placeholder\\'>📁</div>'">`
+                : `<div class="item-thumb-placeholder">${opts.type === 'category' ? ICON_FOLDER : (opts.type === 'product' ? ICON_BOX : ICON_TAG)}</div>`;
+
+            rect.innerHTML = `
+                <div class="item-right">
+                    ${thumbHTML}
+                    <div class="item-info">
+                        <div class="item-name">${opts.name}</div>
+                        <div class="item-meta">
+                            <span class="item-type-badge ${opts.badgeClass}">${opts.badge}</span>
+                            ${opts.extra || ''}
+                        </div>
+                    </div>
+                </div>
+                <div class="imported-item-actions">
+                    <button class="imported-action-btn edit-btn" title="تعديل">${ICON_EDIT}</button>
+                    <button class="imported-action-btn delete-btn" title="حذف">${ICON_DELETE}</button>
+                </div>
+            `;
+
+            // النقر على الجزء الأيمن للدخول (إن كان له أبناء)
+            rect.querySelector('.item-right').onclick = () => {
+                if (opts.type === 'category') {
+                    editImportedState.path.push({
+                        type: 'category',
+                        id: opts.id,
+                        name: opts.name
+                    });
+                    loadImportedCategoryProducts(opts.id, opts.name);
+                } else if (opts.type === 'product') {
+                    editImportedState.path.push({
+                        type: 'product',
+                        id: opts.id,
+                        name: opts.name,
+                        parentCategory: opts.parentCategory
+                    });
+                    loadImportedProductChildren(opts.id, opts.name, opts.parentCategory);
+                } else if (opts.type === 'subcategory') {
+                    // الفئة عادةً ما تكون نهائية، لكن إذا كان لها أبناء نحاول
+                    editImportedState.path.push({
+                        type: 'subcategory',
+                        id: opts.id,
+                        name: opts.name,
+                        parentCategory: opts.parentCategory,
+                        parentProduct: opts.parentProduct
+                    });
+                    loadImportedProductChildren(opts.id, opts.name, opts.parentCategory);
+                }
+            };
+
+            // زر التعديل
+            rect.querySelector('.edit-btn').onclick = (e) => {
+                e.stopPropagation();
+                openEditImportedItemModal(opts);
+            };
+
+            // زر الحذف
+            rect.querySelector('.delete-btn').onclick = (e) => {
+                e.stopPropagation();
+                openDeleteImportedItemModal(opts);
+            };
+
+            return rect;
+        }
+
+        // ==================== فتح مودال التعديل ====================
+        let currentlyEditingImportedItem = null;
+
+        function openEditImportedItemModal(item) {
+            currentlyEditingImportedItem = item;
+
+            document.getElementById('editImportedNameInput').value = item.name;
+            document.getElementById('editImportedImageInput').value = '';
+
+            // إظهار حقل الربح فقط للفئات
+            const profitGroup = document.getElementById('editImportedProfitGroup');
+            if (item.type === 'subcategory') {
+                profitGroup.style.display = 'flex';
+                // جلب نسبة الربح الحالية
+                fetch('/api/get_imported_items?category=' + encodeURIComponent(item.parentCategory || '') +
+                      '&product=' + encodeURIComponent(item.parentProduct || item.parentCategory || '') +
+                      '&name=' + encodeURIComponent(item.name))
+                    .then(r => r.json())
+                    .then(data => {
+                        const match = (data.subcategories || []).find(s => s.name === item.name);
+                        if (match) {
+                            document.getElementById('editImportedProfitInput').value = match.profit_margin || 0;
+                        } else {
+                            document.getElementById('editImportedProfitInput').value = 0;
+                        }
+                    })
+                    .catch(() => {
+                        document.getElementById('editImportedProfitInput').value = 0;
+                    });
+            } else {
+                profitGroup.style.display = 'none';
+            }
+
+            // معاينة الصورة الحالية
+            const preview = document.getElementById('editImportedImagePreview');
+            const previewImg = document.getElementById('editImportedImagePreviewImg');
+            if (item.image) {
+                previewImg.src = item.image;
+                preview.style.display = 'block';
+            } else {
+                preview.style.display = 'none';
+            }
+
+            openModal('editImportedItemModal');
+        }
+
+        async function saveEditImportedItem() {
+            if (!currentlyEditingImportedItem) return;
+
+            const newName = document.getElementById('editImportedNameInput').value.trim();
+            const newProfit = parseFloat(document.getElementById('editImportedProfitInput').value) || 0;
+            const fileInput = document.getElementById('editImportedImageInput');
+
+            if (!newName) {
+                alert('يرجى إدخال الاسم!');
+                return;
+            }
+
+            let imageData = '';
+            if (fileInput.files && fileInput.files[0]) {
+                imageData = await new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => resolve(e.target.result);
+                    reader.readAsDataURL(fileInput.files[0]);
+                });
+            }
+
+            const payload = {
+                type: currentlyEditingImportedItem.type,
+                old_name: currentlyEditingImportedItem.name,
+                new_name: newName,
+                category: currentlyEditingImportedItem.parentCategory || '',
+                product: currentlyEditingImportedItem.parentProduct || currentlyEditingImportedItem.parentCategory || '',
+                profit_margin: newProfit,
+                image: imageData
+            };
+
+            try {
+                const res = await fetch('/api/update_imported_item', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+
+                if (data.status === 'success') {
+                    alert('✅ تم حفظ التعديلات بنجاح!');
+                    closeModal('editImportedItemModal');
+                    // أعد تحميل المستوى الحالي
+                    refreshCurrentEditImportedLevel();
+                } else {
+                    alert('❌ ' + (data.message || 'فشل التعديل!'));
+                }
+            } catch (e) {
+                alert('فشل الاتصال بالخادم!');
+            }
+        }
+
+        // ==================== فتح مودال الحذف ====================
+        let currentlyDeletingImportedItem = null;
+
+        function openDeleteImportedItemModal(item) {
+            currentlyDeletingImportedItem = item;
+
+            let msg = 'هل أنت متأكد من حذف ';
+            if (item.type === 'category') {
+                msg += `القسم الرئيسي «${item.name}» وكل ما يحتويه من منتجات وفئات؟`;
+            } else if (item.type === 'product') {
+                msg += `المنتج «${item.name}» وكل الفئات التابعة له؟`;
+            } else {
+                msg += `الفئة «${item.name}»؟`;
+            }
+
+            document.getElementById('deleteImportedItemMsg').innerText = msg;
+            openModal('deleteImportedItemModal');
+        }
+
+        async function confirmDeleteImportedItem() {
+            if (!currentlyDeletingImportedItem) return;
+
+            const payload = {
+                type: currentlyDeletingImportedItem.type,
+                name: currentlyDeletingImportedItem.name,
+                category: currentlyDeletingImportedItem.parentCategory || '',
+                product: currentlyDeletingImportedItem.parentProduct || currentlyDeletingImportedItem.parentCategory || ''
+            };
+
+            try {
+                const res = await fetch('/api/delete_imported_item', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+
+                if (data.status === 'success') {
+                    alert('🗑️ تم الحذف بنجاح!');
+                    closeModal('deleteImportedItemModal');
+                    refreshCurrentEditImportedLevel();
+                } else {
+                    alert('❌ ' + (data.message || 'فشل الحذف!'));
+                }
+            } catch (e) {
+                alert('فشل الاتصال بالخادم!');
+            }
+        }
+
+        function refreshCurrentEditImportedLevel() {
+            const path = editImportedState.path;
+            if (path.length === 0) {
+                loadImportedRoot();
+            } else {
+                navigateToNode(path[path.length - 1]);
+            }
+        }
+
+        // ==================== استيراد الأقسام من API ====================
         let apiImportCurrentProvider = '';
         let apiImportCategories = [];
         let apiImportCategoryToImport = null;
@@ -9082,6 +9655,10 @@ Code   : -
                 products.forEach(p => {
                     prodSelect.innerHTML += `<option value="${p.name}">${p.name}</option>`;
                 });
+                
+                // ✅ ربط تغيير المنتج بتحديث المجموعات
+                prodSelect.onchange = updateSubCatGroupSelect;
+                
                 const provSelect = document.getElementById('subCatProviderSelect');
                 provSelect.innerHTML = '<option value="">بدون مزود (يدوي)</option>';
                 providers.forEach(p => {
@@ -10597,6 +11174,130 @@ self.addEventListener('fetch', event => {
                 self.end_headers()
                 self.wfile.write(json.dumps({"status": "error", "message": "المستخدم غير موجود"}).encode("utf-8"))
 
+        elif self.path.startswith("/api/get_imported_categories"):
+            # جلب كل الأقسام الرئيسية المستوردة (من API_IMPORTS_DATA)
+            result = []
+            seen_names = set()
+
+            for key, info in API_IMPORTS_DATA.items():
+                cat_name = info.get('category_name')
+                if not cat_name or cat_name in seen_names:
+                    continue
+                seen_names.add(cat_name)
+
+                # عد المنتجات والفئات في هذا القسم
+                products_count = len([p for p in PRODUCTS_DATA if p.get('category') == cat_name])
+                subcats_count = len([
+                    s for s in SUBCATEGORIES_DATA
+                    if s.get('product') in [p.get('name') for p in PRODUCTS_DATA if p.get('category') == cat_name]
+                       or s.get('api_import_key') == key
+                ])
+
+                result.append({
+                    "name": cat_name,
+                    "image": CATEGORIES_DATA.get(cat_name, ''),
+                    "original_name": info.get('original_category_name', ''),
+                    "provider_name": info.get('provider_name', ''),
+                    "products_count": products_count,
+                    "subcategories_count": subcats_count,
+                    "import_key": key
+                })
+
+            self.send_response(200)
+            self.send_header("Content-type", "application/json; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(json.dumps(result, ensure_ascii=False).encode("utf-8"))
+
+        elif self.path.startswith("/api/get_imported_items"):
+            query = urllib.parse.urlparse(self.path).query
+            params = urllib.parse.parse_qs(query)
+            category = params.get('category', [''])[0]
+            product = params.get('product', [''])[0]
+
+            products_result = []
+            subcats_result = []
+
+            if category and not product:
+                # نعرض منتجات القسم الرئيسي + الفئات التي لا تنتمي لمنتج (أو الفئات الجذرية)
+                all_products_in_cat = [p for p in PRODUCTS_DATA if p.get('category') == category]
+
+                # نتحقق إن كان المنتج يحتوي على أبناء (منتجات أو فئات)
+                for p in all_products_in_cat:
+                    p_name = p.get('name')
+                    has_children = any(
+                        sub.get('product') == p_name
+                        for sub in SUBCATEGORIES_DATA
+                    ) or any(
+                        prod.get('parent_product') == p_name
+                        for prod in PRODUCTS_DATA
+                    )
+                    products_result.append({
+                        "name": p_name,
+                        "image": p.get('image', ''),
+                        "has_children": has_children
+                    })
+
+                # الفئات التي تنتمي مباشرة للقسم (بدون منتج أب مسجل)
+                # نعتبر الفئات التي لها api_import_key مرتبط بهذا القسم فقط إذا لم يكن لها منتج أب
+                subcats_result = []  # لن نعرضها في الجذر لتجنب الالتباس
+
+            elif category and product:
+                # نعرض منتجات وأبناء المنتج المحدد
+                all_products_in_cat = [p for p in PRODUCTS_DATA if p.get('category') == category]
+
+                # 1) منتجات فرعية: أي منتج اسمه غير product و parent_product == product
+                #    لكن نظامنا الحالي يخزن المنتجات في PRODUCTS_DATA بدون parent_product،
+                #    لذلك نعتمد على SUBCATEGORIES_DATA: أي subcategory product == product
+                subcats_result = [
+                    s for s in SUBCATEGORIES_DATA
+                    if s.get('product') == product
+                ]
+
+                # 2) منتجات فرعية: نبحث عن منتجات لها فئات product = product (أي المنتج الأب = product)
+                #    لكن لا نملك علاقة أب-ابن للمنتجات حالياً في المخطط، لذا سنستخدم
+                #    subcategories المنتمية للمنتج كـ "أبناء"
+                #    أما المنتجات الفرعية داخل منتج، فسنكتشفها من خلال انتماء فئاتها لنفس المنتج.
+
+                # نبني قائمة أبناء:
+                #   - إذا كان للمنتج فئات (subcats) → نعرضها
+                #   - إذا كان هناك منتجات أخرى لها فئات ضمن نفس القسم وتنتمي لنفس الأب (لا يوجد حالياً)
+                products_result = []  # في المستوى الحالي لا نملك علاقة أب-ابن للمنتجات
+
+                # نبحث عن منتجات "أبناء" من خلال حقل parent_product إن وُجد
+                for p in all_products_in_cat:
+                    if p.get('parent_product') == product:
+                        has_children = any(
+                            sub.get('product') == p.get('name')
+                            for sub in SUBCATEGORIES_DATA
+                        )
+                        products_result.append({
+                            "name": p.get('name'),
+                            "image": p.get('image', ''),
+                            "has_children": has_children
+                        })
+
+            # تنظيف الفئات من أي حقول غير قابلة للتسلسل
+            clean_subcats = []
+            for s in subcats_result:
+                clean_subcats.append({
+                    "name": s.get('name'),
+                    "product": s.get('product'),
+                    "image": s.get('image', ''),
+                    "price": float(s.get('price', 0)),
+                    "base_price": float(s.get('base_price', 0)),
+                    "profit_margin": float(s.get('profit_margin', 0)),
+                    "api_product_id": s.get('api_product_id', ''),
+                    "provider_name": s.get('provider_name', '')
+                })
+
+            self.send_response(200)
+            self.send_header("Content-type", "application/json; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                "products": products_result,
+                "subcategories": clean_subcats
+            }, ensure_ascii=False).encode("utf-8"))
+
         else:
             self.send_response(200)
             self.send_header("Content-type", "text/html; charset=utf-8")
@@ -11152,91 +11853,163 @@ self.addEventListener('fetch', event => {
                 original_name = data.get('original_category_name')
                 profit_margin = float(data.get('profit_margin', 0))
                 image = data.get('image', '')
-                
+
                 if not url.endswith('/'):
                     url += '/'
-                
+
+                # 1) إنشاء القسم الرئيسي
                 CATEGORIES_DATA[category_name] = image
                 save_json_file(CATEGORIES_FILE, CATEGORIES_DATA)
-                
-                content_url = f"{url}client/api/content/{category_id}"
-                content_data = make_api_request(content_url, token, timeout=20)
-                
-                imported_products = []
-                imported_subcategories = []
-                
-                if content_data.get('status') == 'OK' and content_data.get('data'):
-                    data_section = content_data.get('data', {})
-                    
-                    products = data_section.get('products', [])
-                    if isinstance(products, list):
-                        for prod in products:
-                            prod_name = prod.get('name', '')
-                            prod_image = prod.get('category_img', '') or prod.get('image', '')
-                            
-                            if prod_image and not prod_image.startswith('http'):
-                                prod_image = url.rstrip('/') + '/' + prod_image.lstrip('/')
-                            
-                            if prod_name:
-                                existing = [p for p in PRODUCTS_DATA if p.get('name') == prod_name and p.get('category') == category_name]
-                                if not existing:
-                                    PRODUCTS_DATA.append({
-                                        "name": prod_name,
-                                        "category": category_name,
-                                        "image": prod_image
-                                    })
-                                    imported_products.append(prod_name)
-                    
-                    subcats = data_section.get('categories', [])
-                    if isinstance(subcats, list):
-                        for subcat in subcats:
-                            subcat_id = subcat.get('id')
-                            subcat_name = subcat.get('name', '')
-                            subcat_image = subcat.get('image', '')
-                            
-                            if subcat_image and not subcat_image.startswith('http'):
-                                subcat_image = url.rstrip('/') + '/' + subcat_image.lstrip('/')
-                            
-                            if subcat_name:
-                                target_product = imported_products[0] if imported_products else category_name
-                                
-                                existing = [s for s in SUBCATEGORIES_DATA if s.get('name') == subcat_name and s.get('product') == target_product]
-                                if not existing:
-                                    new_sub = {
-                                        "name": subcat_name,
-                                        "price": 0,
-                                        "base_price": 0,
-                                        "product": target_product,
-                                        "provider_name": provider_name,
-                                        "api_product_id": str(subcat_id),
-                                        "description": f"فئة مستوردة من {provider_name}",
-                                        "image": subcat_image,
-                                        "is_counter": False,
-                                        "imported_from_api": True,
-                                        "api_import_key": f"{provider_name}_{original_name}",
-                                        "profit_margin": profit_margin
-                                    }
-                                    SUBCATEGORIES_DATA.append(new_sub)
-                                    imported_subcategories.append(subcat_name)
-                
+
+                # 2) جلب كل المنتجات من المزود لبناء خريطة الأسعار
                 products_url = f"{url}client/api/products"
-                api_products = make_api_request(products_url, token, timeout=20)
-                
-                if isinstance(api_products, list):
-                    for subcat in SUBCATEGORIES_DATA:
-                        if subcat.get('api_import_key') == f"{provider_name}_{original_name}":
-                            api_id = str(subcat.get('api_product_id', ''))
-                            for ap in api_products:
-                                if str(ap.get('id')) == api_id:
-                                    base_price = float(ap.get('base_price', ap.get('price', 0)))
-                                    new_price = round(base_price * (1 + (profit_margin / 100.0)), 3)
-                                    subcat['base_price'] = base_price
-                                    subcat['price'] = new_price
-                                    break
-                
+                try:
+                    api_products = make_api_request(products_url, token, timeout=20)
+                    if not isinstance(api_products, list):
+                        api_products = []
+                except Exception:
+                    api_products = []
+
+                price_map = {}
+                for ap in api_products:
+                    if isinstance(ap, dict):
+                        price_map[str(ap.get('id'))] = ap
+
+                # 3) دالة تكررية لاستيراد قسم (رئيسي أو فرعي) بشكل متداخل
+                def import_node(node_id, parent_product_name, level=0):
+                    """
+                    تستورد محتوى node_id وتُرجع عدد العناصر المستوردة.
+                    - إذا كان المنتج له منتجات فرعية (children)، كل واحد يصبح Product جديد
+                    - الفئات (categories) تصبح SubCategory تابعة للمنتج الأب
+                    """
+                    imported_p = 0
+                    imported_s = 0
+
+                    content_url = f"{url}client/api/content/{node_id}"
+                    try:
+                        content_data = make_api_request(content_url, token, timeout=20)
+                    except Exception as e:
+                        logging.warning(f"فشل جلب content/{node_id}: {e}")
+                        return 0, 0
+
+                    if not (isinstance(content_data, dict) and content_data.get('status') == 'OK'):
+                        return 0, 0
+
+                    data_section = content_data.get('data', {}) or {}
+                    products = data_section.get('products', []) or []
+                    subcats = data_section.get('categories', []) or []
+
+                    # 3-أ) استيراد المنتجات الفرعية
+                    for prod in products:
+                        if not isinstance(prod, dict):
+                            continue
+                        prod_name = prod.get('name', '').strip()
+                        prod_id = prod.get('id')
+                        if not prod_name:
+                            continue
+
+                        prod_image = prod.get('category_img', '') or prod.get('image', '')
+                        if prod_image and not str(prod_image).startswith('http') and not str(prod_image).startswith('data:'):
+                            prod_image = url.rstrip('/') + '/' + str(prod_image).lstrip('/')
+
+                        # هل المنتج موجود مسبقاً؟
+                        existing = next(
+                            (p for p in PRODUCTS_DATA
+                             if p.get('name') == prod_name and p.get('category') == category_name),
+                            None
+                        )
+                        if not existing:
+                            PRODUCTS_DATA.append({
+                                "name": prod_name,
+                                "category": category_name,
+                                "image": prod_image,
+                                "parent_product": parent_product_name if parent_product_name != category_name else None
+                            })
+                            imported_p += 1
+
+                        # ✅ استدعاء تكراري: نستورد محتوى هذا المنتج الفرعي (قد يحتوي على منتجات أعمق أو فئات)
+                        if prod_id is not None:
+                            sub_p, sub_s = import_node(prod_id, prod_name, level + 1)
+                            imported_p += sub_p
+                            imported_s += sub_s
+
+                    # 3-ب) استيراد الفئات (SubCategories) - نضعها تحت parent_product_name
+                    for subcat in subcats:
+                        if not isinstance(subcat, dict):
+                            continue
+                        subcat_id = subcat.get('id')
+                        subcat_name = subcat.get('name', '').strip()
+                        if not subcat_name:
+                            continue
+
+                        subcat_image = subcat.get('image', '')
+                        if subcat_image and not str(subcat_image).startswith('http') and not str(subcat_image).startswith('data:'):
+                            subcat_image = url.rstrip('/') + '/' + str(subcat_image).lstrip('/')
+
+                        # إذا كان للفئة منتجات فرعية (نادرة)، نعالجها كمنتج جديد
+                        # وإلا فهي فئة عادية
+                        has_children = bool(subcat.get('children')) or False
+
+                        # جلب السعر من price_map
+                        base_price = 0.0
+                        ap = price_map.get(str(subcat_id))
+                        if ap:
+                            try:
+                                base_price = float(ap.get('base_price', ap.get('price', 0)))
+                            except Exception:
+                                base_price = 0.0
+
+                        final_price = round(base_price * (1 + (profit_margin / 100.0)), 3)
+
+                        target_product = parent_product_name or category_name
+
+                        # تجنب التكرار
+                        exists = next(
+                            (s for s in SUBCATEGORIES_DATA
+                             if s.get('name') == subcat_name
+                             and s.get('product') == target_product
+                             and str(s.get('api_product_id', '')) == str(subcat_id)),
+                            None
+                        )
+                        if exists:
+                            # تحديث السعر
+                            exists['base_price'] = base_price
+                            exists['price'] = final_price
+                            exists['profit_margin'] = profit_margin
+                            continue
+
+                        new_sub = {
+                            "name": subcat_name,
+                            "price": final_price,
+                            "base_price": base_price,
+                            "product": target_product,
+                            "provider_name": provider_name,
+                            "api_product_id": str(subcat_id),
+                            "description": f"فئة مستوردة من {provider_name}",
+                            "image": subcat_image,
+                            "is_counter": False,
+                            "imported_from_api": True,
+                            "api_import_key": f"{provider_name}_{original_name}",
+                            "profit_margin": profit_margin
+                        }
+                        SUBCATEGORIES_DATA.append(new_sub)
+                        imported_s += 1
+
+                        # ✅ إذا كان للفئة منتجات فرعية داخلية، نستوردها كـ منتج جديد + فئاته
+                        if subcat_id is not None:
+                            sub_p, sub_s = import_node(subcat_id, subcat_name, level + 1)
+                            imported_p += sub_p
+                            imported_s += sub_s
+
+                    return imported_p, imported_s
+
+                # 4) بدء الاستيراد من القسم الرئيسي
+                total_p, total_s = import_node(category_id, category_name, level=0)
+
+                # 5) حفظ كل الملفات
                 save_json_file(PRODUCTS_FILE, PRODUCTS_DATA)
                 save_json_file(SUBCATEGORIES_FILE, SUBCATEGORIES_DATA)
-                
+
                 import_key = f"{provider_name}_{original_name}"
                 API_IMPORTS_DATA[import_key] = {
                     "provider_name": provider_name,
@@ -11246,27 +12019,206 @@ self.addEventListener('fetch', event => {
                     "profit_margin": profit_margin,
                     "imported_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     "last_price_check": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "products_count": len(imported_products),
-                    "subcategories_count": len(imported_subcategories)
+                    "products_count": total_p,
+                    "subcategories_count": total_s
                 }
                 save_json_file(API_IMPORTS_FILE, API_IMPORTS_DATA)
-                
+
                 self.send_response(200)
                 self.send_header("Content-type", "application/json; charset=utf-8")
                 self.end_headers()
                 self.wfile.write(json.dumps({
                     "status": "success",
                     "message": "تم الاستيراد بنجاح",
-                    "products_count": len(imported_products),
-                    "subcategories_count": len(imported_subcategories)
+                    "products_count": total_p,
+                    "subcategories_count": total_s
                 }, ensure_ascii=False).encode("utf-8"))
-                
+
             except Exception as e:
                 logging.error(f"خطأ في استيراد القسم من API: {e}")
                 self.send_response(200)
                 self.send_header("Content-type", "application/json; charset=utf-8")
                 self.end_headers()
                 self.wfile.write(json.dumps({"status": "error", "message": str(e)}).encode("utf-8"))
+
+        elif self.path == "/api/update_imported_item":
+            item_type = data.get('type')
+            old_name = data.get('old_name', '').strip()
+            new_name = data.get('new_name', '').strip()
+            category = data.get('category', '').strip()
+            product = data.get('product', '').strip()
+            profit_margin = float(data.get('profit_margin', 0))
+            image = data.get('image', '')
+
+            if not old_name or not new_name:
+                self.send_response(200)
+                self.send_header("Content-type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "error", "message": "بيانات غير مكتملة!"}, ensure_ascii=False).encode("utf-8"))
+                return
+
+            updated = False
+
+            if item_type == 'category':
+                # تعديل القسم الرئيسي
+                # 1) تغيير الاسم في CATEGORIES_DATA
+                if old_name in CATEGORIES_DATA:
+                    img_val = image if image else CATEGORIES_DATA[old_name]
+                    del CATEGORIES_DATA[old_name]
+                    CATEGORIES_DATA[new_name] = img_val
+                    save_json_file(CATEGORIES_FILE, CATEGORIES_DATA)
+
+                # 2) تحديث PRODUCTS_DATA
+                for p in PRODUCTS_DATA:
+                    if p.get('category') == old_name:
+                        p['category'] = new_name
+                        if image:
+                            p['image'] = image
+
+                # 3) تحديث API_IMPORTS_DATA
+                for key, info in API_IMPORTS_DATA.items():
+                    if info.get('category_name') == old_name:
+                        info['category_name'] = new_name
+
+                save_json_file(PRODUCTS_FILE, PRODUCTS_DATA)
+                save_json_file(API_IMPORTS_FILE, API_IMPORTS_DATA)
+                updated = True
+
+            elif item_type == 'product':
+                # تعديل منتج
+                for p in PRODUCTS_DATA:
+                    if p.get('name') == old_name and p.get('category') == category:
+                        p['name'] = new_name
+                        if image:
+                            p['image'] = image
+                        updated = True
+                        break
+
+                # تحديث الفئات المرتبطة
+                for s in SUBCATEGORIES_DATA:
+                    if s.get('product') == old_name:
+                        s['product'] = new_name
+
+                save_json_file(PRODUCTS_FILE, PRODUCTS_DATA)
+                save_json_file(SUBCATEGORIES_FILE, SUBCATEGORIES_DATA)
+
+            elif item_type == 'subcategory':
+                # تعديل فئة
+                for s in SUBCATEGORIES_DATA:
+                    if s.get('name') == old_name and s.get('product') == product:
+                        s['name'] = new_name
+                        if image:
+                            s['image'] = image
+                        if s.get('api_product_id'):
+                            # إعادة حساب السعر بناءً على نسبة الربح الجديدة
+                            base_price = float(s.get('base_price', 0))
+                            new_price = round(base_price * (1 + (profit_margin / 100.0)), 3)
+                            s['price'] = new_price
+                            s['profit_margin'] = profit_margin
+                            if s.get('is_counter'):
+                                s['counter_min_price'] = new_price
+                        updated = True
+                        break
+
+                save_json_file(SUBCATEGORIES_FILE, SUBCATEGORIES_DATA)
+
+            if updated:
+                self.send_response(200)
+                self.send_header("Content-type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "success"}, ensure_ascii=False).encode("utf-8"))
+            else:
+                self.send_response(200)
+                self.send_header("Content-type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "error", "message": "لم يتم العثور على العنصر!"}, ensure_ascii=False).encode("utf-8"))
+
+        elif self.path == "/api/delete_imported_item":
+            item_type = data.get('type')
+            name = data.get('name', '').strip()
+            category = data.get('category', '').strip()
+            product = data.get('product', '').strip()
+
+            deleted = False
+
+            if item_type == 'category':
+                # حذف قسم كامل: القسم + منتجاته + فئاته + مجموعاته + سجل الاستيراد
+                if name in CATEGORIES_DATA:
+                    del CATEGORIES_DATA[name]
+                    save_json_file(CATEGORIES_FILE, CATEGORIES_DATA)
+
+                # حذف منتجات القسم
+                PRODUCTS_DATA[:] = [p for p in PRODUCTS_DATA if p.get('category') != name]
+
+                # حذف الفئات التي تنتمي لمنتجات هذا القسم
+                product_names = [p.get('name') for p in PRODUCTS_DATA if p.get('category') == name]
+                # نأخذ أيضاً أسماء المنتجات المحذوفة من قبل الحذف
+                # لإصلاح ذلك، نحذف أولاً الفئات المرتبطة بأي منتج كان في هذا القسم
+                # (نستخدم API_IMPORTS_DATA لمعرفة أسماء المنتجات المرتبطة)
+                related_import_keys = [
+                    k for k, v in API_IMPORTS_DATA.items()
+                    if v.get('category_name') == name
+                ]
+                SUBCATEGORIES_DATA[:] = [
+                    s for s in SUBCATEGORIES_DATA
+                    if not (
+                        s.get('product') in product_names
+                        or s.get('api_import_key') in related_import_keys
+                    )
+                ]
+
+                # حذف مجموعات هذا القسم
+                if name in SUBCATEGORY_GROUPS_DATA:
+                    del SUBCATEGORY_GROUPS_DATA[name]
+
+                # حذف سجل الاستيراد
+                for k in list(API_IMPORTS_DATA.keys()):
+                    if API_IMPORTS_DATA[k].get('category_name') == name:
+                        del API_IMPORTS_DATA[k]
+
+                save_json_file(PRODUCTS_FILE, PRODUCTS_DATA)
+                save_json_file(SUBCATEGORIES_FILE, SUBCATEGORIES_DATA)
+                save_json_file(SUBCATEGORY_GROUPS_FILE, SUBCATEGORY_GROUPS_DATA)
+                save_json_file(API_IMPORTS_FILE, API_IMPORTS_DATA)
+                deleted = True
+
+            elif item_type == 'product':
+                # حذف منتج + فئاته
+                PRODUCTS_DATA[:] = [
+                    p for p in PRODUCTS_DATA
+                    if not (p.get('name') == name and p.get('category') == category)
+                ]
+                SUBCATEGORIES_DATA[:] = [s for s in SUBCATEGORIES_DATA if s.get('product') != name]
+
+                if name in SUBCATEGORY_GROUPS_DATA:
+                    del SUBCATEGORY_GROUPS_DATA[name]
+
+                save_json_file(PRODUCTS_FILE, PRODUCTS_DATA)
+                save_json_file(SUBCATEGORIES_FILE, SUBCATEGORIES_DATA)
+                save_json_file(SUBCATEGORY_GROUPS_FILE, SUBCATEGORY_GROUPS_DATA)
+                deleted = True
+
+            elif item_type == 'subcategory':
+                # حذف فئة واحدة
+                before = len(SUBCATEGORIES_DATA)
+                SUBCATEGORIES_DATA[:] = [
+                    s for s in SUBCATEGORIES_DATA
+                    if not (s.get('name') == name and s.get('product') == product)
+                ]
+                if len(SUBCATEGORIES_DATA) < before:
+                    save_json_file(SUBCATEGORIES_FILE, SUBCATEGORIES_DATA)
+                    deleted = True
+
+            if deleted:
+                self.send_response(200)
+                self.send_header("Content-type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "success"}, ensure_ascii=False).encode("utf-8"))
+            else:
+                self.send_response(200)
+                self.send_header("Content-type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "error", "message": "لم يتم العثور على العنصر!"}, ensure_ascii=False).encode("utf-8"))
 
         elif self.path == "/api/set_client_discount":
             email = data.get('email', '').strip()
@@ -11692,7 +12644,8 @@ self.addEventListener('fetch', event => {
             PRODUCTS_DATA.append({
                 "name": data.get('name'),
                 "category": data.get('category'),
-                "image": data.get('image', '')
+                "image": data.get('image', ''),
+                "parent_product": None
             })
             save_json_file(PRODUCTS_FILE, PRODUCTS_DATA)
             self.send_response(200)
