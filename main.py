@@ -5453,6 +5453,155 @@ ADMIN_HTML_CONTENT = """
         .group-selector-box select { width: 100%; padding: 10px; background: #121212; border: 1px solid #27272a; border-radius: 6px; color: #fff; font-size: 0.85rem; }
         .group-selector-box .add-group-btn { margin-top: 8px; width: 100%; padding: 10px; background: linear-gradient(135deg, #a855f7, #9333ea); border: none; border-radius: 8px; color: #fff; font-size: 0.85rem; font-weight: 700; cursor: pointer; }
         .group-badge { display: inline-block; background: linear-gradient(135deg, #a855f7, #9333ea); color: #fff; font-size: 0.65rem; font-weight: 800; padding: 2px 8px; border-radius: 8px; margin-right: 4px; }
+
+        /* ====== Edit Imported Items Styles ====== */
+        .imported-item-rect {
+            background: linear-gradient(135deg, #0f172a 0%, #131f37 100%);
+            border: 1px solid #1e293b;
+            border-radius: 14px;
+            padding: 14px 18px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            transition: all 0.2s ease;
+        }
+        .imported-item-rect:hover {
+            border-color: #f59e0b;
+            box-shadow: 0 0 15px rgba(245, 158, 11, 0.15);
+        }
+        .imported-item-rect .item-right {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            cursor: pointer;
+            flex: 1;
+            min-width: 0;
+        }
+        .imported-item-rect .item-thumb {
+            width: 52px;
+            height: 52px;
+            border-radius: 10px;
+            object-fit: cover;
+            background: #000;
+            border: 1px solid #27272a;
+            flex-shrink: 0;
+        }
+        .imported-item-rect .item-thumb-placeholder {
+            width: 52px;
+            height: 52px;
+            border-radius: 10px;
+            background: #000;
+            border: 1px solid #27272a;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #64748b;
+            flex-shrink: 0;
+        }
+        .imported-item-rect .item-info {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            min-width: 0;
+            flex: 1;
+        }
+        .imported-item-rect .item-name {
+            font-size: 0.92rem;
+            font-weight: 800;
+            color: #ffffff;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .imported-item-rect .item-meta {
+            font-size: 0.72rem;
+            color: #64748b;
+            font-weight: 700;
+            direction: ltr;
+            text-align: right;
+        }
+        .imported-item-rect .item-type-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 6px;
+            font-size: 0.65rem;
+            font-weight: 800;
+            margin-right: 6px;
+        }
+        .imported-item-rect .badge-category { background: rgba(56,189,248,0.15); color: #38bdf8; border: 1px solid #0284c7; }
+        .imported-item-rect .badge-product { background: rgba(168,85,247,0.15); color: #c084fc; border: 1px solid #9333ea; }
+        .imported-item-rect .badge-subcategory { background: rgba(74,222,128,0.15); color: #4ade80; border: 1px solid #16a34a; }
+
+        .imported-item-actions {
+            display: flex;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+        .imported-action-btn {
+            width: 42px;
+            height: 42px;
+            border-radius: 10px;
+            border: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            color: #ffffff;
+        }
+        .imported-action-btn svg {
+            width: 20px;
+            height: 20px;
+        }
+        .imported-action-btn.edit-btn {
+            background: linear-gradient(135deg, #1d4ed8, #3b82f6);
+            box-shadow: 0 3px 10px rgba(59, 130, 246, 0.35);
+        }
+        .imported-action-btn.edit-btn:hover {
+            background: linear-gradient(135deg, #1e40af, #2563eb);
+            transform: translateY(-2px);
+        }
+        .imported-action-btn.delete-btn {
+            background: linear-gradient(135deg, #b91c1c, #ef4444);
+            box-shadow: 0 3px 10px rgba(239, 68, 68, 0.35);
+        }
+        .imported-action-btn.delete-btn:hover {
+            background: linear-gradient(135deg, #991b1b, #dc2626);
+            transform: translateY(-2px);
+        }
+        .imported-action-btn:active {
+            transform: scale(0.94);
+        }
+
+        /* Breadcrumb */
+        .imported-crumb {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: #0f172a;
+            border: 1px solid #1e293b;
+            border-radius: 20px;
+            padding: 5px 12px;
+            font-size: 0.78rem;
+            font-weight: 700;
+            color: #38bdf8;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .imported-crumb:hover {
+            border-color: #38bdf8;
+            background: #131f37;
+        }
+        .imported-crumb.current {
+            background: #1e293b;
+            color: #f59e0b;
+            cursor: default;
+        }
+        .imported-crumb-sep {
+            color: #475569;
+            font-size: 0.9rem;
+        }
     </style>
 </head>
 <body>
@@ -6024,6 +6173,73 @@ Code   : -
                     </div>
                     <button class="save-btn" style="background:linear-gradient(135deg, #16a34a, #22c55e);" onclick="confirmApiImport()">تأكيد الاستيراد</button>
                     <button class="btn-secondary" onclick="closeModal('importDetailsModal')">إلغاء</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="editImportedScreen" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:#050508; z-index:99999; overflow-y:auto; flex-direction:column; padding:20px;">
+            <div style="position:sticky; top:0; background:linear-gradient(135deg, #1e1b4b 0%, #312e81 100%); padding:16px 20px; display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #f59e0b; z-index:10; margin:-20px -20px 20px -20px;">
+                <div style="display:flex; align-items:center; gap:10px;">
+                    <button id="editImportedBackBtn" onclick="editImportedGoBack()" style="background:rgba(255,255,255,0.15); border:none; color:#fff; padding:8px 14px; border-radius:8px; font-size:0.85rem; font-weight:700; cursor:pointer; display:none;">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:middle; margin-left:4px;"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+                        رجوع
+                    </button>
+                    <div style="font-size:1.1rem; font-weight:800; color:#fff;" id="editImportedTitle">📦 الأقسام المستوردة</div>
+                </div>
+                <button onclick="closeEditImportedScreen()" style="background:rgba(255,255,255,0.15); border:none; color:#fff; width:36px; height:36px; border-radius:50%; font-size:1.2rem; cursor:pointer;">✕</button>
+            </div>
+
+            <!-- مسار التنقل -->
+            <div id="editImportedBreadcrumb" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:15px; font-size:0.8rem; color:#a1a1aa; align-items:center;"></div>
+
+            <!-- قائمة العناصر -->
+            <div id="editImportedListContainer" style="display:flex; flex-direction:column; gap:12px;"></div>
+
+            <!-- حالة فارغة -->
+            <div id="editImportedEmpty" style="display:none; text-align:center; padding:60px 20px; color:#a1a1aa; font-size:0.9rem; font-weight:700;">
+                لا توجد عناصر مستوردة حتى الآن
+            </div>
+        </div>
+
+        <!-- ================= EDIT ITEM MODAL ================= -->
+        <div class="modal-overlay" id="editImportedItemModal">
+            <div class="modal-box">
+                <div class="modal-title" style="color:#f59e0b;">✏️ تعديل العنصر</div>
+
+                <div class="form-group">
+                    <label>الاسم:</label>
+                    <input type="text" id="editImportedNameInput" placeholder="أدخل الاسم الجديد...">
+                </div>
+
+                <div class="form-group" id="editImportedProfitGroup">
+                    <label>نسبة الربح (%):</label>
+                    <input type="number" id="editImportedProfitInput" placeholder="مثال: 10" step="0.1" min="0">
+                    <div style="font-size:0.72rem; color:#a1a1aa; margin-top:4px;">تُطبق على السعر الأساسي القادم من المزود.</div>
+                </div>
+
+                <div class="form-group">
+                    <label>الصورة (اتركها فارغة للاحتفاظ بالصورة الحالية):</label>
+                    <input type="file" id="editImportedImageInput" accept="image/*">
+                    <div id="editImportedImagePreview" style="margin-top:8px; display:none;">
+                        <img id="editImportedImagePreviewImg" style="width:100%; max-height:150px; object-fit:cover; border-radius:8px; border:1px solid #27272a;">
+                    </div>
+                </div>
+
+                <button class="save-btn" style="background:linear-gradient(135deg, #b45309, #f59e0b);" onclick="saveEditImportedItem()">💾 حفظ التعديلات</button>
+                <button class="btn-secondary" onclick="closeModal('editImportedItemModal')">إلغاء</button>
+            </div>
+        </div>
+
+        <!-- ================= DELETE CONFIRM MODAL ================= -->
+        <div class="modal-overlay" id="deleteImportedItemModal">
+            <div class="modal-box">
+                <div class="modal-title" style="color:#f87171;">⚠️ تأكيد الحذف</div>
+                <div style="text-align:center; padding:15px; font-size:0.9rem; color:#fff; line-height:1.7;" id="deleteImportedItemMsg">
+                    هل أنت متأكد من حذف هذا العنصر وكل ما يحتويه؟
+                </div>
+                <div class="action-btns-row">
+                    <button class="btn-reject" onclick="confirmDeleteImportedItem()">🗑️ نعم، احذف</button>
+                    <button class="btn-secondary" onclick="closeModal('deleteImportedItemModal')">إلغاء</button>
                 </div>
             </div>
         </div>
@@ -6940,74 +7156,6 @@ Code   : -
                 <button onclick="saveAppearanceSettings()" style="width:100%; padding:16px; background:linear-gradient(135deg, #16a34a 0%, #22c55e 100%); border:none; border-radius:14px; color:#fff; font-size:1.05rem; font-weight:800; cursor:pointer; box-shadow:0 6px 20px rgba(34,197,94,0.4); margin-bottom:30px;">حفظ الإعدادات</button>
             </div>
         </div>
-
-        <!-- ================= EDIT IMPORTED ITEMS SCREEN ================= -->
-        <div id="editImportedScreen" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:#050508; z-index:99999; overflow-y:auto; flex-direction:column; padding:20px;">
-            <div style="position:sticky; top:0; background:linear-gradient(135deg, #1e1b4b 0%, #312e81 100%); padding:16px 20px; display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #f59e0b; z-index:10; margin:-20px -20px 20px -20px;">
-                <div style="display:flex; align-items:center; gap:10px;">
-                    <button id="editImportedBackBtn" onclick="editImportedGoBack()" style="background:rgba(255,255,255,0.15); border:none; color:#fff; padding:8px 14px; border-radius:8px; font-size:0.85rem; font-weight:700; cursor:pointer; display:none;">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:middle; margin-left:4px;"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
-                        رجوع
-                    </button>
-                    <div style="font-size:1.1rem; font-weight:800; color:#fff;" id="editImportedTitle">📦 الأقسام المستوردة</div>
-                </div>
-                <button onclick="closeEditImportedScreen()" style="background:rgba(255,255,255,0.15); border:none; color:#fff; width:36px; height:36px; border-radius:50%; font-size:1.2rem; cursor:pointer;">✕</button>
-            </div>
-
-            <!-- مسار التنقل -->
-            <div id="editImportedBreadcrumb" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:15px; font-size:0.8rem; color:#a1a1aa; align-items:center;"></div>
-
-            <!-- قائمة العناصر -->
-            <div id="editImportedListContainer" style="display:flex; flex-direction:column; gap:12px;"></div>
-
-            <!-- حالة فارغة -->
-            <div id="editImportedEmpty" style="display:none; text-align:center; padding:60px 20px; color:#a1a1aa; font-size:0.9rem; font-weight:700;">
-                لا توجد عناصر مستوردة حتى الآن
-            </div>
-        </div>
-
-        <!-- ================= EDIT ITEM MODAL ================= -->
-        <div class="modal-overlay" id="editImportedItemModal">
-            <div class="modal-box">
-                <div class="modal-title" style="color:#f59e0b;">✏️ تعديل العنصر</div>
-
-                <div class="form-group">
-                    <label>الاسم:</label>
-                    <input type="text" id="editImportedNameInput" placeholder="أدخل الاسم الجديد...">
-                </div>
-
-                <div class="form-group" id="editImportedProfitGroup">
-                    <label>نسبة الربح (%):</label>
-                    <input type="number" id="editImportedProfitInput" placeholder="مثال: 10" step="0.1" min="0">
-                    <div style="font-size:0.72rem; color:#a1a1aa; margin-top:4px;">تُطبق على السعر الأساسي القادم من المزود.</div>
-                </div>
-
-                <div class="form-group">
-                    <label>الصورة (اتركها فارغة للاحتفاظ بالصورة الحالية):</label>
-                    <input type="file" id="editImportedImageInput" accept="image/*">
-                    <div id="editImportedImagePreview" style="margin-top:8px; display:none;">
-                        <img id="editImportedImagePreviewImg" style="width:100%; max-height:150px; object-fit:cover; border-radius:8px; border:1px solid #27272a;">
-                    </div>
-                </div>
-
-                <button class="save-btn" style="background:linear-gradient(135deg, #b45309, #f59e0b);" onclick="saveEditImportedItem()">💾 حفظ التعديلات</button>
-                <button class="btn-secondary" onclick="closeModal('editImportedItemModal')">إلغاء</button>
-            </div>
-        </div>
-
-        <!-- ================= DELETE CONFIRM MODAL ================= -->
-        <div class="modal-overlay" id="deleteImportedItemModal">
-            <div class="modal-box">
-                <div class="modal-title" style="color:#f87171;">⚠️ تأكيد الحذف</div>
-                <div style="text-align:center; padding:15px; font-size:0.9rem; color:#fff; line-height:1.7;" id="deleteImportedItemMsg">
-                    هل أنت متأكد من حذف هذا العنصر وكل ما يحتويه؟
-                </div>
-                <div class="action-btns-row">
-                    <button class="btn-reject" onclick="confirmDeleteImportedItem()">🗑️ نعم، احذف</button>
-                    <button class="btn-secondary" onclick="closeModal('deleteImportedItemModal')">إلغاء</button>
-                </div>
-            </div>
-        </div>
     </div>
 
     <script>
@@ -7312,510 +7460,6 @@ Code   : -
             }
         }
 
-        // ==================== EDIT IMPORTED ITEMS ====================
-        let editImportedState = {
-            path: [],          // مسار التنقل: [{type, id, name}, ...]
-            currentLevel: 'root',  // root | category | product | subcategory
-            currentId: null,       // معرّف المستوى الحالي
-            parentProduct: null,   // اسم المنتج الأب (للفئات)
-            cache: null            // كاش للبيانات
-        };
-
-        // أيقونات SVG
-        const ICON_EDIT = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
-        const ICON_DELETE = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>`;
-        const ICON_FOLDER = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>`;
-        const ICON_BOX = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 8h-3V4H3c-1.1 0-2 .9-2 2v11h2c0 1.66 1.34 3 3 3s3-1.34 3-3h6c0 1.66 1.34 3 3 3s3-1.34 3-3h2v-5l-3-4z"/></svg>`;
-        const ICON_TAG = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M21.41 11.58l-9-9C12.05 2.22 11.55 2 11 2H4c-1.1 0-2 .9-2 2v7c0 .55.22 1.05.59 1.42l9 9c.36.36.86.58 1.41.58.55 0 1.05-.22 1.41-.59l7-7c.37-.36.59-.86.59-1.41 0-.55-.23-1.06-.59-1.42zM5.5 7C4.67 7 4 6.33 4 5.5S4.67 4 5.5 4 7 4.67 7 5.5 6.33 7 5.5 7z"/></svg>`;
-
-        function openEditImportedScreen() {
-            toggleSidebar();
-            document.getElementById('adminMainSection').style.display = 'none';
-            document.getElementById('checkOrdersPage').style.display = 'none';
-            document.getElementById('checkDepositsPage').style.display = 'none';
-            document.getElementById('viewProvidersPage').style.display = 'none';
-            document.getElementById('deleteCategoryPage').style.display = 'none';
-            document.getElementById('deleteProductPage').style.display = 'none';
-            document.getElementById('clientsListScreen').classList.remove('active');
-            document.getElementById('apiImportScreen').classList.remove('active');
-
-            editImportedState = {
-                path: [],
-                currentLevel: 'root',
-                currentId: null,
-                parentProduct: null,
-                cache: null
-            };
-
-            document.getElementById('editImportedScreen').style.display = 'flex';
-            loadImportedRoot();
-        }
-
-        function closeEditImportedScreen() {
-            document.getElementById('editImportedScreen').style.display = 'none';
-            document.getElementById('adminMainSection').style.display = 'block';
-        }
-
-        // تحديث مسار التنقل (breadcrumb)
-        function renderEditImportedBreadcrumb() {
-            const container = document.getElementById('editImportedBreadcrumb');
-            container.innerHTML = '';
-
-            // زر الجذر
-            const rootCrumb = document.createElement('div');
-            rootCrumb.className = 'imported-crumb' + (editImportedState.path.length === 0 ? ' current' : '');
-            rootCrumb.innerHTML = `${ICON_FOLDER} الأقسام الرئيسية`;
-            if (editImportedState.path.length > 0) {
-                rootCrumb.onclick = () => {
-                    editImportedState.path = [];
-                    loadImportedRoot();
-                };
-            }
-            container.appendChild(rootCrumb);
-
-            // باقي المسار
-            editImportedState.path.forEach((node, idx) => {
-                const sep = document.createElement('span');
-                sep.className = 'imported-crumb-sep';
-                sep.innerText = '◀';
-                container.appendChild(sep);
-
-                const crumb = document.createElement('div');
-                const isLast = idx === editImportedState.path.length - 1;
-                crumb.className = 'imported-crumb' + (isLast ? ' current' : '');
-                crumb.innerText = node.name;
-                if (!isLast) {
-                    crumb.onclick = () => {
-                        editImportedState.path = editImportedState.path.slice(0, idx + 1);
-                        navigateToNode(node);
-                    };
-                }
-                container.appendChild(crumb);
-            });
-
-            // إظهار/إخفاء زر الرجوع
-            const backBtn = document.getElementById('editImportedBackBtn');
-            backBtn.style.display = editImportedState.path.length > 0 ? 'block' : 'none';
-        }
-
-        function editImportedGoBack() {
-            if (editImportedState.path.length === 0) return;
-            editImportedState.path.pop();
-            if (editImportedState.path.length === 0) {
-                loadImportedRoot();
-            } else {
-                navigateToNode(editImportedState.path[editImportedState.path.length - 1]);
-            }
-        }
-
-        // تحديد نوع العنصر من مساره
-        function navigateToNode(node) {
-            if (node.type === 'category') {
-                loadImportedCategoryProducts(node.id, node.name);
-            } else if (node.type === 'product') {
-                loadImportedProductChildren(node.id, node.name, node.parentCategory);
-            } else if (node.type === 'subcategory') {
-                // إذا كان للفئة أبناء، نعرضهم، وإلا لا شيء
-                loadImportedProductChildren(node.id, node.name, node.parentCategory);
-            }
-        }
-
-        // ==================== التحميل من الجذر ====================
-        async function loadImportedRoot() {
-            editImportedState.currentLevel = 'root';
-            editImportedState.currentId = null;
-
-            const container = document.getElementById('editImportedListContainer');
-            const emptyMsg = document.getElementById('editImportedEmpty');
-            container.innerHTML = '<div style="text-align:center; padding:40px; color:#a1a1aa; font-weight:700;">جاري التحميل...</div>';
-            emptyMsg.style.display = 'none';
-
-            document.getElementById('editImportedTitle').innerText = '📦 الأقسام المستوردة';
-
-            try {
-                const res = await fetch('/api/get_imported_categories');
-                const data = await res.json();
-
-                renderEditImportedBreadcrumb();
-                container.innerHTML = '';
-
-                if (!data || data.length === 0) {
-                    emptyMsg.style.display = 'block';
-                    return;
-                }
-
-                data.forEach(cat => {
-                    const rect = buildImportedItemRect({
-                        type: 'category',
-                        id: cat.name,        // اسم القسم هو المعرّف
-                        name: cat.name,
-                        image: cat.image || '',
-                        extra: `منتج: ${cat.products_count || 0} | فئة: ${cat.subcategories_count || 0}`,
-                        badge: 'قسم رئيسي',
-                        badgeClass: 'badge-category',
-                        parentCategory: cat.name
-                    });
-                    container.appendChild(rect);
-                });
-            } catch (e) {
-                console.error(e);
-                container.innerHTML = '<div style="text-align:center; color:#f87171; padding:30px; font-weight:700;">فشل التحميل!</div>';
-            }
-        }
-
-        // ==================== تحميل منتجات قسم رئيسي ====================
-        async function loadImportedCategoryProducts(categoryName, categoryDisplayName) {
-            editImportedState.currentLevel = 'category';
-            editImportedState.currentId = categoryName;
-
-            document.getElementById('editImportedTitle').innerText = `📁 ${categoryDisplayName}`;
-
-            const container = document.getElementById('editImportedListContainer');
-            const emptyMsg = document.getElementById('editImportedEmpty');
-            container.innerHTML = '<div style="text-align:center; padding:40px; color:#a1a1aa; font-weight:700;">جاري التحميل...</div>';
-            emptyMsg.style.display = 'none';
-
-            try {
-                const res = await fetch('/api/get_imported_items?category=' + encodeURIComponent(categoryName));
-                const data = await res.json();
-
-                renderEditImportedBreadcrumb();
-                container.innerHTML = '';
-
-                const products = data.products || [];
-                const subcats = data.subcategories || [];
-
-                if (products.length === 0 && subcats.length === 0) {
-                    emptyMsg.style.display = 'block';
-                    return;
-                }
-
-                // المنتجات الفرعية
-                products.forEach(p => {
-                    const rect = buildImportedItemRect({
-                        type: 'product',
-                        id: p.name,
-                        name: p.name,
-                        image: p.image || '',
-                        extra: p.has_children ? 'يحتوي على عناصر فرعية' : 'منتج',
-                        badge: 'منتج',
-                        badgeClass: 'badge-product',
-                        parentCategory: categoryName
-                    });
-                    container.appendChild(rect);
-                });
-
-                // الفئات المباشرة (بدون منتج أب)
-                subcats.forEach(s => {
-                    const rect = buildImportedItemRect({
-                        type: 'subcategory',
-                        id: s.name,
-                        name: s.name,
-                        image: s.image || '',
-                        extra: `السعر: ${formatBalance(s.price)}$ | ربح: ${s.profit_margin || 0}%`,
-                        badge: 'فئة',
-                        badgeClass: 'badge-subcategory',
-                        parentCategory: categoryName,
-                        parentProduct: s.product
-                    });
-                    container.appendChild(rect);
-                });
-            } catch (e) {
-                console.error(e);
-                container.innerHTML = '<div style="text-align:center; color:#f87171; padding:30px; font-weight:700;">فشل التحميل!</div>';
-            }
-        }
-
-        // ==================== تحميل أبناء منتج أو فئة ====================
-        async function loadImportedProductChildren(productName, productDisplayName, parentCategory) {
-            editImportedState.currentLevel = 'product';
-            editImportedState.currentId = productName;
-            editImportedState.parentProduct = productName;
-
-            document.getElementById('editImportedTitle').innerText = `📦 ${productDisplayName}`;
-
-            const container = document.getElementById('editImportedListContainer');
-            const emptyMsg = document.getElementById('editImportedEmpty');
-            container.innerHTML = '<div style="text-align:center; padding:40px; color:#a1a1aa; font-weight:700;">جاري التحميل...</div>';
-            emptyMsg.style.display = 'none';
-
-            try {
-                const res = await fetch('/api/get_imported_items?category=' + encodeURIComponent(parentCategory) + '&product=' + encodeURIComponent(productName));
-                const data = await res.json();
-
-                renderEditImportedBreadcrumb();
-                container.innerHTML = '';
-
-                const products = data.products || [];
-                const subcats = data.subcategories || [];
-
-                if (products.length === 0 && subcats.length === 0) {
-                    emptyMsg.style.display = 'block';
-                    return;
-                }
-
-                products.forEach(p => {
-                    const rect = buildImportedItemRect({
-                        type: 'product',
-                        id: p.name,
-                        name: p.name,
-                        image: p.image || '',
-                        extra: p.has_children ? 'يحتوي على عناصر فرعية' : 'منتج فرعي',
-                        badge: 'منتج',
-                        badgeClass: 'badge-product',
-                        parentCategory: parentCategory
-                    });
-                    container.appendChild(rect);
-                });
-
-                subcats.forEach(s => {
-                    const rect = buildImportedItemRect({
-                        type: 'subcategory',
-                        id: s.name,
-                        name: s.name,
-                        image: s.image || '',
-                        extra: `السعر: ${formatBalance(s.price)}$ | ربح: ${s.profit_margin || 0}%`,
-                        badge: 'فئة',
-                        badgeClass: 'badge-subcategory',
-                        parentCategory: parentCategory,
-                        parentProduct: s.product
-                    });
-                    container.appendChild(rect);
-                });
-            } catch (e) {
-                console.error(e);
-                container.innerHTML = '<div style="text-align:center; color:#f87171; padding:30px; font-weight:700;">فشل التحميل!</div>';
-            }
-        }
-
-        // ==================== بناء مستطيل عنصر ====================
-        function buildImportedItemRect(opts) {
-            const rect = document.createElement('div');
-            rect.className = 'imported-item-rect';
-
-            const thumbHTML = opts.image
-                ? `<img src="${opts.image}" class="item-thumb" onerror="this.outerHTML='<div class=\\'item-thumb-placeholder\\'>📁</div>'">`
-                : `<div class="item-thumb-placeholder">${opts.type === 'category' ? ICON_FOLDER : (opts.type === 'product' ? ICON_BOX : ICON_TAG)}</div>`;
-
-            rect.innerHTML = `
-                <div class="item-right">
-                    ${thumbHTML}
-                    <div class="item-info">
-                        <div class="item-name">${opts.name}</div>
-                        <div class="item-meta">
-                            <span class="item-type-badge ${opts.badgeClass}">${opts.badge}</span>
-                            ${opts.extra || ''}
-                        </div>
-                    </div>
-                </div>
-                <div class="imported-item-actions">
-                    <button class="imported-action-btn edit-btn" title="تعديل">${ICON_EDIT}</button>
-                    <button class="imported-action-btn delete-btn" title="حذف">${ICON_DELETE}</button>
-                </div>
-            `;
-
-            // النقر على الجزء الأيمن للدخول (إن كان له أبناء)
-            rect.querySelector('.item-right').onclick = () => {
-                if (opts.type === 'category') {
-                    editImportedState.path.push({
-                        type: 'category',
-                        id: opts.id,
-                        name: opts.name
-                    });
-                    loadImportedCategoryProducts(opts.id, opts.name);
-                } else if (opts.type === 'product') {
-                    editImportedState.path.push({
-                        type: 'product',
-                        id: opts.id,
-                        name: opts.name,
-                        parentCategory: opts.parentCategory
-                    });
-                    loadImportedProductChildren(opts.id, opts.name, opts.parentCategory);
-                } else if (opts.type === 'subcategory') {
-                    // الفئة عادةً ما تكون نهائية، لكن إذا كان لها أبناء نحاول
-                    editImportedState.path.push({
-                        type: 'subcategory',
-                        id: opts.id,
-                        name: opts.name,
-                        parentCategory: opts.parentCategory,
-                        parentProduct: opts.parentProduct
-                    });
-                    loadImportedProductChildren(opts.id, opts.name, opts.parentCategory);
-                }
-            };
-
-            // زر التعديل
-            rect.querySelector('.edit-btn').onclick = (e) => {
-                e.stopPropagation();
-                openEditImportedItemModal(opts);
-            };
-
-            // زر الحذف
-            rect.querySelector('.delete-btn').onclick = (e) => {
-                e.stopPropagation();
-                openDeleteImportedItemModal(opts);
-            };
-
-            return rect;
-        }
-
-        // ==================== فتح مودال التعديل ====================
-        let currentlyEditingImportedItem = null;
-
-        function openEditImportedItemModal(item) {
-            currentlyEditingImportedItem = item;
-
-            document.getElementById('editImportedNameInput').value = item.name;
-            document.getElementById('editImportedImageInput').value = '';
-
-            // إظهار حقل الربح فقط للفئات
-            const profitGroup = document.getElementById('editImportedProfitGroup');
-            if (item.type === 'subcategory') {
-                profitGroup.style.display = 'flex';
-                // جلب نسبة الربح الحالية
-                fetch('/api/get_imported_items?category=' + encodeURIComponent(item.parentCategory || '') +
-                      '&product=' + encodeURIComponent(item.parentProduct || item.parentCategory || '') +
-                      '&name=' + encodeURIComponent(item.name))
-                    .then(r => r.json())
-                    .then(data => {
-                        const match = (data.subcategories || []).find(s => s.name === item.name);
-                        if (match) {
-                            document.getElementById('editImportedProfitInput').value = match.profit_margin || 0;
-                        } else {
-                            document.getElementById('editImportedProfitInput').value = 0;
-                        }
-                    })
-                    .catch(() => {
-                        document.getElementById('editImportedProfitInput').value = 0;
-                    });
-            } else {
-                profitGroup.style.display = 'none';
-            }
-
-            // معاينة الصورة الحالية
-            const preview = document.getElementById('editImportedImagePreview');
-            const previewImg = document.getElementById('editImportedImagePreviewImg');
-            if (item.image) {
-                previewImg.src = item.image;
-                preview.style.display = 'block';
-            } else {
-                preview.style.display = 'none';
-            }
-
-            openModal('editImportedItemModal');
-        }
-
-        async function saveEditImportedItem() {
-            if (!currentlyEditingImportedItem) return;
-
-            const newName = document.getElementById('editImportedNameInput').value.trim();
-            const newProfit = parseFloat(document.getElementById('editImportedProfitInput').value) || 0;
-            const fileInput = document.getElementById('editImportedImageInput');
-
-            if (!newName) {
-                alert('يرجى إدخال الاسم!');
-                return;
-            }
-
-            let imageData = '';
-            if (fileInput.files && fileInput.files[0]) {
-                imageData = await new Promise((resolve) => {
-                    const reader = new FileReader();
-                    reader.onload = (e) => resolve(e.target.result);
-                    reader.readAsDataURL(fileInput.files[0]);
-                });
-            }
-
-            const payload = {
-                type: currentlyEditingImportedItem.type,
-                old_name: currentlyEditingImportedItem.name,
-                new_name: newName,
-                category: currentlyEditingImportedItem.parentCategory || '',
-                product: currentlyEditingImportedItem.parentProduct || currentlyEditingImportedItem.parentCategory || '',
-                profit_margin: newProfit,
-                image: imageData
-            };
-
-            try {
-                const res = await fetch('/api/update_imported_item', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-                const data = await res.json();
-
-                if (data.status === 'success') {
-                    alert('✅ تم حفظ التعديلات بنجاح!');
-                    closeModal('editImportedItemModal');
-                    // أعد تحميل المستوى الحالي
-                    refreshCurrentEditImportedLevel();
-                } else {
-                    alert('❌ ' + (data.message || 'فشل التعديل!'));
-                }
-            } catch (e) {
-                alert('فشل الاتصال بالخادم!');
-            }
-        }
-
-        // ==================== فتح مودال الحذف ====================
-        let currentlyDeletingImportedItem = null;
-
-        function openDeleteImportedItemModal(item) {
-            currentlyDeletingImportedItem = item;
-
-            let msg = 'هل أنت متأكد من حذف ';
-            if (item.type === 'category') {
-                msg += `القسم الرئيسي «${item.name}» وكل ما يحتويه من منتجات وفئات؟`;
-            } else if (item.type === 'product') {
-                msg += `المنتج «${item.name}» وكل الفئات التابعة له؟`;
-            } else {
-                msg += `الفئة «${item.name}»؟`;
-            }
-
-            document.getElementById('deleteImportedItemMsg').innerText = msg;
-            openModal('deleteImportedItemModal');
-        }
-
-        async function confirmDeleteImportedItem() {
-            if (!currentlyDeletingImportedItem) return;
-
-            const payload = {
-                type: currentlyDeletingImportedItem.type,
-                name: currentlyDeletingImportedItem.name,
-                category: currentlyDeletingImportedItem.parentCategory || '',
-                product: currentlyDeletingImportedItem.parentProduct || currentlyDeletingImportedItem.parentCategory || ''
-            };
-
-            try {
-                const res = await fetch('/api/delete_imported_item', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-                const data = await res.json();
-
-                if (data.status === 'success') {
-                    alert('🗑️ تم الحذف بنجاح!');
-                    closeModal('deleteImportedItemModal');
-                    refreshCurrentEditImportedLevel();
-                } else {
-                    alert('❌ ' + (data.message || 'فشل الحذف!'));
-                }
-            } catch (e) {
-                alert('فشل الاتصال بالخادم!');
-            }
-        }
-
-        function refreshCurrentEditImportedLevel() {
-            const path = editImportedState.path;
-            if (path.length === 0) {
-                loadImportedRoot();
-            } else {
-                navigateToNode(path[path.length - 1]);
-            }
-        }
-
-        // ==================== استيراد الأقسام من API ====================
         let apiImportCurrentProvider = '';
         let apiImportCategories = [];
         let apiImportCategoryToImport = null;
@@ -10366,6 +10010,487 @@ Code   : -
             }
         }
 
+        // ==================== EDIT IMPORTED ITEMS ====================
+        let editImportedState = {
+            path: [],
+            currentLevel: 'root',
+            currentId: null,
+            parentProduct: null,
+            cache: null
+        };
+
+        const ICON_EDIT = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
+        const ICON_DELETE = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>`;
+        const ICON_FOLDER = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>`;
+        const ICON_BOX = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 8h-3V4H3c-1.1 0-2 .9-2 2v11h2c0 1.66 1.34 3 3 3s3-1.34 3-3h6c0 1.66 1.34 3 3 3s3-1.34 3-3h2v-5l-3-4z"/></svg>`;
+        const ICON_TAG = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M21.41 11.58l-9-9C12.05 2.22 11.55 2 11 2H4c-1.1 0-2 .9-2 2v7c0 .55.22 1.05.59 1.42l9 9c.36.36.86.58 1.41.58.55 0 1.05-.22 1.41-.59l7-7c.37-.36.59-.86.59-1.41 0-.55-.23-1.06-.59-1.42zM5.5 7C4.67 7 4 6.33 4 5.5S4.67 4 5.5 4 7 4.67 7 5.5 6.33 7 5.5 7z"/></svg>`;
+
+        function openEditImportedScreen() {
+            toggleSidebar();
+            document.getElementById('adminMainSection').style.display = 'none';
+            document.getElementById('checkOrdersPage').style.display = 'none';
+            document.getElementById('checkDepositsPage').style.display = 'none';
+            document.getElementById('viewProvidersPage').style.display = 'none';
+            document.getElementById('deleteCategoryPage').style.display = 'none';
+            document.getElementById('deleteProductPage').style.display = 'none';
+            document.getElementById('clientsListScreen').classList.remove('active');
+            document.getElementById('apiImportScreen').classList.remove('active');
+
+            editImportedState = {
+                path: [],
+                currentLevel: 'root',
+                currentId: null,
+                parentProduct: null,
+                cache: null
+            };
+
+            document.getElementById('editImportedScreen').style.display = 'flex';
+            loadImportedRoot();
+        }
+
+        function closeEditImportedScreen() {
+            document.getElementById('editImportedScreen').style.display = 'none';
+            document.getElementById('adminMainSection').style.display = 'block';
+        }
+
+        function renderEditImportedBreadcrumb() {
+            const container = document.getElementById('editImportedBreadcrumb');
+            container.innerHTML = '';
+
+            const rootCrumb = document.createElement('div');
+            rootCrumb.className = 'imported-crumb' + (editImportedState.path.length === 0 ? ' current' : '');
+            rootCrumb.innerHTML = `${ICON_FOLDER} الأقسام الرئيسية`;
+            if (editImportedState.path.length > 0) {
+                rootCrumb.onclick = () => {
+                    editImportedState.path = [];
+                    loadImportedRoot();
+                };
+            }
+            container.appendChild(rootCrumb);
+
+            editImportedState.path.forEach((node, idx) => {
+                const sep = document.createElement('span');
+                sep.className = 'imported-crumb-sep';
+                sep.innerText = '◀';
+                container.appendChild(sep);
+
+                const crumb = document.createElement('div');
+                const isLast = idx === editImportedState.path.length - 1;
+                crumb.className = 'imported-crumb' + (isLast ? ' current' : '');
+                crumb.innerText = node.name;
+                if (!isLast) {
+                    crumb.onclick = () => {
+                        editImportedState.path = editImportedState.path.slice(0, idx + 1);
+                        navigateToNode(node);
+                    };
+                }
+                container.appendChild(crumb);
+            });
+
+            const backBtn = document.getElementById('editImportedBackBtn');
+            backBtn.style.display = editImportedState.path.length > 0 ? 'block' : 'none';
+        }
+
+        function editImportedGoBack() {
+            if (editImportedState.path.length === 0) return;
+            editImportedState.path.pop();
+            if (editImportedState.path.length === 0) {
+                loadImportedRoot();
+            } else {
+                navigateToNode(editImportedState.path[editImportedState.path.length - 1]);
+            }
+        }
+
+        function navigateToNode(node) {
+            if (node.type === 'category') {
+                loadImportedCategoryProducts(node.id, node.name);
+            } else if (node.type === 'product') {
+                loadImportedProductChildren(node.id, node.name, node.parentCategory);
+            } else if (node.type === 'subcategory') {
+                loadImportedProductChildren(node.id, node.name, node.parentCategory);
+            }
+        }
+
+        async function loadImportedRoot() {
+            editImportedState.currentLevel = 'root';
+            editImportedState.currentId = null;
+
+            const container = document.getElementById('editImportedListContainer');
+            const emptyMsg = document.getElementById('editImportedEmpty');
+            container.innerHTML = '<div style="text-align:center; padding:40px; color:#a1a1aa; font-weight:700;">جاري التحميل...</div>';
+            emptyMsg.style.display = 'none';
+
+            document.getElementById('editImportedTitle').innerText = '📦 الأقسام المستوردة';
+
+            try {
+                const res = await fetch('/api/get_imported_categories');
+                const data = await res.json();
+
+                renderEditImportedBreadcrumb();
+                container.innerHTML = '';
+
+                if (!data || data.length === 0) {
+                    emptyMsg.style.display = 'block';
+                    return;
+                }
+
+                data.forEach(cat => {
+                    const rect = buildImportedItemRect({
+                        type: 'category',
+                        id: cat.name,
+                        name: cat.name,
+                        image: cat.image || '',
+                        extra: `منتج: ${cat.products_count || 0} | فئة: ${cat.subcategories_count || 0}`,
+                        badge: 'قسم رئيسي',
+                        badgeClass: 'badge-category',
+                        parentCategory: cat.name
+                    });
+                    container.appendChild(rect);
+                });
+            } catch (e) {
+                console.error(e);
+                container.innerHTML = '<div style="text-align:center; color:#f87171; padding:30px; font-weight:700;">فشل التحميل!</div>';
+            }
+        }
+
+        async function loadImportedCategoryProducts(categoryName, categoryDisplayName) {
+            editImportedState.currentLevel = 'category';
+            editImportedState.currentId = categoryName;
+
+            document.getElementById('editImportedTitle').innerText = `📁 ${categoryDisplayName}`;
+
+            const container = document.getElementById('editImportedListContainer');
+            const emptyMsg = document.getElementById('editImportedEmpty');
+            container.innerHTML = '<div style="text-align:center; padding:40px; color:#a1a1aa; font-weight:700;">جاري التحميل...</div>';
+            emptyMsg.style.display = 'none';
+
+            try {
+                const res = await fetch('/api/get_imported_items?category=' + encodeURIComponent(categoryName));
+                const data = await res.json();
+
+                renderEditImportedBreadcrumb();
+                container.innerHTML = '';
+
+                const products = data.products || [];
+                const subcats = data.subcategories || [];
+
+                if (products.length === 0 && subcats.length === 0) {
+                    emptyMsg.style.display = 'block';
+                    return;
+                }
+
+                products.forEach(p => {
+                    const rect = buildImportedItemRect({
+                        type: 'product',
+                        id: p.name,
+                        name: p.name,
+                        image: p.image || '',
+                        extra: p.has_children ? 'يحتوي على عناصر فرعية' : 'منتج',
+                        badge: 'منتج',
+                        badgeClass: 'badge-product',
+                        parentCategory: categoryName
+                    });
+                    container.appendChild(rect);
+                });
+
+                subcats.forEach(s => {
+                    const rect = buildImportedItemRect({
+                        type: 'subcategory',
+                        id: s.name,
+                        name: s.name,
+                        image: s.image || '',
+                        extra: `السعر: ${formatBalance(s.price)}$ | ربح: ${s.profit_margin || 0}%`,
+                        badge: 'فئة',
+                        badgeClass: 'badge-subcategory',
+                        parentCategory: categoryName,
+                        parentProduct: s.product
+                    });
+                    container.appendChild(rect);
+                });
+            } catch (e) {
+                console.error(e);
+                container.innerHTML = '<div style="text-align:center; color:#f87171; padding:30px; font-weight:700;">فشل التحميل!</div>';
+            }
+        }
+
+        async function loadImportedProductChildren(productName, productDisplayName, parentCategory) {
+            editImportedState.currentLevel = 'product';
+            editImportedState.currentId = productName;
+            editImportedState.parentProduct = productName;
+
+            document.getElementById('editImportedTitle').innerText = `📦 ${productDisplayName}`;
+
+            const container = document.getElementById('editImportedListContainer');
+            const emptyMsg = document.getElementById('editImportedEmpty');
+            container.innerHTML = '<div style="text-align:center; padding:40px; color:#a1a1aa; font-weight:700;">جاري التحميل...</div>';
+            emptyMsg.style.display = 'none';
+
+            try {
+                const res = await fetch('/api/get_imported_items?category=' + encodeURIComponent(parentCategory) + '&product=' + encodeURIComponent(productName));
+                const data = await res.json();
+
+                renderEditImportedBreadcrumb();
+                container.innerHTML = '';
+
+                const products = data.products || [];
+                const subcats = data.subcategories || [];
+
+                if (products.length === 0 && subcats.length === 0) {
+                    emptyMsg.style.display = 'block';
+                    return;
+                }
+
+                products.forEach(p => {
+                    const rect = buildImportedItemRect({
+                        type: 'product',
+                        id: p.name,
+                        name: p.name,
+                        image: p.image || '',
+                        extra: p.has_children ? 'يحتوي على عناصر فرعية' : 'منتج فرعي',
+                        badge: 'منتج',
+                        badgeClass: 'badge-product',
+                        parentCategory: parentCategory
+                    });
+                    container.appendChild(rect);
+                });
+
+                subcats.forEach(s => {
+                    const rect = buildImportedItemRect({
+                        type: 'subcategory',
+                        id: s.name,
+                        name: s.name,
+                        image: s.image || '',
+                        extra: `السعر: ${formatBalance(s.price)}$ | ربح: ${s.profit_margin || 0}%`,
+                        badge: 'فئة',
+                        badgeClass: 'badge-subcategory',
+                        parentCategory: parentCategory,
+                        parentProduct: s.product
+                    });
+                    container.appendChild(rect);
+                });
+            } catch (e) {
+                console.error(e);
+                container.innerHTML = '<div style="text-align:center; color:#f87171; padding:30px; font-weight:700;">فشل التحميل!</div>';
+            }
+        }
+
+        function buildImportedItemRect(opts) {
+            const rect = document.createElement('div');
+            rect.className = 'imported-item-rect';
+
+            const thumbHTML = opts.image
+                ? `<img src="${opts.image}" class="item-thumb" onerror="this.outerHTML='<div class=\\'item-thumb-placeholder\\'>📁</div>'">`
+                : `<div class="item-thumb-placeholder">${opts.type === 'category' ? ICON_FOLDER : (opts.type === 'product' ? ICON_BOX : ICON_TAG)}</div>`;
+
+            rect.innerHTML = `
+                <div class="item-right">
+                    ${thumbHTML}
+                    <div class="item-info">
+                        <div class="item-name">${opts.name}</div>
+                        <div class="item-meta">
+                            <span class="item-type-badge ${opts.badgeClass}">${opts.badge}</span>
+                            ${opts.extra || ''}
+                        </div>
+                    </div>
+                </div>
+                <div class="imported-item-actions">
+                    <button class="imported-action-btn edit-btn" title="تعديل">${ICON_EDIT}</button>
+                    <button class="imported-action-btn delete-btn" title="حذف">${ICON_DELETE}</button>
+                </div>
+            `;
+
+            rect.querySelector('.item-right').onclick = () => {
+                if (opts.type === 'category') {
+                    editImportedState.path.push({
+                        type: 'category',
+                        id: opts.id,
+                        name: opts.name
+                    });
+                    loadImportedCategoryProducts(opts.id, opts.name);
+                } else if (opts.type === 'product') {
+                    editImportedState.path.push({
+                        type: 'product',
+                        id: opts.id,
+                        name: opts.name,
+                        parentCategory: opts.parentCategory
+                    });
+                    loadImportedProductChildren(opts.id, opts.name, opts.parentCategory);
+                } else if (opts.type === 'subcategory') {
+                    editImportedState.path.push({
+                        type: 'subcategory',
+                        id: opts.id,
+                        name: opts.name,
+                        parentCategory: opts.parentCategory,
+                        parentProduct: opts.parentProduct
+                    });
+                    loadImportedProductChildren(opts.id, opts.name, opts.parentCategory);
+                }
+            };
+
+            rect.querySelector('.edit-btn').onclick = (e) => {
+                e.stopPropagation();
+                openEditImportedItemModal(opts);
+            };
+
+            rect.querySelector('.delete-btn').onclick = (e) => {
+                e.stopPropagation();
+                openDeleteImportedItemModal(opts);
+            };
+
+            return rect;
+        }
+
+        let currentlyEditingImportedItem = null;
+
+        function openEditImportedItemModal(item) {
+            currentlyEditingImportedItem = item;
+
+            document.getElementById('editImportedNameInput').value = item.name;
+            document.getElementById('editImportedImageInput').value = '';
+
+            const profitGroup = document.getElementById('editImportedProfitGroup');
+            if (item.type === 'subcategory') {
+                profitGroup.style.display = 'flex';
+                fetch('/api/get_imported_items?category=' + encodeURIComponent(item.parentCategory || '') +
+                      '&product=' + encodeURIComponent(item.parentProduct || item.parentCategory || '') +
+                      '&name=' + encodeURIComponent(item.name))
+                    .then(r => r.json())
+                    .then(data => {
+                        const match = (data.subcategories || []).find(s => s.name === item.name);
+                        if (match) {
+                            document.getElementById('editImportedProfitInput').value = match.profit_margin || 0;
+                        } else {
+                            document.getElementById('editImportedProfitInput').value = 0;
+                        }
+                    })
+                    .catch(() => {
+                        document.getElementById('editImportedProfitInput').value = 0;
+                    });
+            } else {
+                profitGroup.style.display = 'none';
+            }
+
+            const preview = document.getElementById('editImportedImagePreview');
+            const previewImg = document.getElementById('editImportedImagePreviewImg');
+            if (item.image) {
+                previewImg.src = item.image;
+                preview.style.display = 'block';
+            } else {
+                preview.style.display = 'none';
+            }
+
+            openModal('editImportedItemModal');
+        }
+
+        async function saveEditImportedItem() {
+            if (!currentlyEditingImportedItem) return;
+
+            const newName = document.getElementById('editImportedNameInput').value.trim();
+            const newProfit = parseFloat(document.getElementById('editImportedProfitInput').value) || 0;
+            const fileInput = document.getElementById('editImportedImageInput');
+
+            if (!newName) {
+                alert('يرجى إدخال الاسم!');
+                return;
+            }
+
+            let imageData = '';
+            if (fileInput.files && fileInput.files[0]) {
+                imageData = await new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => resolve(e.target.result);
+                    reader.readAsDataURL(fileInput.files[0]);
+                });
+            }
+
+            const payload = {
+                type: currentlyEditingImportedItem.type,
+                old_name: currentlyEditingImportedItem.name,
+                new_name: newName,
+                category: currentlyEditingImportedItem.parentCategory || '',
+                product: currentlyEditingImportedItem.parentProduct || currentlyEditingImportedItem.parentCategory || '',
+                profit_margin: newProfit,
+                image: imageData
+            };
+
+            try {
+                const res = await fetch('/api/update_imported_item', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+
+                if (data.status === 'success') {
+                    alert('✅ تم حفظ التعديلات بنجاح!');
+                    closeModal('editImportedItemModal');
+                    refreshCurrentEditImportedLevel();
+                } else {
+                    alert('❌ ' + (data.message || 'فشل التعديل!'));
+                }
+            } catch (e) {
+                alert('فشل الاتصال بالخادم!');
+            }
+        }
+
+        let currentlyDeletingImportedItem = null;
+
+        function openDeleteImportedItemModal(item) {
+            currentlyDeletingImportedItem = item;
+
+            let msg = 'هل أنت متأكد من حذف ';
+            if (item.type === 'category') {
+                msg += `القسم الرئيسي «${item.name}» وكل ما يحتويه من منتجات وفئات؟`;
+            } else if (item.type === 'product') {
+                msg += `المنتج «${item.name}» وكل الفئات التابعة له؟`;
+            } else {
+                msg += `الفئة «${item.name}»؟`;
+            }
+
+            document.getElementById('deleteImportedItemMsg').innerText = msg;
+            openModal('deleteImportedItemModal');
+        }
+
+        async function confirmDeleteImportedItem() {
+            if (!currentlyDeletingImportedItem) return;
+
+            const payload = {
+                type: currentlyDeletingImportedItem.type,
+                name: currentlyDeletingImportedItem.name,
+                category: currentlyDeletingImportedItem.parentCategory || '',
+                product: currentlyDeletingImportedItem.parentProduct || currentlyDeletingImportedItem.parentCategory || ''
+            };
+
+            try {
+                const res = await fetch('/api/delete_imported_item', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+
+                if (data.status === 'success') {
+                    alert('🗑️ تم الحذف بنجاح!');
+                    closeModal('deleteImportedItemModal');
+                    refreshCurrentEditImportedLevel();
+                } else {
+                    alert('❌ ' + (data.message || 'فشل الحذف!'));
+                }
+            } catch (e) {
+                alert('فشل الاتصال بالخادم!');
+            }
+        }
+
+        function refreshCurrentEditImportedLevel() {
+            const path = editImportedState.path;
+            if (path.length === 0) {
+                loadImportedRoot();
+            } else {
+                navigateToNode(path[path.length - 1]);
+            }
+        }
+        // ==================== END EDIT IMPORTED ITEMS ====================
+
         loadCategories();
         fetchStatsAndRender();
         setInterval(fetchStatsAndRender, 30000);
@@ -12644,8 +12769,7 @@ self.addEventListener('fetch', event => {
             PRODUCTS_DATA.append({
                 "name": data.get('name'),
                 "category": data.get('category'),
-                "image": data.get('image', ''),
-                "parent_product": None
+                "image": data.get('image', '')
             })
             save_json_file(PRODUCTS_FILE, PRODUCTS_DATA)
             self.send_response(200)
