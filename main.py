@@ -471,11 +471,18 @@ def load_json_file(file_path, default_data):
 
 
 def save_json_file(file_path, data):
+    # كتابة ذرّية (ملف مؤقت ثم استبدال) حتى ما يتخرب الملف إذا انقطع السيرفر أثناء الحفظ
+    tmp_path = file_path + ".tmp"
     try:
-        with open(file_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=4)
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, separators=(",", ":"))
+        os.replace(tmp_path, file_path)
     except Exception as e:
         logging.error(f"خطأ في كتابة {file_path}: {e}")
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
 
 
 CATEGORIES_DATA = load_json_file(CATEGORIES_FILE, DEFAULT_CATEGORIES)
@@ -8388,6 +8395,30 @@ Code   : -
             menu.style.display = (menu.style.display === 'flex') ? 'none' : 'flex';
         }
 
+
+        // ضغط الصورة بالمتصفح قبل الرفع حتى ما ينهار السيرفر من الصور الكبيرة
+        function compressImage(file, maxSize, quality) {
+            maxSize = maxSize || 600; quality = quality || 0.82;
+            return new Promise(function(resolve, reject) {
+                if (!file) { reject(new Error('no file')); return; }
+                var url = URL.createObjectURL(file);
+                var img = new Image();
+                img.onload = function() {
+                    var w = img.width, h = img.height;
+                    var scale = Math.min(1, maxSize / Math.max(w, h));
+                    var c = document.createElement('canvas');
+                    c.width = Math.max(1, Math.round(w * scale));
+                    c.height = Math.max(1, Math.round(h * scale));
+                    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+                    URL.revokeObjectURL(url);
+                    var type = (file.type === 'image/png' || file.type === 'image/webp') ? 'image/webp' : 'image/jpeg';
+                    resolve(c.toDataURL(type, quality));
+                };
+                img.onerror = function() { URL.revokeObjectURL(url); reject(new Error('bad image')); };
+                img.src = url;
+            });
+        }
+
         function openModal(id) {
             const el = document.getElementById(id);
             if (el) el.classList.add('active');
@@ -10866,19 +10897,22 @@ Code   : -
             const category = document.getElementById('categorySelect').value;
             const fileInput = document.getElementById('categoryImageInput');
             if (!fileInput.files || !fileInput.files[0]) { alert('يرجى اختيار صورة!'); return; }
-            const reader = new FileReader();
-            reader.onload = async function(e) {
-                await fetch('/api/update_category', {
+            try {
+                const image = await compressImage(fileInput.files[0], 600, 0.82);
+                const res = await fetch('/api/update_category', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ category, image: e.target.result })
+                    body: JSON.stringify({ category, image })
                 });
+                const out = await res.json();
+                if (out.status !== 'success') { alert(out.message || 'فشل حفظ الصورة'); return; }
                 alert('تم حفظ الصورة بنجاح!');
                 closeModal('categoryModalOverlay');
                 loadCategories();
                 fetchStatsAndRender();
-            };
-            reader.readAsDataURL(fileInput.files[0]);
+            } catch (err) {
+                alert('تعذر رفع الصورة، جرّب صورة ثانية.');
+            }
         }
 
         function openCategoryBannerModal() {
@@ -12843,6 +12877,8 @@ def ims_edit_subsection(data):
         return {"status": "success", "message": msg}
 
 
+MAX_POST_BYTES = 90 * 1024 * 1024   # أكبر طلب مسموح (فيديو 60MB يصير ~80MB بعد base64)
+MAX_IMAGE_CHARS = 1500000           # أكبر صورة قسم (نص base64) ~1.1MB
 POST_LOCK = threading.RLock()   # يسلسل عمليات الكتابة (POST) حتى ما يصير تضارب بالأرصدة والبيانات
 
 
@@ -13775,9 +13811,18 @@ self.addEventListener('fetch', event => {
             self._do_POST_locked()
 
     def _do_POST_locked(self):
-        content_length = int(self.headers['Content-Length'])
+        content_length = int(self.headers.get('Content-Length') or 0)
+        if content_length > MAX_POST_BYTES:
+            self.send_response(413)
+            self.send_header("Content-type", "application/json; charset=utf-8")
+            self.send_header("Connection", "close")
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "error", "message": "الملف كبير جداً"}, ensure_ascii=False).encode("utf-8"))
+            self.close_connection = True
+            return
         post_data = self.rfile.read(content_length)
         data = json.loads(post_data.decode('utf-8'))
+        del post_data
 
         if self.path == "/api/toggle_maintenance":
             is_active = bool(data.get('is_active', False))
@@ -14681,13 +14726,16 @@ self.addEventListener('fetch', event => {
         elif self.path == "/api/update_category":
             category = data.get('category')
             image = data.get('image')
-            if category in CATEGORIES_DATA:
+            result = {"status": "success"}
+            if isinstance(image, str) and len(image) > MAX_IMAGE_CHARS:
+                result = {"status": "error", "message": "الصورة كبيرة جداً، اختر صورة أصغر"}
+            elif category in CATEGORIES_DATA:
                 CATEGORIES_DATA[category] = image
                 save_json_file(CATEGORIES_FILE, CATEGORIES_DATA)
             self.send_response(200)
             self.send_header("Content-type", "application/json; charset=utf-8")
             self.end_headers()
-            self.wfile.write(json.dumps({"status": "success"}).encode("utf-8"))
+            self.wfile.write(json.dumps(result, ensure_ascii=False).encode("utf-8"))
 
         elif self.path == "/api/add_banner":
             image = data.get('image')
