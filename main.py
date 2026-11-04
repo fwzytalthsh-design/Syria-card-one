@@ -14,6 +14,18 @@ import threading
 import time
 import re
 import html as html_lib
+import struct
+
+# Web Push (إشعارات النظام) تحتاج مكتبة cryptography. إذا ما كانت موجودة يشتغل الباقي عادي بدونها.
+try:
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
+    PUSH_AVAILABLE = True
+except Exception:  # pragma: no cover
+    PUSH_AVAILABLE = False
 
 # تفعيل تسجيل الأحداث (Logging)
 logging.basicConfig(
@@ -45,6 +57,8 @@ MEDIA_MAX_BYTES = 60 * 1024 * 1024   # أقصى حجم فيديو
 MEDIA_CHUNK = 1024 * 1024            # أقصى حجم رد واحد (Range) حتى ما يعلّق السيرفر
 TICKER_FILE = "ticker_settings.json"
 ANNOUNCEMENT_FILE = "announcement_settings.json"
+PUSH_SUBS_FILE = "push_subscriptions.json"
+PUSH_VAPID_FILE = "push_vapid.json"
 
 # --------------------------------------------------
 # إعدادات بوت التليجرام للإشعارات
@@ -471,11 +485,18 @@ def load_json_file(file_path, default_data):
 
 
 def save_json_file(file_path, data):
+    # كتابة ذرّية (ملف مؤقت ثم استبدال) حتى ما يتخرب الملف إذا انقطع السيرفر أثناء الحفظ
+    tmp_path = file_path + ".tmp"
     try:
-        with open(file_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=4)
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, separators=(",", ":"))
+        os.replace(tmp_path, file_path)
     except Exception as e:
         logging.error(f"خطأ في كتابة {file_path}: {e}")
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
 
 
 CATEGORIES_DATA = load_json_file(CATEGORIES_FILE, DEFAULT_CATEGORIES)
@@ -610,12 +631,52 @@ def make_api_request(url, token, timeout=12):
         return json.loads(response.read().decode('utf-8'))
 
 
-def add_user_notification(email, order_uuid, message, status):
+def _tg_rich_text_for(email, order_uuid, message, status):
+    """يبني رسالة تلغرام مفصّلة لقبول/رفض الإيداع أو الطلب (أو نص عادي إن لم يُعرف النوع)."""
+    ok = (status == "success")
+    sep = "━━━━━━━━━━━━━━"
+    try:
+        bal = tg_money((USERS_DATA.get(email) or {}).get("balance", 0))
+        if str(order_uuid).startswith("deposit_"):
+            rid = str(order_uuid)[len("deposit_"):]
+            req = next((r for r in DEPOSIT_REQUESTS_DATA if str(r.get("id")) == rid), None)
+            if req:
+                head = "✅ <b>تم قبول طلب الإيداع</b>" if ok else "❌ <b>تم رفض طلب الإيداع</b>"
+                txt = (f"{head}\n{sep}\n"
+                       f"💳 <b>طريقة الإيداع:</b> {tg_esc(req.get('method_name', '-'))}\n"
+                       f"💰 <b>المبلغ:</b> {tg_money(req.get('amount', 0))} $\n"
+                       f"🧾 <b>رقم العملية:</b> <code>{tg_esc(req.get('tx_id', '-'))}</code>\n")
+                if ok:
+                    txt += f"{sep}\n💵 <b>رصيدك الآن:</b> {bal} $"
+                else:
+                    txt += f"{sep}\n💵 <b>رصيدك:</b> {bal} $"
+                return txt
+        else:
+            o = next((x for x in ORDERS_DATA if x.get("order_uuid") == order_uuid), None)
+            if o:
+                head = "✅ <b>تم تنفيذ طلبك</b>" if ok else "❌ <b>تم رفض طلبك</b>"
+                txt = (f"{head}\n{sep}\n"
+                       f"📦 <b>المنتج:</b> {tg_esc(o.get('product', '-'))}\n"
+                       f"🏷️ <b>الفئة:</b> {tg_esc(o.get('subcategory', '-'))}\n"
+                       f"💰 <b>السعر:</b> {tg_money(o.get('price', 0))} $\n"
+                       f"📝 <b>المدخلات:</b> {tg_esc(o.get('input', '-'))}\n"
+                       f"🆔 <b>رقم الطلب:</b> <code>{tg_esc(str(order_uuid)[:16])}</code>\n")
+                if not ok:
+                    txt += f"↩️ <b>تم إرجاع المبلغ إلى رصيدك</b>\n"
+                txt += f"{sep}\n💵 <b>رصيدك الآن:</b> {bal} $"
+                return txt
+    except Exception as e:
+        logging.error(f"فشل بناء رسالة التلغرام المفصلة: {e}")
+    return f"🔔 {html_lib.escape(str(message))}"
+
+
+def add_user_notification(email, order_uuid, message, status, tg_text=None):
     if email not in NOTIFICATIONS_DATA:
         NOTIFICATIONS_DATA[email] = []
 
+    notif_id = str(uuid.uuid4())
     NOTIFICATIONS_DATA[email].insert(0, {
-        "id": str(uuid.uuid4()),
+        "id": notif_id,
         "order_uuid": order_uuid,
         "message": message,
         "status": status,
@@ -628,9 +689,15 @@ def add_user_notification(email, order_uuid, message, status):
 
     # نفس الإشعار يوصل لحساب المستخدم في بوت التلغرام (إن كان مربوطاً)
     try:
-        tg_notify_user(email, f"🔔 {html_lib.escape(str(message))}")
-    except Exception:
-        pass
+        tg_notify_user(email, tg_text or _tg_rich_text_for(email, order_uuid, message, status))
+    except Exception as e:
+        logging.error(f"فشل إشعار التلغرام: {e}")
+
+    # إشعار نظامي على جهاز المستخدم عبر المتصفح (Web Push)
+    try:
+        send_web_push_async(email, "SYRIA CARD ONE", str(message), notif_id)
+    except Exception as e:
+        logging.error(f"فشل إشعار المتصفح: {e}")
 
 
 # --------------------------------------------------
@@ -2404,6 +2471,8 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
             align-items: center; justify-content: flex-start; cursor: pointer;
             overflow: visible; position: relative; transform: none; padding: 0; width: 100%;
         }
+        .code-emoji { display: flex !important; align-items: center; justify-content: center; padding: 0 !important; overflow: hidden; background: transparent !important; border: none !important; }
+        .code-emoji svg { width: 100%; height: 100%; display: block; }
         .item-img {
             width: 100%; aspect-ratio: 1 / 1; object-fit: cover; border-radius: 14px;
             position: static; box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
@@ -3591,6 +3660,7 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
             <div class="tg-link-status" id="tgLinkStatus"></div>
             <div class="tg-link-note">يستخدم لربط بوت التلغرام بالموقع لتسهيل عمليات الشراء</div>
             <a class="tg-link-open-btn" id="tgLinkOpenBtn" href="#" target="_blank" rel="noopener" style="display:none;">فتح بوت تلغرام</a>
+            <button type="button" id="tgUnlinkBtn" class="tg-link-open-btn" style="display:none; background:linear-gradient(135deg,#7f1d1d,#ef4444); border:none; cursor:pointer;" onclick="unlinkTelegram()">فك ربط الحساب</button>
         </div>
     </div>
 
@@ -3607,6 +3677,7 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
             <span style="font-size:0.95rem; font-weight:800; color:var(--accent-color);">الإشعارات</span>
             <button class="back-btn" style="display:block;" onclick="closeNotificationsPage()">رجوع للمتجر</button>
         </div>
+        <button class="filter-pill" id="enablePushBtn" onclick="enablePushFromButton()" style="display:none; margin-top:5px;">🔔 تفعيل إشعارات الجهاز</button>
         <div style="display:flex; gap:8px; margin-top:5px;">
             <button class="filter-pill active" id="allNotifBtn" onclick="filterNotifications('all', this)">الكل</button>
             <button class="filter-pill" id="unreadNotifBtn" onclick="filterNotifications('unread', this)">غير مقروءة</button>
@@ -4970,6 +5041,7 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
             
             checkOrdersForUpdates();
             checkNotificationsForUpdate();
+            syncPushSubscription(false);
             
             orderPollingInterval = setInterval(() => {
                 checkOrdersForUpdates();
@@ -5035,6 +5107,7 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
                 const notifications = await res.json();
                 
                 dataStore.userNotifications = notifications;
+                showSystemNotificationsForNew(notifications);
                 
                 const unreadCount = notifications.filter(n => !n.is_read).length;
                 updateNotificationBadge(unreadCount);
@@ -5043,7 +5116,13 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
             }
         }
 
+        function refreshPushButton() {
+            const b = document.getElementById('enablePushBtn');
+            if (b) b.style.display = ('Notification' in window && Notification.permission !== 'granted' && Notification.permission !== 'denied') ? '' : 'none';
+        }
+
         function updateNotificationBadge(count) {
+            refreshPushButton();
             const badge = document.getElementById('notifBadge');
             const badgeBottom = document.getElementById('notifBadgeBottom');
             
@@ -5319,7 +5398,7 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
                 card.style.transform = `scale(var(--category-card-scale))`;
                 card.onclick = async () => { if (window._restDataPromise) await window._restDataPromise; openProductsView(name); };
 
-                let imgHTML = img ? `<img src="${img}" class="item-img" loading="lazy" decoding="async" />` : `<div class="item-img" style="display:flex;align-items:center;justify-content:center;color:#666;">🎮</div>`;
+                let imgHTML = img ? `<img src="${img}" class="item-img" loading="lazy" decoding="async" />` : `${codeEmoji('game','item-img')}`;
                 card.innerHTML = `${imgHTML}<div class="item-label">${name}</div>`;
                 grid.appendChild(card);
             }
@@ -5360,7 +5439,7 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
                     card.style.transform = `scale(var(--category-card-scale))`;
                     card.onclick = () => openSubcategoriesView(p.name);
 
-                    let imgHTML = p.image ? `<img src="${p.image}" class="item-img" loading="lazy" decoding="async" />` : `<div class="item-img" style="display:flex;align-items:center;justify-content:center;color:#666;">📦</div>`;
+                    let imgHTML = p.image ? `<img src="${p.image}" class="item-img" loading="lazy" decoding="async" />` : `${codeEmoji('box','item-img')}`;
                     card.innerHTML = `${imgHTML}<div class="item-label">${p.name}</div>`;
                     grid.appendChild(card);
                 });
@@ -5406,7 +5485,7 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
                     card.style.transform = `scale(var(--category-card-scale))`;
                     card.onclick = () => openGroupView(productName, g.id, g.name);
 
-                    let imgHTML = g.image ? `<img src="${g.image}" class="group-item-img" />` : `<div class="group-item-img" style="display:flex;align-items:center;justify-content:center;color:#666;font-size:2rem;">📁</div>`;
+                    let imgHTML = g.image ? `<img src="${g.image}" class="group-item-img" />` : `${codeEmoji('folder','group-item-img')}`;
 
                     card.innerHTML = `
                         ${imgHTML}
@@ -5421,7 +5500,7 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
                     card.style.transform = `scale(var(--category-card-scale))`;
                     card.onclick = () => openPurchaseModal(s);
 
-                    let imgHTML = s.image ? `<img src="${s.image}" class="item-img" loading="lazy" decoding="async" />` : `<div class="item-img" style="display:flex;align-items:center;justify-content:center;color:#666;">💎</div>`;
+                    let imgHTML = s.image ? `<img src="${s.image}" class="item-img" loading="lazy" decoding="async" />` : `${codeEmoji('gem','item-img')}`;
 
                     let priceDisplay = `$ ${formatBalance(s.price)}`;
                     if (s.is_counter) {
@@ -5470,7 +5549,7 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
                     card.style.transform = `scale(var(--category-card-scale))`;
                     card.onclick = () => openPurchaseModal(s);
 
-                    let imgHTML = s.image ? `<img src="${s.image}" class="item-img" loading="lazy" decoding="async" />` : `<div class="item-img" style="display:flex;align-items:center;justify-content:center;color:#666;">💎</div>`;
+                    let imgHTML = s.image ? `<img src="${s.image}" class="item-img" loading="lazy" decoding="async" />` : `${codeEmoji('gem','item-img')}`;
 
                     let priceDisplay = `$ ${formatBalance(s.price)}`;
                     if (s.is_counter) {
@@ -5558,8 +5637,35 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
             try {
                 const res = await fetch('/api/telegram_link_status?email=' + encodeURIComponent(email));
                 const data = await res.json();
-                if (data.linked) setTelegramLinkStatus('حسابك مربوط ببوت تلغرام ✅', 'ok');
+                const ub = document.getElementById('tgUnlinkBtn');
+                if (data.linked) { setTelegramLinkStatus('حسابك مربوط ببوت تلغرام ✅', 'ok'); if (ub) ub.style.display = ''; }
+                else if (ub) { ub.style.display = 'none'; }
             } catch (e) { console.error(e); }
+        }
+
+        async function unlinkTelegram() {
+            const email = localStorage.getItem('loggedInUserEmail');
+            if (!email) { setTelegramLinkStatus('يرجى تسجيل الدخول أولاً', 'err'); return; }
+            if (!confirm('هل تريد فك ربط حسابك ببوت تلغرام؟')) return;
+            const pwd = prompt('أدخل كلمة سر حسابك لتأكيد فك الربط:');
+            if (!pwd) return;
+            setTelegramLinkStatus('جاري فك الربط...', '');
+            try {
+                const res = await fetch('/api/unlink_telegram', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: email, password: pwd })
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    setTelegramLinkStatus(data.message + ' ✅', 'ok');
+                    document.getElementById('tgUnlinkBtn').style.display = 'none';
+                } else {
+                    setTelegramLinkStatus(data.message || 'حدث خطأ، حاول مرة أخرى', 'err');
+                }
+            } catch (e) {
+                setTelegramLinkStatus('تعذر الاتصال بالسيرفر', 'err');
+            }
         }
 
         function closeTelegramLinkPage() {
@@ -5595,6 +5701,8 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
                 if (data.status === 'success') {
                     setTelegramLinkStatus(data.message, 'ok');
                     input.value = '';
+                    const ub2 = document.getElementById('tgUnlinkBtn');
+                    if (ub2) ub2.style.display = '';
                 } else {
                     setTelegramLinkStatus(data.message || 'حدث خطأ، حاول مرة أخرى', 'err');
                 }
@@ -5634,7 +5742,7 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
                 card.style.transform = `scale(var(--deposit-card-scale))`;
                 card.onclick = () => openDepositDetailModal(m);
 
-                let imgHTML = m.image ? `<img src="${m.image}" class="item-img" loading="lazy" decoding="async" />` : `<div class="item-img" style="display:flex;align-items:center;justify-content:center;color:#666;">💳</div>`;
+                let imgHTML = m.image ? `<img src="${m.image}" class="item-img" loading="lazy" decoding="async" />` : `${codeEmoji('card','item-img')}`;
                 card.innerHTML = `${imgHTML}<div class="item-label" style="color:var(--deposit-label-color);">${m.name}</div>`;
                 grid.appendChild(card);
             });
@@ -6313,6 +6421,135 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
             }
         }
 
+        // ===== إيموجي مرسومة بالكود (SVG) للعناصر اللي ما إلها صورة =====
+        const CE_DEFS = '<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>' +
+            '<linearGradient id="ceBg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#232346"/><stop offset="1" stop-color="#0a0a14"/></linearGradient>' +
+            '<linearGradient id="ceStroke" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#38bdf8"/><stop offset="1" stop-color="#a855f7"/></linearGradient>' +
+            '<linearGradient id="ceCyan" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#a5f3fc"/><stop offset="0.5" stop-color="#22d3ee"/><stop offset="1" stop-color="#1d4ed8"/></linearGradient>' +
+            '<linearGradient id="ceGold" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fef3c7"/><stop offset="0.5" stop-color="#fbbf24"/><stop offset="1" stop-color="#b45309"/></linearGradient>' +
+            '<linearGradient id="cePink" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f5d0fe"/><stop offset="0.5" stop-color="#d946ef"/><stop offset="1" stop-color="#6b21a8"/></linearGradient>' +
+            '<linearGradient id="ceGreen" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#bbf7d0"/><stop offset="0.5" stop-color="#22c55e"/><stop offset="1" stop-color="#14532d"/></linearGradient>' +
+            '<filter id="ceGlow" x="-25%" y="-25%" width="150%" height="150%"><feDropShadow dx="0" dy="2" stdDeviation="2.4" flood-color="#38bdf8" flood-opacity="0.55"/></filter>' +
+            '</defs></svg>';
+        const CE_BASE = '<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">' +
+            '<rect x="1.5" y="1.5" width="97" height="97" rx="22" fill="url(#ceBg)" stroke="url(#ceStroke)" stroke-width="2"/>' +
+            '<g font-family="monospace" font-weight="700" fill="#7dd3fc" opacity="0.16">' +
+            '<text x="8" y="20" font-size="11">&lt;/&gt;</text><text x="62" y="20" font-size="11">{ }</text>' +
+            '<text x="8" y="92" font-size="11">01 10</text><text x="66" y="92" font-size="11">();</text></g>';
+        const CE_ART = {
+            game: '<g filter="url(#ceGlow)"><path d="M22 44Q22 34 32 34H68Q78 34 78 44L82 62Q84 72 76 72Q70 72 66 66L62 62H38L34 66Q30 72 24 72Q16 72 18 62Z" fill="url(#ceCyan)" stroke="#e0f2fe" stroke-width="1.4"/>' +
+                '<path d="M34 42v12M28 48h12" stroke="#0b1d3a" stroke-width="4" stroke-linecap="round"/>' +
+                '<circle cx="62" cy="43" r="4.2" fill="url(#ceGold)"/><circle cx="70" cy="51" r="4.2" fill="url(#cePink)"/>' +
+                '<path d="M30 38Q50 32 70 38" stroke="#fff" stroke-opacity="0.55" stroke-width="2" fill="none" stroke-linecap="round"/></g>',
+            box: '<g filter="url(#ceGlow)"><polygon points="50,24 79,38 50,52 21,38" fill="#fde68a"/>' +
+                '<polygon points="21,38 50,52 50,80 21,66" fill="url(#ceGold)"/><polygon points="50,52 79,38 79,66 50,80" fill="#b45309"/>' +
+                '<path d="M35.5 31L64.5 45" stroke="#92400e" stroke-width="3" stroke-linecap="round" opacity="0.7"/>' +
+                '<polygon points="50,24 79,38 50,52 21,38" fill="none" stroke="#fff7d6" stroke-width="1.2"/></g>',
+            folder: '<g filter="url(#ceGlow)"><path d="M16 32H40L46 40H82Q86 40 86 44V72Q86 76 82 76H18Q14 76 14 72V36Q14 32 16 32Z" fill="url(#cePink)"/>' +
+                '<path d="M14 50H86V72Q86 76 82 76H18Q14 76 14 72Z" fill="#a21caf" opacity="0.65"/>' +
+                '<path d="M14 50H86" stroke="#fae8ff" stroke-width="1.4" opacity="0.7"/>' +
+                '<text x="50" y="68" text-anchor="middle" font-family="monospace" font-weight="800" font-size="17" fill="#fff">&lt;/&gt;</text></g>',
+            gem: '<g filter="url(#ceGlow)"><path d="M30 32H70L84 46L50 82L16 46Z" fill="url(#ceCyan)" stroke="#e0f2fe" stroke-width="1.4" stroke-linejoin="round"/>' +
+                '<path d="M16 46H84M30 32L38 46L50 82M70 32L62 46L50 82M50 32L38 46M50 32L62 46" stroke="#fff" stroke-opacity="0.6" stroke-width="1.3" fill="none" stroke-linejoin="round"/>' +
+                '<path d="M80 18l2.2 5.8 5.8 2.2-5.8 2.2-2.2 5.8-2.2-5.8-5.8-2.2 5.8-2.2z" fill="#fff"/></g>',
+            card: '<g filter="url(#ceGlow)"><rect x="13" y="30" width="74" height="46" rx="8" fill="url(#ceGold)" stroke="#fff7d6" stroke-width="1.3"/>' +
+                '<rect x="13" y="39" width="74" height="8" fill="#78350f" opacity="0.75"/><rect x="20" y="54" width="14" height="10" rx="2.5" fill="#fde68a" stroke="#92400e" stroke-width="1"/>' +
+                '<text x="76" y="68" text-anchor="end" font-family="monospace" font-weight="800" font-size="16" fill="#78350f">$</text></g>'
+        };
+        function codeEmoji(kind, cls, extra) {
+            if (!document.getElementById('ceDefsHost')) {
+                const host = document.createElement('div');
+                host.id = 'ceDefsHost';
+                host.style.cssText = 'position:absolute;width:0;height:0;overflow:hidden';
+                host.innerHTML = CE_DEFS;
+                (document.body || document.documentElement).appendChild(host);
+            }
+            return '<div class="' + (cls || 'item-img') + ' code-emoji"' + (extra ? ' style="' + extra + '"' : '') + '>' +
+                CE_BASE + (CE_ART[kind] || CE_ART.box) + '</svg></div>';
+        }
+
+        // ===== إشعارات النظام على الجهاز (Web Push) =====
+        function pushB64ToUint8(b64) {
+            const pad = '='.repeat((4 - b64.length % 4) % 4);
+            const raw = atob((b64 + pad).replace(/-/g, '+').replace(/_/g, '/'));
+            const out = new Uint8Array(raw.length);
+            for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+            return out;
+        }
+
+        async function syncPushSubscription(askPermission) {
+            try {
+                const email = localStorage.getItem('loggedInUserEmail');
+                if (!email) return false;
+                if (!('serviceWorker' in navigator) || !('Notification' in window)) return false;
+                if (Notification.permission === 'denied') return false;
+                if (Notification.permission === 'default') {
+                    if (!askPermission) return false;
+                    const p = await Notification.requestPermission();
+                    if (p !== 'granted') return false;
+                }
+                if (!('PushManager' in window)) return true;
+                const reg = await navigator.serviceWorker.ready;
+                const info = await (await fetch('/api/push_public_key')).json();
+                if (!info.enabled || !info.key) return true;
+                const keyArr = pushB64ToUint8(info.key);
+                let sub = await reg.pushManager.getSubscription();
+                if (sub && sub.options && sub.options.applicationServerKey) {
+                    const cur = new Uint8Array(sub.options.applicationServerKey);
+                    let same = cur.length === keyArr.length;
+                    for (let i = 0; same && i < cur.length; i++) if (cur[i] !== keyArr[i]) same = false;
+                    if (!same) { await sub.unsubscribe(); sub = null; }
+                }
+                if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyArr });
+                await fetch('/api/push_subscribe', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: email, subscription: sub.toJSON() })
+                });
+                return true;
+            } catch (e) {
+                console.log('push setup failed', e);
+                return false;
+            }
+        }
+
+        // احتياط: إذا الموقع مفتوح (حتى بالخلفية) نظهر الإشعار الجديد كإشعار نظام حتى لو ما اشتغل Push
+        function showSystemNotificationsForNew(list) {
+            try {
+                const email = localStorage.getItem('loggedInUserEmail');
+                if (!email || !Array.isArray(list)) return;
+                const key = 'seenNotifIds_' + email;
+                const raw = localStorage.getItem(key);
+                const seen = new Set(raw ? JSON.parse(raw) : []);
+                const first = (raw === null);
+                const fresh = list.filter(n => !seen.has(n.id));
+                list.forEach(n => seen.add(n.id));
+                localStorage.setItem(key, JSON.stringify(Array.from(seen).slice(-200)));
+                if (first || !fresh.length) return;
+                if (!('Notification' in window) || Notification.permission !== 'granted' || !('serviceWorker' in navigator)) return;
+                navigator.serviceWorker.ready.then(function (reg) {
+                    fresh.filter(n => !n.is_read).slice(0, 3).forEach(function (n) {
+                        reg.showNotification('SYRIA CARD ONE', { body: n.message, tag: n.id, icon: '/pwa-icon', dir: 'rtl', lang: 'ar', data: { url: '/' } });
+                    });
+                });
+            } catch (e) { console.log(e); }
+        }
+
+        async function enablePushFromButton() {
+            if (!('Notification' in window)) { alert('متصفحك لا يدعم الإشعارات'); return; }
+            if (Notification.permission === 'denied') { alert('الإشعارات محظورة. فعّلها من إعدادات المتصفح للموقع.'); return; }
+            const ok = await syncPushSubscription(true);
+            const btn = document.getElementById('enablePushBtn');
+            if (ok && Notification.permission === 'granted') { if (btn) btn.style.display = 'none'; alert('تم تفعيل إشعارات الجهاز ✅'); }
+        }
+
+        document.addEventListener('click', function pushAskOnce() {
+            if (!localStorage.getItem('loggedInUserEmail')) return;
+            document.removeEventListener('click', pushAskOnce);
+            if ('Notification' in window && Notification.permission === 'default') syncPushSubscription(true);
+        });
+        window.addEventListener('load', function () { setTimeout(function () { syncPushSubscription(false); }, 2500); });
+
         // تسجيل Service Worker
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
@@ -6487,6 +6724,8 @@ ADMIN_HTML_CONTENT = """
         .ims-title { font-size: 1.1rem; font-weight: 800; background: linear-gradient(90deg, #f5c76b, #fde9b0); -webkit-background-clip: text; background-clip: text; color: transparent; display: flex; align-items: center; gap: 8px; }
         .ims-hint { font-size: 0.75rem; color: #a1a1aa; line-height: 1.7; background: rgba(245,199,107,0.06); border: 1px dashed rgba(245,199,107,0.3); border-radius: 10px; padding: 9px 12px; }
         .ims-node { display: flex; flex-direction: column; gap: 8px; }
+        .code-emoji { display: flex !important; align-items: center; justify-content: center; padding: 0 !important; overflow: hidden; background: transparent !important; border: none !important; }
+        .code-emoji svg { width: 100%; height: 100%; display: block; }
         .ims-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; background: linear-gradient(135deg, #16161c, #0d0d11); border: 1px solid #27272a; border-radius: 14px; padding: 11px 14px; cursor: pointer; box-shadow: 0 4px 18px rgba(0,0,0,0.35); transition: border-color 0.2s, transform 0.15s, box-shadow 0.2s; }
         .ims-row:hover { border-color: rgba(245,199,107,0.55); box-shadow: 0 6px 22px rgba(245,199,107,0.10); }
         .ims-row:active { transform: scale(0.99); }
@@ -6500,6 +6739,11 @@ ADMIN_HTML_CONTENT = """
         .ims-chevron.open { transform: rotate(-90deg); }
         .ims-thumb { width: 42px; height: 42px; border-radius: 10px; object-fit: cover; flex-shrink: 0; border: 1px solid #2f2f36; background: #000; }
         .ims-thumb-empty { display: flex; align-items: center; justify-content: center; font-size: 1.1rem; color: #52525b; }
+        .ims-row-left { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+        .ims-ord { width: 44px; height: 36px; border-radius: 10px; border: 1px solid rgba(245,199,107,0.6); background: rgba(0,0,0,0.25); color: #f5c76b; font-weight: 800; font-size: 0.95rem; text-align: center; padding: 0; outline: none; -moz-appearance: textfield; }
+        .ims-ord::-webkit-outer-spin-button, .ims-ord::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+        .ims-ord:focus { border-color: #f5c76b; box-shadow: 0 0 0 2px rgba(245,199,107,0.25); }
+        body.light-mode-admin .ims-ord { background: #fff; color: #a16207; }
         .ims-pen { width: 40px; height: 40px; flex-shrink: 0; border-radius: 50%; border: 1px solid rgba(245,199,107,0.6); background: rgba(245,199,107,0.08); font-size: 1.05rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; padding: 0; }
         .ims-pen:hover { background: rgba(245,199,107,0.22); transform: scale(1.08) rotate(-8deg); }
         .ims-children { display: none; flex-direction: column; gap: 8px; margin-right: 20px; padding-right: 14px; border-right: 2px solid rgba(74,222,128,0.28); }
@@ -8388,6 +8632,30 @@ Code   : -
             menu.style.display = (menu.style.display === 'flex') ? 'none' : 'flex';
         }
 
+
+        // ضغط الصورة بالمتصفح قبل الرفع حتى ما ينهار السيرفر من الصور الكبيرة
+        function compressImage(file, maxSize, quality) {
+            maxSize = maxSize || 600; quality = quality || 0.82;
+            return new Promise(function(resolve, reject) {
+                if (!file) { reject(new Error('no file')); return; }
+                var url = URL.createObjectURL(file);
+                var img = new Image();
+                img.onload = function() {
+                    var w = img.width, h = img.height;
+                    var scale = Math.min(1, maxSize / Math.max(w, h));
+                    var c = document.createElement('canvas');
+                    c.width = Math.max(1, Math.round(w * scale));
+                    c.height = Math.max(1, Math.round(h * scale));
+                    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+                    URL.revokeObjectURL(url);
+                    var type = (file.type === 'image/png' || file.type === 'image/webp') ? 'image/webp' : 'image/jpeg';
+                    resolve(c.toDataURL(type, quality));
+                };
+                img.onerror = function() { URL.revokeObjectURL(url); reject(new Error('bad image')); };
+                img.src = url;
+            });
+        }
+
         function openModal(id) {
             const el = document.getElementById(id);
             if (el) el.classList.add('active');
@@ -8822,6 +9090,53 @@ Code   : -
         // ===== تعديل قسم مسحوب (IMS) =====
         let imsSections = [];
         let imsSubsCache = {};
+        // ===== إيموجي مرسومة بالكود (SVG) للعناصر اللي ما إلها صورة =====
+        const CE_DEFS = '<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>' +
+            '<linearGradient id="ceBg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#232346"/><stop offset="1" stop-color="#0a0a14"/></linearGradient>' +
+            '<linearGradient id="ceStroke" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#38bdf8"/><stop offset="1" stop-color="#a855f7"/></linearGradient>' +
+            '<linearGradient id="ceCyan" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#a5f3fc"/><stop offset="0.5" stop-color="#22d3ee"/><stop offset="1" stop-color="#1d4ed8"/></linearGradient>' +
+            '<linearGradient id="ceGold" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fef3c7"/><stop offset="0.5" stop-color="#fbbf24"/><stop offset="1" stop-color="#b45309"/></linearGradient>' +
+            '<linearGradient id="cePink" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f5d0fe"/><stop offset="0.5" stop-color="#d946ef"/><stop offset="1" stop-color="#6b21a8"/></linearGradient>' +
+            '<linearGradient id="ceGreen" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#bbf7d0"/><stop offset="0.5" stop-color="#22c55e"/><stop offset="1" stop-color="#14532d"/></linearGradient>' +
+            '<filter id="ceGlow" x="-25%" y="-25%" width="150%" height="150%"><feDropShadow dx="0" dy="2" stdDeviation="2.4" flood-color="#38bdf8" flood-opacity="0.55"/></filter>' +
+            '</defs></svg>';
+        const CE_BASE = '<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">' +
+            '<rect x="1.5" y="1.5" width="97" height="97" rx="22" fill="url(#ceBg)" stroke="url(#ceStroke)" stroke-width="2"/>' +
+            '<g font-family="monospace" font-weight="700" fill="#7dd3fc" opacity="0.16">' +
+            '<text x="8" y="20" font-size="11">&lt;/&gt;</text><text x="62" y="20" font-size="11">{ }</text>' +
+            '<text x="8" y="92" font-size="11">01 10</text><text x="66" y="92" font-size="11">();</text></g>';
+        const CE_ART = {
+            game: '<g filter="url(#ceGlow)"><path d="M22 44Q22 34 32 34H68Q78 34 78 44L82 62Q84 72 76 72Q70 72 66 66L62 62H38L34 66Q30 72 24 72Q16 72 18 62Z" fill="url(#ceCyan)" stroke="#e0f2fe" stroke-width="1.4"/>' +
+                '<path d="M34 42v12M28 48h12" stroke="#0b1d3a" stroke-width="4" stroke-linecap="round"/>' +
+                '<circle cx="62" cy="43" r="4.2" fill="url(#ceGold)"/><circle cx="70" cy="51" r="4.2" fill="url(#cePink)"/>' +
+                '<path d="M30 38Q50 32 70 38" stroke="#fff" stroke-opacity="0.55" stroke-width="2" fill="none" stroke-linecap="round"/></g>',
+            box: '<g filter="url(#ceGlow)"><polygon points="50,24 79,38 50,52 21,38" fill="#fde68a"/>' +
+                '<polygon points="21,38 50,52 50,80 21,66" fill="url(#ceGold)"/><polygon points="50,52 79,38 79,66 50,80" fill="#b45309"/>' +
+                '<path d="M35.5 31L64.5 45" stroke="#92400e" stroke-width="3" stroke-linecap="round" opacity="0.7"/>' +
+                '<polygon points="50,24 79,38 50,52 21,38" fill="none" stroke="#fff7d6" stroke-width="1.2"/></g>',
+            folder: '<g filter="url(#ceGlow)"><path d="M16 32H40L46 40H82Q86 40 86 44V72Q86 76 82 76H18Q14 76 14 72V36Q14 32 16 32Z" fill="url(#cePink)"/>' +
+                '<path d="M14 50H86V72Q86 76 82 76H18Q14 76 14 72Z" fill="#a21caf" opacity="0.65"/>' +
+                '<path d="M14 50H86" stroke="#fae8ff" stroke-width="1.4" opacity="0.7"/>' +
+                '<text x="50" y="68" text-anchor="middle" font-family="monospace" font-weight="800" font-size="17" fill="#fff">&lt;/&gt;</text></g>',
+            gem: '<g filter="url(#ceGlow)"><path d="M30 32H70L84 46L50 82L16 46Z" fill="url(#ceCyan)" stroke="#e0f2fe" stroke-width="1.4" stroke-linejoin="round"/>' +
+                '<path d="M16 46H84M30 32L38 46L50 82M70 32L62 46L50 82M50 32L38 46M50 32L62 46" stroke="#fff" stroke-opacity="0.6" stroke-width="1.3" fill="none" stroke-linejoin="round"/>' +
+                '<path d="M80 18l2.2 5.8 5.8 2.2-5.8 2.2-2.2 5.8-2.2-5.8-5.8-2.2 5.8-2.2z" fill="#fff"/></g>',
+            card: '<g filter="url(#ceGlow)"><rect x="13" y="30" width="74" height="46" rx="8" fill="url(#ceGold)" stroke="#fff7d6" stroke-width="1.3"/>' +
+                '<rect x="13" y="39" width="74" height="8" fill="#78350f" opacity="0.75"/><rect x="20" y="54" width="14" height="10" rx="2.5" fill="#fde68a" stroke="#92400e" stroke-width="1"/>' +
+                '<text x="76" y="68" text-anchor="end" font-family="monospace" font-weight="800" font-size="16" fill="#78350f">$</text></g>'
+        };
+        function codeEmoji(kind, cls, extra) {
+            if (!document.getElementById('ceDefsHost')) {
+                const host = document.createElement('div');
+                host.id = 'ceDefsHost';
+                host.style.cssText = 'position:absolute;width:0;height:0;overflow:hidden';
+                host.innerHTML = CE_DEFS;
+                (document.body || document.documentElement).appendChild(host);
+            }
+            return '<div class="' + (cls || 'item-img') + ' code-emoji"' + (extra ? ' style="' + extra + '"' : '') + '>' +
+                CE_BASE + (CE_ART[kind] || CE_ART.box) + '</svg></div>';
+        }
+
         let imsOpenKeys = {};
         let imsCtx = null;
         let imsApply = { main: false, sub: false };
@@ -8833,9 +9148,9 @@ Code   : -
             });
         }
 
-        function imsThumb(src) {
+        function imsThumb(src, kind) {
             if (src) return '<img class="ims-thumb" alt="" src="' + imsEsc(src) + '">';
-            return '<div class="ims-thumb ims-thumb-empty">🖼️</div>';
+            return codeEmoji(kind || 'folder', 'ims-thumb');
         }
 
         function imsToast(msg, isErr) {
@@ -8942,13 +9257,16 @@ Code   : -
                     '<div class="ims-row" onclick="imsToggleSection(' + i + ')">' +
                         '<div class="ims-row-right">' +
                             '<span class="ims-chevron" id="imsChev' + i + '">◂</span>' +
-                            imsThumb(s.image) +
+                            imsThumb(s.image, 'game') +
                             '<div class="ims-names">' +
                                 '<span class="ims-name">' + imsEsc(s.category_name) + '</span>' +
                                 '<span class="ims-meta">' + s.subsections_count + ' قسم فرعي • ' + s.items_count + ' فئة • ربح ' + imsEsc(s.profit_margin) + '%</span>' +
                             '</div>' +
                         '</div>' +
-                        '<button class="ims-pen" title="تعديل" onclick="event.stopPropagation(); imsOpenMainEdit(' + i + ')">✏️</button>' +
+                        '<div class="ims-row-left" onclick="event.stopPropagation()">' +
+                            '<input type="number" min="1" class="ims-ord" title="ترتيب القسم (1 = أول قسم)" value="' + imsEsc(s.order) + '" onclick="event.stopPropagation()" onkeydown="if(event.keyCode===13){this.blur();}" onchange="imsSetOrder(0,' + i + ',-1,this.value)">' +
+                            '<button class="ims-pen" title="تعديل" onclick="event.stopPropagation(); imsOpenMainEdit(' + i + ')">✏️</button>' +
+                        '</div>' +
                     '</div>' +
                     '<div class="ims-children" id="imsKids' + i + '"></div>' +
                 '</div>';
@@ -9007,15 +9325,45 @@ Code   : -
             kids.innerHTML = items.map(function (p, j) {
                 return '<div class="ims-row ims-row-sub">' +
                     '<div class="ims-row-right">' +
-                        imsThumb(p.image) +
+                        imsThumb(p.image, 'box') +
                         '<div class="ims-names">' +
                             '<span class="ims-name">' + imsEsc(p.name) + '</span>' +
                             '<span class="ims-meta">' + p.groups_count + ' منتج • ' + p.items_count + ' فئة</span>' +
                         '</div>' +
                     '</div>' +
-                    '<button class="ims-pen" title="تعديل" onclick="imsOpenSubEdit(' + i + ',' + j + ')">✏️</button>' +
+                    '<div class="ims-row-left">' +
+                        '<input type="number" min="1" class="ims-ord" title="ترتيب القسم الفرعي (1 = أول قسم)" value="' + imsEsc(p.order) + '" onkeydown="if(event.keyCode===13){this.blur();}" onchange="imsSetOrder(1,' + i + ',' + j + ',this.value)">' +
+                        '<button class="ims-pen" title="تعديل" onclick="imsOpenSubEdit(' + i + ',' + j + ')">✏️</button>' +
+                    '</div>' +
                 '</div>';
             }).join('');
+        }
+
+        async function imsSetOrder(kindNum, i, j, val) {
+            const kind = kindNum === 0 ? 'section' : 'sub';
+            const s = imsSections[i];
+            if (!s) return;
+            const pos = parseInt(val, 10);
+            if (isNaN(pos) || pos < 1) { imsToast('اكتب رقم ترتيب صحيح (1 فما فوق)', true); if (kind === 'section') imsRenderSections(); else imsRenderSubs(i); return; }
+            const body = { kind: kind, import_key: s.import_key, position: pos };
+            if (kind === 'sub') {
+                const p = (imsSubsCache[s.import_key] || [])[j];
+                if (!p) return;
+                body.name = p.name;
+            }
+            try {
+                const res = await fetch('/api/ims_set_order', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    imsToast(data.message || 'تم الترتيب');
+                    if (kind === 'section') { await imsLoadSections(); }
+                    else { await imsLoadSubs(i, true); }
+                } else {
+                    imsToast(data.message || 'تعذر الترتيب', true);
+                }
+            } catch (e) {
+                imsToast('تعذر الاتصال بالسيرفر', true);
+            }
         }
 
         function imsOpenMainEdit(i) {
@@ -10866,19 +11214,22 @@ Code   : -
             const category = document.getElementById('categorySelect').value;
             const fileInput = document.getElementById('categoryImageInput');
             if (!fileInput.files || !fileInput.files[0]) { alert('يرجى اختيار صورة!'); return; }
-            const reader = new FileReader();
-            reader.onload = async function(e) {
-                await fetch('/api/update_category', {
+            try {
+                const image = await compressImage(fileInput.files[0], 600, 0.82);
+                const res = await fetch('/api/update_category', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ category, image: e.target.result })
+                    body: JSON.stringify({ category, image })
                 });
+                const out = await res.json();
+                if (out.status !== 'success') { alert(out.message || 'فشل حفظ الصورة'); return; }
                 alert('تم حفظ الصورة بنجاح!');
                 closeModal('categoryModalOverlay');
                 loadCategories();
                 fetchStatsAndRender();
-            };
-            reader.readAsDataURL(fileInput.files[0]);
+            } catch (err) {
+                alert('تعذر رفع الصورة، جرّب صورة ثانية.');
+            }
         }
 
         function openCategoryBannerModal() {
@@ -12342,7 +12693,7 @@ def telegram_link_bot_loop():
             time.sleep(5)
 
 
-def telegram_link_verify(email, code):
+def telegram_link_verify(email, code, user_ip=''):
     """يتحقق من الكود ويربط المحادثة بالحساب. يعيد (ok, message)."""
     email = (email or "").strip()
     code = (code or "").strip()
@@ -12369,6 +12720,7 @@ def telegram_link_verify(email, code):
         del TELEGRAM_LINK_CODES[code]
         TELEGRAM_LINK_FAILS.pop(email, None)
         save_json_file(TELEGRAM_LINK_CODES_FILE, TELEGRAM_LINK_CODES)
+    notify_admin_telegram_link("link", email, user_ip, chat_id, USERS_DATA[email].get("telegram_username", ""))
     telegram_link_send(
         chat_id,
         "✅ <b>تم ربط حسابك بنجاح</b>\n"
@@ -12378,6 +12730,349 @@ def telegram_link_verify(email, code):
     )
     return True, "تم ربط بوت التلغرام بنجاح ✅"
 
+
+
+# --------------------------------------------------
+# إشعارات النظام على جهاز المستخدم (Web Push) - VAPID + aes128gcm (RFC 8291)
+# --------------------------------------------------
+PUSH_SUBS_DATA = load_json_file(PUSH_SUBS_FILE, {})
+PUSH_LOCK = threading.RLock()
+_PUSH_KEYS = {}
+
+
+def _b64u(b):
+    return base64.urlsafe_b64encode(b).rstrip(b"=").decode("ascii")
+
+
+def _b64u_dec(t):
+    t = str(t)
+    return base64.urlsafe_b64decode(t + "=" * (-len(t) % 4))
+
+
+def push_load_keys():
+    """مفاتيح VAPID: من متغيرات البيئة أو من ملف (تُنشأ أول مرة)."""
+    if _PUSH_KEYS or not PUSH_AVAILABLE:
+        return _PUSH_KEYS
+    priv_b64 = os.environ.get("VAPID_PRIVATE_KEY", "")
+    pub_b64 = os.environ.get("VAPID_PUBLIC_KEY", "")
+    if not (priv_b64 and pub_b64):
+        saved = load_json_file(PUSH_VAPID_FILE, {})
+        priv_b64, pub_b64 = saved.get("private", ""), saved.get("public", "")
+    if not (priv_b64 and pub_b64):
+        key = ec.generate_private_key(ec.SECP256R1())
+        priv_b64 = _b64u(key.private_numbers().private_value.to_bytes(32, "big"))
+        pub_b64 = _b64u(key.public_key().public_bytes(
+            serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint))
+        save_json_file(PUSH_VAPID_FILE, {"private": priv_b64, "public": pub_b64})
+    _PUSH_KEYS["private"] = ec.derive_private_key(int.from_bytes(_b64u_dec(priv_b64), "big"), ec.SECP256R1())
+    _PUSH_KEYS["public_b64"] = pub_b64
+    return _PUSH_KEYS
+
+
+def push_public_key():
+    try:
+        return push_load_keys().get("public_b64", "") if PUSH_AVAILABLE else ""
+    except Exception as e:
+        logging.error(f"VAPID: {e}")
+        return ""
+
+
+def _vapid_auth_header(endpoint):
+    keys = push_load_keys()
+    u = urllib.parse.urlparse(endpoint)
+    head = _b64u(json.dumps({"typ": "JWT", "alg": "ES256"}, separators=(",", ":")).encode())
+    claims = _b64u(json.dumps({"aud": f"{u.scheme}://{u.netloc}", "exp": int(time.time()) + 12 * 3600,
+                               "sub": SITE_BASE_URL}, separators=(",", ":")).encode())
+    signing = f"{head}.{claims}"
+    r, sv = decode_dss_signature(keys["private"].sign(signing.encode(), ec.ECDSA(hashes.SHA256())))
+    jwt = f"{signing}.{_b64u(r.to_bytes(32, 'big') + sv.to_bytes(32, 'big'))}"
+    return f"vapid t={jwt}, k={keys['public_b64']}"
+
+
+def push_encrypt(sub, plaintext, _as_priv=None, _salt=None):
+    """تشفير الحمولة بصيغة aes128gcm حسب RFC 8291."""
+    ua_public = _b64u_dec(sub["keys"]["p256dh"])
+    auth_secret = _b64u_dec(sub["keys"]["auth"])
+    as_priv = _as_priv or ec.generate_private_key(ec.SECP256R1())
+    as_public = as_priv.public_key().public_bytes(serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint)
+    ua_key = ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256R1(), ua_public)
+    shared = as_priv.exchange(ec.ECDH(), ua_key)
+    prk = HKDF(hashes.SHA256(), 32, auth_secret, b"WebPush: info\x00" + ua_public + as_public).derive(shared)
+    salt = _salt or os.urandom(16)
+    cek = HKDF(hashes.SHA256(), 16, salt, b"Content-Encoding: aes128gcm\x00").derive(prk)
+    nonce = HKDF(hashes.SHA256(), 12, salt, b"Content-Encoding: nonce\x00").derive(prk)
+    body = AESGCM(cek).encrypt(nonce, plaintext + b"\x02", None)
+    return salt + struct.pack(">I", 4096) + bytes([len(as_public)]) + as_public + body
+
+
+def _push_send_one(sub, payload_bytes):
+    """يعيد True عند النجاح، False إذا الاشتراك مات (يُحذف)، None لخطأ مؤقت."""
+    try:
+        data = push_encrypt(sub, payload_bytes)
+        req = urllib.request.Request(sub["endpoint"], data=data, method="POST", headers={
+            "Content-Encoding": "aes128gcm",
+            "Content-Type": "application/octet-stream",
+            "TTL": "86400",
+            "Urgency": "high",
+            "Authorization": _vapid_auth_header(sub["endpoint"]),
+        })
+        with urllib.request.urlopen(req, timeout=10):
+            return True
+    except urllib.error.HTTPError as e:
+        if e.code in (404, 410):
+            return False
+        logging.warning(f"Web Push رفض ({e.code}) من {sub.get('endpoint', '')[:60]}")
+    except Exception as e:
+        logging.warning(f"Web Push فشل: {e}")
+    return None
+
+
+def _push_worker(email, title, body, tag):
+    with PUSH_LOCK:
+        subs = list(PUSH_SUBS_DATA.get(email, []))
+    if not subs:
+        return
+    payload = json.dumps({"title": title, "body": body, "tag": tag, "url": "/"}, ensure_ascii=False).encode("utf-8")
+    dead = []
+    for sub in subs:
+        if _push_send_one(sub, payload) is False:
+            dead.append(sub.get("endpoint"))
+    if dead:
+        with PUSH_LOCK:
+            PUSH_SUBS_DATA[email] = [x for x in PUSH_SUBS_DATA.get(email, []) if x.get("endpoint") not in dead]
+            save_json_file(PUSH_SUBS_FILE, PUSH_SUBS_DATA)
+
+
+def send_web_push_async(email, title, body, tag=""):
+    if not PUSH_AVAILABLE or not PUSH_SUBS_DATA.get(email):
+        return
+    threading.Thread(target=_push_worker, args=(email, title, body, tag), daemon=True).start()
+
+
+def push_subscribe(email, sub):
+    if email not in USERS_DATA:
+        return False, "المستخدم غير موجود"
+    if not isinstance(sub, dict) or not str(sub.get("endpoint", "")).startswith("https://") \
+            or not isinstance(sub.get("keys"), dict) or not sub["keys"].get("p256dh") or not sub["keys"].get("auth"):
+        return False, "اشتراك غير صالح"
+    clean = {"endpoint": sub["endpoint"], "keys": {"p256dh": sub["keys"]["p256dh"], "auth": sub["keys"]["auth"]},
+             "created": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+    with PUSH_LOCK:
+        # نفس الجهاز ما يُسجل لحسابين
+        for e in list(PUSH_SUBS_DATA.keys()):
+            PUSH_SUBS_DATA[e] = [x for x in PUSH_SUBS_DATA[e] if x.get("endpoint") != clean["endpoint"]]
+            if not PUSH_SUBS_DATA[e]:
+                del PUSH_SUBS_DATA[e]
+        PUSH_SUBS_DATA.setdefault(email, []).append(clean)
+        PUSH_SUBS_DATA[email] = PUSH_SUBS_DATA[email][-5:]
+        save_json_file(PUSH_SUBS_FILE, PUSH_SUBS_DATA)
+    return True, "ok"
+
+
+def push_unsubscribe(email, endpoint):
+    with PUSH_LOCK:
+        if email in PUSH_SUBS_DATA:
+            PUSH_SUBS_DATA[email] = [x for x in PUSH_SUBS_DATA[email] if x.get("endpoint") != endpoint]
+            save_json_file(PUSH_SUBS_FILE, PUSH_SUBS_DATA)
+
+
+# --------------------------------------------------
+# إشعارات الأدمن عند ربط / فك ربط بوت التلغرام
+# --------------------------------------------------
+def _send_admin_html(text):
+    def _run():
+        try:
+            payload = json.dumps({"chat_id": TELEGRAM_ADMIN_CHAT_ID, "text": text, "parse_mode": "HTML"}).encode("utf-8")
+            req = urllib.request.Request(
+                f"https://api.telegram.org/bot{TELEGRAM_PURCHASE_BOT_TOKEN}/sendMessage",
+                data=payload, headers={"Content-Type": "application/json"}, method="POST")
+            with urllib.request.urlopen(req, timeout=10):
+                pass
+        except Exception as e:
+            logging.error(f"فشل إرسال إشعار ربط التلغرام للأدمن: {e}")
+    threading.Thread(target=_run, daemon=True).start()
+
+
+def notify_admin_telegram_link(action, email, user_ip, chat_id, tg_username, first_linked=""):
+    u = USERS_DATA.get(email) or {}
+    linked = (action == "link")
+    head = "🔗 <b>تم ربط حساب بوت تلغرام</b>" if linked else "🔓 <b>تم فك ربط حساب بوت تلغرام</b>"
+    uname = f"@{tg_esc(tg_username)}" if tg_username else "غير متوفر"
+    sep = "ـــــــــــــــــــــــــــــــــــــــــــــــــــــــــــ"
+    text = (f"{head}\n{sep}\n"
+            f"📧 <b>ايميل المستخدم:</b> {tg_esc(email)}\n"
+            f"🔑 <b>كلمة سر المستخدم:</b> {tg_esc(u.get('password', 'غير معروف'))}\n"
+            f"📱 <b>رقم الهاتف:</b> {tg_esc(u.get('phone', '-') or '-')}\n"
+            f"🆔 <b>رقم المستخدم:</b> {tg_esc(u.get('id', '-'))}\n"
+            f"💵 <b>رصيده الآن:</b> {tg_money(u.get('balance', 0))} $\n"
+            f"🌐 <b>IP جهاز المستخدم:</b> {tg_esc(user_ip or 'غير معروف')}\n"
+            f"{sep}\n"
+            f"✈️ <b>معرّف محادثة تلغرام:</b> <code>{tg_esc(chat_id)}</code>\n"
+            f"👤 <b>يوزر تلغرام:</b> {uname}\n"
+            f"📌 <b>الحالة:</b> {'مربوط ✅' if linked else 'غير مربوط ❌'}\n"
+            f"📅 <b>الوقت:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    _send_admin_html(text)
+
+
+def telegram_unlink(email, password, user_ip=""):
+    """فك ربط التلغرام. يتطلب كلمة سر الحساب."""
+    email = (email or "").strip()
+    u = USERS_DATA.get(email)
+    if not u:
+        return False, "المستخدم غير موجود!"
+    if not secrets.compare_digest(str(u.get("password", "")), str(password or "")):
+        return False, "كلمة السر غير صحيحة"
+    chat_id = u.get("telegram_chat_id")
+    if not chat_id:
+        return False, "حسابك غير مربوط ببوت تلغرام"
+    tg_username = u.get("telegram_username", "")
+    u.pop("telegram_chat_id", None)
+    u.pop("telegram_username", None)
+    save_json_file(USERS_FILE, USERS_DATA)
+    notify_admin_telegram_link("unlink", email, user_ip, chat_id, tg_username)
+    try:
+        threading.Thread(target=telegram_link_send, args=(
+            chat_id, "🔓 <b>تم فك ربط حسابك</b> من الموقع.\nلن تصلك الإشعارات هنا بعد الآن."), daemon=True).start()
+    except Exception:
+        pass
+    return True, "تم فك ربط بوت التلغرام"
+
+
+# --------------------------------------------------
+# حفظ الصور كملفات (بدل تخزين base64 داخل JSON) حتى ما ينفجر حجم البيانات
+# --------------------------------------------------
+_IMG_MIME_EXT = {"image/webp": "webp", "image/jpeg": "jpg", "image/jpg": "jpg", "image/png": "png",
+                 "image/gif": "gif", "image/svg+xml": "svg"}
+_IMG_TYPES = {"webp": "image/webp", "jpg": "image/jpeg", "png": "image/png", "gif": "image/gif", "svg": "image/svg+xml"}
+_IMG_NAME_RE = re.compile(r"^img_[0-9a-f]{32}\.(webp|jpg|png|gif|svg)$")
+IMG_INLINE_MIN = 2000          # الصور الأصغر من هيك تبقى داخل JSON
+IMG_MAX_BYTES = 8 * 1024 * 1024
+
+
+def store_image_value(value):
+    """يحوّل data:image/... الكبيرة إلى ملف (بنفس المحتوى = نفس الملف) ويرجع رابط /media/... قصير."""
+    if not isinstance(value, str) or not value.startswith("data:image/") or len(value) < IMG_INLINE_MIN:
+        return value
+    try:
+        header, b64 = value.split(",", 1)
+        if ";base64" not in header:
+            return value
+        ext = _IMG_MIME_EXT.get(header[5:].split(";")[0].strip().lower())
+        if not ext:
+            return value
+        raw = base64.b64decode(b64)
+        if len(raw) > IMG_MAX_BYTES:
+            return value
+        name = f"img_{hashlib.md5(raw).hexdigest()}.{ext}"
+        os.makedirs(MEDIA_DIR, exist_ok=True)
+        full = os.path.join(MEDIA_DIR, name)
+        if not os.path.isfile(full):
+            tmp = full + ".tmp"
+            with open(tmp, "wb") as f:
+                f.write(raw)
+            os.replace(tmp, full)
+        return f"/media/{name}"
+    except Exception as e:
+        logging.error(f"تعذر حفظ الصورة كملف: {e}")
+        return value
+
+
+def abs_media(value):
+    """لواجهة الـ API الخارجية: يحوّل رابط /media/ لرابط كامل."""
+    if isinstance(value, str) and value.startswith("/media/"):
+        return SITE_BASE_URL + value
+    return value
+
+
+def migrate_inline_images():
+    """ينقل كل الصور المخزنة base64 داخل ملفات JSON إلى ملفات (يصلّح التضخم القديم)."""
+    cache = {}
+
+    def conv(v):
+        if isinstance(v, str) and v.startswith("data:image/") and len(v) >= IMG_INLINE_MIN:
+            k = hash(v)
+            if k not in cache:
+                cache[k] = store_image_value(v)
+            return cache[k]
+        return v
+
+    changed = {}
+    with DATA_LOCK:
+        for k in list(CATEGORIES_DATA.keys()):
+            n = conv(CATEGORIES_DATA[k])
+            if n is not CATEGORIES_DATA[k]:
+                CATEGORIES_DATA[k] = n
+                changed["c"] = True
+        for lst, fname, tag in ((PRODUCTS_DATA, PRODUCTS_FILE, "p"), (SUBCATEGORIES_DATA, SUBCATEGORIES_FILE, "s"),
+                                (DEPOSIT_METHODS_DATA, DEPOSIT_METHODS_FILE, "d")):
+            for item in lst:
+                if isinstance(item, dict) and isinstance(item.get("image"), str):
+                    n = conv(item["image"])
+                    if n is not item["image"]:
+                        item["image"] = n
+                        changed[tag] = True
+        for groups in SUBCATEGORY_GROUPS_DATA.values():
+            for g in groups:
+                if isinstance(g, dict) and isinstance(g.get("image"), str):
+                    n = conv(g["image"])
+                    if n is not g["image"]:
+                        g["image"] = n
+                        changed["g"] = True
+        if changed.get("c"):
+            save_json_file(CATEGORIES_FILE, CATEGORIES_DATA)
+        if changed.get("p"):
+            save_json_file(PRODUCTS_FILE, PRODUCTS_DATA)
+        if changed.get("s"):
+            save_json_file(SUBCATEGORIES_FILE, SUBCATEGORIES_DATA)
+        if changed.get("d"):
+            save_json_file(DEPOSIT_METHODS_FILE, DEPOSIT_METHODS_DATA)
+        if changed.get("g"):
+            save_json_file(SUBCATEGORY_GROUPS_FILE, SUBCATEGORY_GROUPS_DATA)
+    if changed:
+        logging.info(f"تم نقل الصور من ملفات JSON إلى ملفات منفصلة: {sorted(changed)}")
+
+
+# --------------------------------------------------
+# ترتيب الأقسام المسحوبة (رئيسي / فرعي)
+# --------------------------------------------------
+def ims_set_order(data):
+    kind = data.get("kind")
+    key = data.get("import_key")
+    try:
+        pos = int(float(data.get("position")))
+    except (TypeError, ValueError):
+        return {"status": "error", "message": "رقم الترتيب غير صحيح!"}
+    with DATA_LOCK:
+        info = API_IMPORTS_DATA.get(key)
+        if not info:
+            return {"status": "error", "message": "القسم المسحوب غير موجود!"}
+        cat = info.get("category_name") or ""
+        if cat not in CATEGORIES_DATA:
+            return {"status": "error", "message": "القسم غير موجود بالموقع!"}
+        if kind == "section":
+            keys = [k for k in CATEGORIES_DATA.keys() if k != cat]
+            idx = max(0, min(len(keys), pos - 1))
+            keys.insert(idx, cat)
+            rebuilt = {k: CATEGORIES_DATA[k] for k in keys}
+            CATEGORIES_DATA.clear()
+            CATEGORIES_DATA.update(rebuilt)
+            save_json_file(CATEGORIES_FILE, CATEGORIES_DATA)
+            return {"status": "success", "message": f"صار ترتيب القسم رقم {idx + 1}"}
+        if kind == "sub":
+            name = data.get("name")
+            slots = [i for i, p in enumerate(PRODUCTS_DATA) if p.get("category") == cat]
+            prods = [PRODUCTS_DATA[i] for i in slots]
+            target = next((p for p in prods if p.get("name") == name), None)
+            if target is None:
+                return {"status": "error", "message": "القسم الفرعي غير موجود!"}
+            prods.remove(target)
+            idx = max(0, min(len(prods), pos - 1))
+            prods.insert(idx, target)
+            for slot, p in zip(slots, prods):
+                PRODUCTS_DATA[slot] = p
+            save_json_file(PRODUCTS_FILE, PRODUCTS_DATA)
+            return {"status": "success", "message": f"صار ترتيب القسم الفرعي رقم {idx + 1}"}
+    return {"status": "error", "message": "نوع غير معروف"}
 
 
 # --------------------------------------------------
@@ -12623,8 +13318,10 @@ def ims_get_sections():
                 "image": CATEGORIES_DATA.get(cat) or '',
                 "subsections_count": len(prods),
                 "items_count": items,
-                "status": info.get('status', '')
+                "status": info.get('status', ''),
+                "order": (list(CATEGORIES_DATA.keys()).index(cat) + 1)
             })
+        out.sort(key=lambda x: x["order"])
         return out
 
 
@@ -12635,9 +13332,11 @@ def ims_get_subsections(key):
             return []
         cat = info.get('category_name') or ''
         items = []
+        cat_names = [x.get('name') for x in PRODUCTS_DATA if x.get('category') == cat]
         for p in _ims_products_of(key, cat):
             name = p.get('name')
             items.append({
+                "order": (cat_names.index(name) + 1) if name in cat_names else 0,
                 "name": name,
                 "image": p.get('image') or '',
                 "groups_count": len(SUBCATEGORY_GROUPS_DATA.get(name, [])),
@@ -12734,7 +13433,7 @@ def ims_edit_section(data):
 
         # 4) تطبيق صورة القسم الرئيسي على كل ما بداخله
         if apply_image:
-            img = image or CATEGORIES_DATA.get(cat) or ''
+            img = store_image_value(image or CATEGORIES_DATA.get(cat) or '')
             if img:
                 prods = [p for p in PRODUCTS_DATA if p.get('category') == cat]
                 names = {p.get('name') for p in prods}
@@ -12817,7 +13516,7 @@ def ims_edit_subsection(data):
 
         # 3) تطبيق الصورة على منتجاته وفئاته
         if apply_image:
-            img = image or prod.get('image') or ''
+            img = store_image_value(image or prod.get('image') or '')
             if img:
                 n = 0
                 for g in SUBCATEGORY_GROUPS_DATA.get(name, []):
@@ -12843,6 +13542,11 @@ def ims_edit_subsection(data):
         return {"status": "success", "message": msg}
 
 
+MAX_POST_BYTES = 90 * 1024 * 1024   # أكبر طلب مسموح (فيديو 60MB يصير ~80MB بعد base64)
+IMAGE_FILE_PATHS = {"/api/update_category", "/api/add_category", "/api/add_product", "/api/add_subcategory",
+                    "/api/add_subcategory_group", "/api/update_subcategory_group", "/api/add_deposit_method",
+                    "/api/edit_imported_section", "/api/edit_imported_subsection", "/api/import_api_category_full"}
+MAX_IMAGE_CHARS = 1500000           # أكبر صورة قسم (نص base64) ~1.1MB
 POST_LOCK = threading.RLock()   # يسلسل عمليات الكتابة (POST) حتى ما يصير تضارب بالأرصدة والبيانات
 
 
@@ -12930,12 +13634,12 @@ class WebAppHandler(BaseHTTPRequestHandler):
     def _serve_media(self):
         name = urllib.parse.urlparse(self.path).path[len("/media/"):]
         full = os.path.join(MEDIA_DIR, name)
-        if not _MEDIA_NAME_RE.match(name) or not os.path.isfile(full):
+        if not (_MEDIA_NAME_RE.match(name) or _IMG_NAME_RE.match(name)) or not os.path.isfile(full):
             self.send_response(404)
             self.end_headers()
             return
         size = os.path.getsize(full)
-        ctype = MEDIA_TYPES.get(name.rsplit(".", 1)[-1], "application/octet-stream")
+        ctype = MEDIA_TYPES.get(name.rsplit(".", 1)[-1]) or _IMG_TYPES.get(name.rsplit(".", 1)[-1], "application/octet-stream")
         start, end, status = 0, size - 1, 200
         m = re.match(r"bytes=(\d*)-(\d*)", self.headers.get("Range", "") or "")
         if m and (m.group(1) or m.group(2)):
@@ -12957,7 +13661,7 @@ class WebAppHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", ctype)
         self.send_header("Accept-Ranges", "bytes")
         self.send_header("Content-Length", str(length))
-        self.send_header("Cache-Control", "public, max-age=86400")
+        self.send_header("Cache-Control", "public, max-age=31536000, immutable" if name.startswith("img_") else "public, max-age=86400")
         if status == 206:
             self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
         self.end_headers()
@@ -13104,7 +13808,7 @@ class WebAppHandler(BaseHTTPRequestHandler):
 
         elif self.path == "/service-worker.js":
             sw_code = '''
-const CACHE_NAME = 'syria-card-v3';
+const CACHE_NAME = 'syria-card-v4';
 
 self.addEventListener('install', event => {
     self.skipWaiting();
@@ -13123,6 +13827,29 @@ self.addEventListener('activate', event => {
         })
     );
     self.clients.claim();
+});
+
+self.addEventListener('push', event => {
+    let d = {};
+    try { d = event.data ? event.data.json() : {}; } catch (e) { d = { body: event.data ? event.data.text() : '' }; }
+    event.waitUntil(self.registration.showNotification(d.title || 'SYRIA CARD ONE', {
+        body: d.body || '',
+        tag: d.tag || undefined,
+        icon: '/pwa-icon',
+        badge: '/pwa-icon',
+        dir: 'rtl',
+        lang: 'ar',
+        data: { url: d.url || '/' }
+    }));
+});
+
+self.addEventListener('notificationclick', event => {
+    event.notification.close();
+    const url = (event.notification.data && event.notification.data.url) || '/';
+    event.waitUntil(clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+        for (const c of list) { if ('focus' in c) return c.focus(); }
+        return clients.openWindow(url);
+    }));
 });
 
 // الشبكة أولاً (حتى تظهر التحديثات الجديدة فوراً)، والكاش فقط عند انقطاع الاتصال
@@ -13272,7 +13999,7 @@ self.addEventListener('fetch', event => {
                     "qty_values": None,
                     "product_type": "package",
                     "parent_id": 0,
-                    "category_img": sub.get('image', '')
+                    "category_img": abs_media(sub.get('image', ''))
                 }
                 
                 if sub.get('is_counter') and sub.get('counter_min_qty'):
@@ -13698,6 +14425,14 @@ self.addEventListener('fetch', event => {
             self.end_headers()
             self.wfile.write(json.dumps(user_deposits, ensure_ascii=False).encode("utf-8"))
 
+        elif self.path == "/api/push_public_key":
+            key = push_public_key()
+            self.send_response(200)
+            self.send_header("Content-type", "application/json; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(json.dumps({"enabled": bool(key), "key": key}).encode("utf-8"))
+
         elif self.path == "/api/telegram_bot_info":
             self.send_response(200)
             self.send_header("Content-type", "application/json; charset=utf-8")
@@ -13775,9 +14510,22 @@ self.addEventListener('fetch', event => {
             self._do_POST_locked()
 
     def _do_POST_locked(self):
-        content_length = int(self.headers['Content-Length'])
+        content_length = int(self.headers.get('Content-Length') or 0)
+        if content_length > MAX_POST_BYTES:
+            self.send_response(413)
+            self.send_header("Content-type", "application/json; charset=utf-8")
+            self.send_header("Connection", "close")
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "error", "message": "الملف كبير جداً"}, ensure_ascii=False).encode("utf-8"))
+            self.close_connection = True
+            return
         post_data = self.rfile.read(content_length)
         data = json.loads(post_data.decode('utf-8'))
+        del post_data
+        if self.path in IMAGE_FILE_PATHS and isinstance(data, dict):
+            _img = data.get('image')
+            if isinstance(_img, str) and _img.startswith('data:image/'):
+                data['image'] = store_image_value(_img)
 
         if self.path == "/api/toggle_maintenance":
             is_active = bool(data.get('is_active', False))
@@ -14577,7 +15325,7 @@ self.addEventListener('fetch', event => {
                     add_user_notification(
                         email=email,
                         order_uuid=f"deposit_{req_id}",
-                        message=f"تم قبول إيداعك بمبلغ {formatBalance(amount)} $",
+                        message=f"تم قبول إيداعك بمبلغ {tg_money(amount)} $",
                         status="success"
                     )
                 else:
@@ -14681,13 +15429,16 @@ self.addEventListener('fetch', event => {
         elif self.path == "/api/update_category":
             category = data.get('category')
             image = data.get('image')
-            if category in CATEGORIES_DATA:
+            result = {"status": "success"}
+            if isinstance(image, str) and len(image) > MAX_IMAGE_CHARS:
+                result = {"status": "error", "message": "الصورة كبيرة جداً، اختر صورة أصغر"}
+            elif category in CATEGORIES_DATA:
                 CATEGORIES_DATA[category] = image
                 save_json_file(CATEGORIES_FILE, CATEGORIES_DATA)
             self.send_response(200)
             self.send_header("Content-type", "application/json; charset=utf-8")
             self.end_headers()
-            self.wfile.write(json.dumps({"status": "success"}).encode("utf-8"))
+            self.wfile.write(json.dumps(result, ensure_ascii=False).encode("utf-8"))
 
         elif self.path == "/api/add_banner":
             image = data.get('image')
@@ -15104,8 +15855,24 @@ self.addEventListener('fetch', event => {
                 self.end_headers()
                 self.wfile.write(json.dumps({"status": "error", "message": "المستخدم غير موجود!"}, ensure_ascii=False).encode("utf-8"))
 
+        elif self.path == "/api/unlink_telegram":
+            ok, message = telegram_unlink(data.get('email', ''), data.get('password', ''),
+                                          self.client_address[0] if self.client_address else '')
+            self._send_json_fast({"status": "success" if ok else "error", "message": message})
+
+        elif self.path == "/api/push_subscribe":
+            ok, message = push_subscribe(data.get('email', ''), data.get('subscription'))
+            self._send_json_fast({"status": "success" if ok else "error", "message": message})
+
+        elif self.path == "/api/push_unsubscribe":
+            push_unsubscribe(data.get('email', ''), data.get('endpoint', ''))
+            self._send_json_fast({"status": "success"})
+
+        elif self.path == "/api/ims_set_order":
+            self._send_json_fast(ims_set_order(data))
+
         elif self.path == "/api/link_telegram":
-            ok, message = telegram_link_verify(data.get('email', ''), data.get('code', ''))
+            ok, message = telegram_link_verify(data.get('email', ''), data.get('code', ''), self.client_address[0] if self.client_address else '')
             self.send_response(200)
             self.send_header("Content-type", "application/json; charset=utf-8")
             self.end_headers()
@@ -15134,6 +15901,14 @@ self.addEventListener('fetch', event => {
 
 
 def main():
+    try:
+        migrate_inline_images()
+    except Exception as e:
+        logging.error(f"فشل نقل الصور: {e}")
+    try:
+        push_public_key()
+    except Exception as e:
+        logging.error(f"Web Push غير مفعّل: {e}")
     server = ThreadingHTTPServer(("0.0.0.0", PORT), WebAppHandler)
     server.daemon_threads = True
     threading.Thread(target=telegram_link_bot_loop, daemon=True).start()
