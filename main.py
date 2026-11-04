@@ -44,6 +44,7 @@ MEDIA_DIR = "banner_media"           # فيديوهات البنرات تُحف�
 MEDIA_MAX_BYTES = 60 * 1024 * 1024   # أقصى حجم فيديو
 MEDIA_CHUNK = 1024 * 1024            # أقصى حجم رد واحد (Range) حتى ما يعلّق السيرفر
 TICKER_FILE = "ticker_settings.json"
+ANNOUNCEMENT_FILE = "announcement_settings.json"
 
 # --------------------------------------------------
 # إعدادات بوت التليجرام للإشعارات
@@ -439,7 +440,10 @@ DEFAULT_APPEARANCE = {
     "pwa_theme_color": "#00897b",
     "pwa_background_color": "#050508",
     "pwa_icon": "",
-    "pwa_splash_image": ""
+    "pwa_splash_image": "",
+    # ===== اللوغو =====
+    "logo_spin_enabled": False,
+    "logo_spin_speed": 5
 }
 
 DEFAULT_MAINTENANCE = {
@@ -494,6 +498,13 @@ API_PRICE_TRACKING_DATA = load_json_file(API_PRICE_TRACKING_FILE, {})
 MAINTENANCE_DATA = load_json_file(MAINTENANCE_FILE, DEFAULT_MAINTENANCE)
 SUBCATEGORY_GROUPS_DATA = load_json_file(SUBCATEGORY_GROUPS_FILE, {})
 TICKER_DATA = load_json_file(TICKER_FILE, DEFAULT_TICKER)
+ANNOUNCEMENT_FONTS = ["Cairo", "Tajawal", "Almarai", "Changa", "El Messiri", "Lateef", "Amiri", "Scheherazade New",
+                      "Noto Kufi Arabic", "IBM Plex Sans Arabic", "Readex Pro", "Alexandria", "Noto Naskh Arabic",
+                      "Harmattan", "Mada"]
+DEFAULT_ANNOUNCEMENT = {"text": "", "font": "Cairo", "color": "#ffffff"}
+ANNOUNCEMENT_DATA = load_json_file(ANNOUNCEMENT_FILE, DEFAULT_ANNOUNCEMENT)
+if "video" not in SPLASH_DATA:
+    SPLASH_DATA["video"] = ""
 
 
 # --------------------------------------------------
@@ -2150,6 +2161,29 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
             border-radius: 8px; object-fit: cover;
             border: 1px solid rgba(255,255,255,0.3); background: #000;
         }
+        .header-logo.spin { animation: logoSpin var(--logo-spin-dur, 4s) linear infinite; }
+        @keyframes logoSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+        #splashVideo { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; background: #000; }
+        #splashScreen.has-video .splash-logo, #splashScreen.has-video .splash-spinner { display: none !important; }
+
+        .ann-overlay {
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 10050;
+            background: rgba(0,0,0,0.6); display: none; align-items: center; justify-content: center; padding: 16px;
+        }
+        .ann-overlay.show { display: flex; }
+        .ann-box {
+            width: 100%; max-width: 560px; max-height: 88vh; display: flex; flex-direction: column; gap: 14px;
+            background: #000; border: 1px solid #d4c10f; border-radius: 10px; padding: 14px; box-sizing: border-box;
+        }
+        .ann-text {
+            overflow-y: auto; white-space: pre-wrap; word-wrap: break-word; text-align: center;
+            font-weight: 700; font-size: 1.02rem; line-height: 1.9; padding: 8px 10px; color: #ffffff;
+        }
+        .ann-btn {
+            background: #d4c10f; color: #ffffff; border: none; border-radius: 30px; padding: 15px;
+            font-size: 1.05rem; font-weight: 800; cursor: pointer; width: 100%;
+        }
         .store-name { 
             font-size: calc(var(--top-header-height) * 0.25 + 4px); 
             font-weight: 800; color: #ffffff; letter-spacing: 0.5px; 
@@ -3228,10 +3262,18 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
 
     <div id="splashScreen">
         <img id="splashImg" src="" class="splash-logo" style="display:none;" />
+        <video id="splashVideo" muted playsinline autoplay preload="auto" style="display:none;"></video>
         <div class="splash-spinner"></div>
     </div>
 
     <div class="cpm-welcome-msg" id="welcomeMessage">أهلا وسهلا فيك بموقعنا</div>
+
+    <div class="ann-overlay" id="annOverlay">
+        <div class="ann-box">
+            <div class="ann-text" id="annText"></div>
+            <button class="ann-btn" onclick="closeAnnouncement()">موافق</button>
+        </div>
+    </div>
 
     <div id="completeProfileModal">
         <div class="cpm-box">
@@ -3914,6 +3956,16 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
                 const res = await fetch('/api/get_appearance_settings');
                 const a = await res.json();
                 const root = document.documentElement;
+                const hLogo = document.getElementById('headerLogoImg');
+                if (hLogo) {
+                    if (a.logo_spin_enabled) {
+                        const sp = Math.max(1, Math.min(10, parseInt(a.logo_spin_speed) || 5));
+                        hLogo.style.setProperty('--logo-spin-dur', (11 - sp) + 's');
+                        hLogo.classList.add('spin');
+                    } else {
+                        hLogo.classList.remove('spin');
+                    }
+                }
                 
                 // الخط
                 if (a.font_family) {
@@ -4734,6 +4786,41 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
             renderCategories();
         }
 
+        let __splashDone = false, __annData = null, __annShown = false;
+
+        function hideSplashScreen() {
+            if (__splashDone) return;
+            __splashDone = true;
+            const s = document.getElementById('splashScreen');
+            if (s) s.classList.add('hidden');
+            const v = document.getElementById('splashVideo');
+            if (v) { try { v.pause(); } catch (e) {} }
+            setTimeout(maybeShowAnnouncement, 450);
+        }
+
+        async function loadAnnouncement() {
+            try {
+                const res = await fetch('/api/get_announcement');
+                const d = await res.json();
+                if (d && d.text && String(d.text).trim()) { __annData = d; }
+            } catch (e) {}
+            if (__splashDone) maybeShowAnnouncement();
+        }
+
+        function maybeShowAnnouncement() {
+            if (__annShown || !__annData || !__splashDone) return;
+            __annShown = true;
+            const box = document.getElementById('annText');
+            box.textContent = __annData.text;
+            box.style.setProperty('font-family', "'" + (__annData.font || 'Cairo') + "', sans-serif", 'important');
+            box.style.setProperty('color', __annData.color || '#ffffff', 'important');
+            document.getElementById('annOverlay').classList.add('show');
+        }
+
+        function closeAnnouncement() {
+            document.getElementById('annOverlay').classList.remove('show');
+        }
+
         async function loadSplashScreen() {
             const res = await fetch('/api/splash');
             const data = await res.json();
@@ -4750,7 +4837,22 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
                 headerLogoImg.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='50' height='50'%3E%3Crect width='50' height='50' fill='%23222'/%3E%3Ctext x='50%25' y='50%25' fill='%23fff' font-size='12' text-anchor='middle' dominant-baseline='middle'%3ELogo%3C/text%3E%3C/svg%3E";
             }
 
-            setTimeout(() => { document.getElementById('splashScreen').classList.add('hidden'); }, 2200);
+            if (data.video) {
+                const sv = document.getElementById('splashVideo');
+                const screen = document.getElementById('splashScreen');
+                screen.classList.add('has-video');
+                screen.onclick = hideSplashScreen;
+                sv.src = data.video;
+                sv.style.display = 'block';
+                sv.muted = true;
+                sv.onended = hideSplashScreen;
+                sv.onerror = () => setTimeout(hideSplashScreen, 1200);
+                const pp = sv.play();
+                if (pp && pp.catch) pp.catch(() => setTimeout(hideSplashScreen, 1500));
+                setTimeout(hideSplashScreen, 20000);
+            } else {
+                setTimeout(hideSplashScreen, 2200);
+            }
         }
 
         function toggleSidebar() {
@@ -6223,6 +6325,7 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
         initTheme();
         applyAppearanceSettings();
         loadTickerSettings();
+        loadAnnouncement();
         loadSplashScreen();
         checkSavedSession();
         loadBanners();
@@ -6620,6 +6723,8 @@ ADMIN_HTML_CONTENT = """
                 <button class="sub-menu-btn" onclick="openDeleteBannerModal()">حذف بنر</button>
                 <button class="sub-menu-btn" onclick="openCategoryBannerModal()">اضافة بنرات لقسم</button>
                 <button class="sub-menu-btn" onclick="openSplashModal()">إضافة صورة ترحيبية</button>
+                <button class="sub-menu-btn" onclick="openSplashVideoModal()" style="color:#a855f7; border-color:#a855f7;">🎬 إضافة فيديو ترحيبي</button>
+                <button class="sub-menu-btn" onclick="openLogoManageModal()" style="color:#4ade80; border-color:#4ade80; font-weight:800;">إدارة اللوغو</button>
             </div>
 
             <button class="admin-menu-btn" onclick="toggleSubMenu('productsMenu')">
@@ -6661,6 +6766,7 @@ ADMIN_HTML_CONTENT = """
                 <button class="sub-menu-btn" onclick="openBalanceModal('deduct')">خصم من مستخدم</button>
                 <button class="sub-menu-btn" onclick="openClientInspectPrompt()">كشف عميل</button>
                 <button class="sub-menu-btn" onclick="openClientsListScreen()" style="color:#2dd4bf; border-color:#2dd4bf; font-weight:800;">عرض العملاء</button>
+                <button class="sub-menu-btn" onclick="openAnnouncementModal()" style="color:#facc15; border-color:#facc15; font-weight:800;">📢 الإذاعة</button>
             </div>
 
             <button class="admin-menu-btn" onclick="toggleSubMenu('depositsMenu')">
@@ -6746,6 +6852,84 @@ ADMIN_HTML_CONTENT = """
                 </div>
                 <button class="save-btn" onclick="saveClientDiscount()">حفظ</button>
                 <button class="btn-secondary" onclick="closeModal('addDiscountModalOverlay')">إلغاء</button>
+            </div>
+        </div>
+
+        <div class="modal-overlay" id="announcementModalOverlay">
+            <div class="modal-box" style="max-height: 90vh; overflow-y: auto;">
+                <div class="modal-title" style="color:#facc15;">📢 الإذاعة</div>
+                <div class="form-group">
+                    <label>نص الإذاعة (بتظهر لكل مستخدم بيفوت عالموقع):</label>
+                    <textarea id="annTextInput" rows="7" oninput="previewAnnouncement()" placeholder="اكتب الإذاعة هون..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label>نوع الخط:</label>
+                    <select id="annFontSelect" onchange="previewAnnouncement()">
+                        <option value="Cairo">Cairo</option>
+                        <option value="Tajawal">Tajawal</option>
+                        <option value="Almarai">Almarai</option>
+                        <option value="Changa">Changa</option>
+                        <option value="El Messiri">El Messiri</option>
+                        <option value="Lateef">Lateef</option>
+                        <option value="Amiri">Amiri</option>
+                        <option value="Scheherazade New">Scheherazade New</option>
+                        <option value="Noto Kufi Arabic">Noto Kufi Arabic</option>
+                        <option value="IBM Plex Sans Arabic">IBM Plex Sans Arabic</option>
+                        <option value="Readex Pro">Readex Pro</option>
+                        <option value="Alexandria">Alexandria</option>
+                        <option value="Noto Naskh Arabic">Noto Naskh Arabic</option>
+                        <option value="Harmattan">Harmattan</option>
+                        <option value="Mada">Mada</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>لون الخط:</label>
+                    <input type="color" id="annColorInput" value="#ffffff" oninput="previewAnnouncement()" style="width:100%; height:45px; border:none; border-radius:8px; cursor:pointer; background:#000;">
+                </div>
+                <div style="font-size:0.75rem; color:#a1a1aa; margin-bottom:6px;">معاينة:</div>
+                <div style="background:#000; border:1px solid #d4c10f; border-radius:10px; padding:12px; margin-bottom:14px;">
+                    <div id="annPreview" style="white-space:pre-wrap; text-align:center; font-weight:700; line-height:1.9; max-height:160px; overflow-y:auto;"></div>
+                    <div style="margin-top:10px; background:#d4c10f; color:#fff; text-align:center; border-radius:30px; padding:9px; font-weight:800;">موافق</div>
+                </div>
+                <button class="save-btn" onclick="saveAnnouncement(false)">حفظ</button>
+                <button class="btn-secondary" style="color:#f87171; border-color:#f87171;" onclick="saveAnnouncement(true)">إيقاف الإذاعة</button>
+                <button class="btn-secondary" onclick="closeModal('announcementModalOverlay')">إلغاء</button>
+            </div>
+        </div>
+
+        <div class="modal-overlay" id="splashVideoModalOverlay">
+            <div class="modal-box">
+                <div class="modal-title" style="color:#a855f7;">🎬 فيديو ترحيبي للموقع</div>
+                <div class="form-group">
+                    <label>اختر الفيديو (MP4 أو WebM - حد أقصى 60MB):</label>
+                    <input type="file" id="splashVideoInput" accept="video/mp4,video/webm,video/quicktime">
+                </div>
+                <div id="splashVideoCurrent" style="font-size:0.8rem; color:#a1a1aa; margin-bottom:12px;"></div>
+                <button class="save-btn" id="splashVideoSaveBtn" onclick="saveSplashVideo()">حفظ الفيديو</button>
+                <button class="btn-secondary" style="color:#f87171; border-color:#f87171;" onclick="removeSplashVideo()">حذف الفيديو الحالي</button>
+                <button class="btn-secondary" onclick="closeModal('splashVideoModalOverlay')">إلغاء</button>
+            </div>
+        </div>
+
+        <div class="modal-overlay" id="logoManageModalOverlay">
+            <div class="modal-box">
+                <style>@keyframes logoSpinPrev { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }</style>
+                <div class="modal-title" style="color:#4ade80;">إدارة اللوغو</div>
+                <div style="display:flex; justify-content:center; margin:6px 0 18px;">
+                    <img id="logoPreviewImg" src="" alt="" style="width:84px; height:84px; border-radius:12px; object-fit:cover; border:1px solid #2a2a3a; background:#000;">
+                </div>
+                <div class="form-group">
+                    <label style="display:flex; align-items:center; gap:10px; cursor:pointer;">
+                        <input type="checkbox" id="logoSpinToggle" onchange="previewLogoSpin()" style="width:20px; height:20px; flex:0 0 auto;">
+                        <span>تفعيل تأثير دوران اللوغو</span>
+                    </label>
+                </div>
+                <div class="form-group">
+                    <label>سرعة الدوران: <span id="logoSpinSpeedVal">5</span> / 10</label>
+                    <input type="range" id="logoSpinSpeed" min="1" max="10" step="1" value="5" oninput="previewLogoSpin()" style="width:100%; padding:0;">
+                </div>
+                <button class="save-btn" onclick="saveLogoSettings()">حفظ</button>
+                <button class="btn-secondary" onclick="closeModal('logoManageModalOverlay')">إلغاء</button>
             </div>
         </div>
 
@@ -8296,6 +8480,162 @@ Code   : -
             } catch (e) {
                 alert('فشل الاتصال بالخادم!');
             }
+        }
+
+        // ===== الإذاعة =====
+        async function openAnnouncementModal() {
+            toggleSidebar();
+            try {
+                const res = await fetch('/api/get_announcement');
+                const d = await res.json();
+                document.getElementById('annTextInput').value = d.text || '';
+                document.getElementById('annFontSelect').value = d.font || 'Cairo';
+                document.getElementById('annColorInput').value = d.color || '#ffffff';
+            } catch (e) { console.error(e); }
+            previewAnnouncement();
+            openModal('announcementModalOverlay');
+        }
+
+        function previewAnnouncement() {
+            const font = document.getElementById('annFontSelect').value;
+            let link = document.getElementById('annFontLink');
+            if (!link) {
+                link = document.createElement('link');
+                link.id = 'annFontLink';
+                link.rel = 'stylesheet';
+                document.head.appendChild(link);
+            }
+            link.href = 'https://fonts.googleapis.com/css2?family=' + font.replace(/ /g, '+') + ':wght@400;700;800&display=swap';
+            const p = document.getElementById('annPreview');
+            p.textContent = document.getElementById('annTextInput').value || 'معاينة نص الإذاعة...';
+            p.style.setProperty('font-family', "'" + font + "', sans-serif", 'important');
+            p.style.setProperty('color', document.getElementById('annColorInput').value, 'important');
+        }
+
+        async function saveAnnouncement(clear) {
+            const text = clear ? '' : document.getElementById('annTextInput').value.trim();
+            if (!clear && !text) { alert('اكتب نص الإذاعة أول!'); return; }
+            try {
+                const res = await fetch('/api/update_announcement', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        text: text,
+                        font: document.getElementById('annFontSelect').value,
+                        color: document.getElementById('annColorInput').value
+                    })
+                });
+                const r = await res.json();
+                if (r.status === 'success') {
+                    alert(clear ? 'تم إيقاف الإذاعة' : 'تم حفظ الإذاعة، رح تظهر لكل مستخدم بيفوت عالموقع');
+                    closeModal('announcementModalOverlay');
+                } else {
+                    alert(r.message || 'صار خطأ');
+                }
+            } catch (e) { alert('فشل الاتصال بالخادم!'); }
+        }
+
+        // ===== الفيديو الترحيبي =====
+        async function openSplashVideoModal() {
+            toggleSidebar();
+            document.getElementById('splashVideoInput').value = '';
+            let has = false;
+            try {
+                const res = await fetch('/api/splash');
+                const d = await res.json();
+                has = !!d.video;
+            } catch (e) {}
+            document.getElementById('splashVideoCurrent').textContent = has
+                ? 'في فيديو ترحيبي مفعّل حالياً (رفع فيديو جديد بيستبدله)'
+                : 'ما في فيديو ترحيبي حالياً (بيظهر الشعار العادي)';
+            openModal('splashVideoModalOverlay');
+        }
+
+        async function saveSplashVideo() {
+            const fileInput = document.getElementById('splashVideoInput');
+            if (!fileInput.files || !fileInput.files[0]) { alert('اختار الفيديو أول!'); return; }
+            const file = fileInput.files[0];
+            if (file.size > 60 * 1024 * 1024) { alert('حجم الفيديو كبير، الحد الأقصى 60MB'); return; }
+            const btn = document.getElementById('splashVideoSaveBtn');
+            btn.disabled = true; btn.textContent = 'جاري الرفع...';
+            const reader = new FileReader();
+            reader.onload = async function(e) {
+                try {
+                    const res = await fetch('/api/update_splash', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ video: e.target.result })
+                    });
+                    const r = await res.json();
+                    if (r.status === 'success') {
+                        alert('تم حفظ الفيديو الترحيبي بنجاح!');
+                        closeModal('splashVideoModalOverlay');
+                    } else {
+                        alert(r.message || 'صار خطأ بالرفع');
+                    }
+                } catch (err) { alert('فشل الاتصال بالخادم!'); }
+                btn.disabled = false; btn.textContent = 'حفظ الفيديو';
+            };
+            reader.onerror = function() { alert('تعذر قراءة الملف'); btn.disabled = false; btn.textContent = 'حفظ الفيديو'; };
+            reader.readAsDataURL(file);
+        }
+
+        async function removeSplashVideo() {
+            if (!confirm('متأكد بدك تحذف الفيديو الترحيبي؟')) return;
+            try {
+                await fetch('/api/update_splash', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ remove_video: true })
+                });
+                alert('تم حذف الفيديو الترحيبي');
+                closeModal('splashVideoModalOverlay');
+            } catch (e) { alert('فشل الاتصال بالخادم!'); }
+        }
+
+        // ===== إدارة اللوغو =====
+        async function openLogoManageModal() {
+            toggleSidebar();
+            try {
+                const [a, s] = await Promise.all([
+                    fetch('/api/get_appearance_settings').then(r => r.json()),
+                    fetch('/api/splash').then(r => r.json())
+                ]);
+                document.getElementById('logoSpinToggle').checked = !!a.logo_spin_enabled;
+                document.getElementById('logoSpinSpeed').value = a.logo_spin_speed || 5;
+                if (s.image) document.getElementById('logoPreviewImg').src = s.image;
+            } catch (e) { console.error(e); }
+            previewLogoSpin();
+            openModal('logoManageModalOverlay');
+        }
+
+        function previewLogoSpin() {
+            const on = document.getElementById('logoSpinToggle').checked;
+            const slider = document.getElementById('logoSpinSpeed');
+            const sp = parseInt(slider.value) || 5;
+            document.getElementById('logoSpinSpeedVal').textContent = sp;
+            const img = document.getElementById('logoPreviewImg');
+            img.style.animation = on ? ('logoSpinPrev ' + (11 - sp) + 's linear infinite') : 'none';
+            slider.disabled = !on;
+            slider.style.opacity = on ? '1' : '0.4';
+        }
+
+        async function saveLogoSettings() {
+            try {
+                const res = await fetch('/api/update_logo_settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        enabled: document.getElementById('logoSpinToggle').checked,
+                        speed: parseInt(document.getElementById('logoSpinSpeed').value) || 5
+                    })
+                });
+                const r = await res.json();
+                if (r.status === 'success') {
+                    alert('تم حفظ إعدادات اللوغو بنجاح!');
+                    closeModal('logoManageModalOverlay');
+                } else { alert(r.message || 'صار خطأ'); }
+            } catch (e) { alert('فشل الاتصال بالخادم!'); }
         }
 
         async function openTickerSettingsModal() {
@@ -12073,6 +12413,18 @@ def store_banner_media(value):
         raise ValueError(f"تعذر حفظ الفيديو: {e}")
 
 
+def remove_media_file(value):
+    """يحذف ملف فيديو من مجلد الميديا (يُستخدم للفيديو الترحيبي)."""
+    if not isinstance(value, str) or not value.startswith("/media/"):
+        return
+    name = value[len("/media/"):]
+    if _MEDIA_NAME_RE.match(name):
+        try:
+            os.remove(os.path.join(MEDIA_DIR, name))
+        except OSError:
+            pass
+
+
 def cleanup_banner_media(value):
     """يحذف ملف الفيديو إذا ما عاد أي بنر يستخدمه."""
     if not isinstance(value, str) or not value.startswith("/media/"):
@@ -12827,6 +13179,9 @@ self.addEventListener('fetch', event => {
             self.end_headers()
             self.wfile.write(json.dumps(SETTINGS_DATA, ensure_ascii=False).encode("utf-8"))
 
+        elif self.path == "/api/get_announcement":
+            self._send_json_fast(ANNOUNCEMENT_DATA)
+
         elif self.path == "/api/get_ticker_settings":
             self.send_response(200)
             self.send_header("Content-type", "application/json; charset=utf-8")
@@ -13438,6 +13793,36 @@ self.addEventListener('fetch', event => {
             self.send_header("Content-type", "application/json; charset=utf-8")
             self.end_headers()
             self.wfile.write(json.dumps({"status": "success", "is_active": is_active}, ensure_ascii=False).encode("utf-8"))
+
+        elif self.path == "/api/update_announcement":
+            text = str(data.get('text', '')).strip()[:5000]
+            font = str(data.get('font', 'Cairo'))
+            if font not in ANNOUNCEMENT_FONTS:
+                font = 'Cairo'
+            color = str(data.get('color', '#ffffff'))
+            if not re.match(r'^#[0-9a-fA-F]{6}$', color):
+                color = '#ffffff'
+            ANNOUNCEMENT_DATA['text'] = text
+            ANNOUNCEMENT_DATA['font'] = font
+            ANNOUNCEMENT_DATA['color'] = color
+            save_json_file(ANNOUNCEMENT_FILE, ANNOUNCEMENT_DATA)
+            self.send_response(200)
+            self.send_header("Content-type", "application/json; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "success"}).encode("utf-8"))
+
+        elif self.path == "/api/update_logo_settings":
+            try:
+                speed = int(data.get('speed', 5))
+            except (TypeError, ValueError):
+                speed = 5
+            APPEARANCE_DATA['logo_spin_enabled'] = bool(data.get('enabled', False))
+            APPEARANCE_DATA['logo_spin_speed'] = max(1, min(10, speed))
+            save_json_file(APPEARANCE_FILE, APPEARANCE_DATA)
+            self.send_response(200)
+            self.send_header("Content-type", "application/json; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "success"}).encode("utf-8"))
 
         elif self.path == "/api/update_ticker_settings":
             TICKER_DATA['text'] = data.get('text', 'عالمك الرقمي المتكامل صُمم لك خصيصاً')
@@ -14360,13 +14745,30 @@ self.addEventListener('fetch', event => {
 
         elif self.path == "/api/update_splash":
             image = data.get('image')
-            if image:
-                SPLASH_DATA["image"] = image
+            video = data.get('video')
+            result = {"status": "success"}
+            try:
+                if image:
+                    SPLASH_DATA["image"] = image
+                if video:
+                    if not (isinstance(video, str) and video.startswith("data:video/")):
+                        raise ValueError("الملف لازم يكون فيديو (MP4 أو WebM)")
+                    new_path = store_banner_media(video)
+                    old_path = SPLASH_DATA.get("video", "")
+                    SPLASH_DATA["video"] = new_path
+                    if old_path and old_path != new_path:
+                        remove_media_file(old_path)
+                elif data.get('remove_video'):
+                    old_path = SPLASH_DATA.get("video", "")
+                    SPLASH_DATA["video"] = ""
+                    remove_media_file(old_path)
                 save_json_file(SPLASH_FILE, SPLASH_DATA)
+            except ValueError as e:
+                result = {"status": "error", "message": str(e)}
             self.send_response(200)
             self.send_header("Content-type", "application/json; charset=utf-8")
             self.end_headers()
-            self.wfile.write(json.dumps({"status": "success"}).encode("utf-8"))
+            self.wfile.write(json.dumps(result, ensure_ascii=False).encode("utf-8"))
 
         elif self.path == "/api/add_product":
             PRODUCTS_DATA.append({
