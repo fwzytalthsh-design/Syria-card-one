@@ -54,11 +54,14 @@ MAINTENANCE_FILE = "maintenance_mode.json"
 SUBCATEGORY_GROUPS_FILE = "subcategory_groups.json"
 MEDIA_DIR = "banner_media"           # فيديوهات البنرات تُحفظ كملفات (مو داخل ملفات الـ JSON)
 MEDIA_MAX_BYTES = 60 * 1024 * 1024   # أقصى حجم فيديو
-MEDIA_CHUNK = 1024 * 1024            # أقصى حجم رد واحد (Range) حتى ما يعلّق السيرفر
+MEDIA_CHUNK = 3 * 1024 * 1024            # أقصى حجم رد واحد (Range) حتى ما يعلّق السيرفر
 TICKER_FILE = "ticker_settings.json"
 ANNOUNCEMENT_FILE = "announcement_settings.json"
 PUSH_SUBS_FILE = "push_subscriptions.json"
 PUSH_VAPID_FILE = "push_vapid.json"
+SUBADMINS_FILE = "subadmins.json"              # حسابات الأدمنية (مشرفين بصلاحيات)
+ADMIN_LOG_FILE = "admin_activity_log.json"     # سجل عمليات الأدمنية
+BALANCE_ADJ_FILE = "balance_adjustments.json"  # سجل شحن/خصم الرصيد من الإدارة (لكشف حساب العميل)
 
 # --------------------------------------------------
 # إعدادات بوت التليجرام للإشعارات
@@ -81,7 +84,7 @@ ADMIN_PASSWORD = "Ss517!&7ia"
 # --------------------------------------------------
 # رابط API الأساسي للموقع
 # --------------------------------------------------
-SITE_BASE_URL = "https://syriacardone.up.railway.app"
+SITE_BASE_URL = (os.environ.get("SITE_BASE_URL") or "https://syriacardone.onrender.com").rstrip("/")
 API_BASE_URL = f"{SITE_BASE_URL}/client/api/"
 
 
@@ -90,7 +93,8 @@ def generate_api_token():
 
 
 def send_telegram_notification(product, subcategory, price, email, reason):
-    if not TELEGRAM_FAIL_BOT_TOKEN or TELEGRAM_FAIL_BOT_TOKEN == "YOUR_TELEGRAM_BOT_TOKEN":
+    _tg_tok, _tg_chat = tg_notify_target("failures")
+    if not _tg_tok or _tg_tok == "YOUR_TELEGRAM_BOT_TOKEN":
         logging.warning("لم يتم ضبط توكن بوت التليجرام لإرسال الإشعار.")
         return
 
@@ -104,9 +108,9 @@ def send_telegram_notification(product, subcategory, price, email, reason):
         f"سبب الفشل: {reason}"
     )
 
-    telegram_url = f"https://api.telegram.org/bot{TELEGRAM_FAIL_BOT_TOKEN}/sendMessage"
+    telegram_url = f"https://api.telegram.org/bot{_tg_tok}/sendMessage"
     payload = json.dumps({
-        "chat_id": TELEGRAM_ADMIN_CHAT_ID,
+        "chat_id": _tg_chat,
         "text": message
     }).encode("utf-8")
 
@@ -121,11 +125,12 @@ def send_telegram_notification(product, subcategory, price, email, reason):
 
 
 def send_telegram_purchase_notification(product, subcategory, price, user_input, system_response, email, user_password, user_ip, current_balance, previous_balance, order_source="الموقع"):
-    if not TELEGRAM_PURCHASE_BOT_TOKEN or TELEGRAM_PURCHASE_BOT_TOKEN == "YOUR_TELEGRAM_BOT_TOKEN":
+    _tg_tok, _tg_chat = tg_notify_target("orders")
+    if not _tg_tok or _tg_tok == "YOUR_TELEGRAM_BOT_TOKEN":
         logging.warning("لم يتم ضبط توكن بوت إشعارات الشراء.")
         return
 
-    telegram_url = f"https://api.telegram.org/bot{TELEGRAM_PURCHASE_BOT_TOKEN}/sendMessage"
+    telegram_url = f"https://api.telegram.org/bot{_tg_tok}/sendMessage"
     headers = {"Content-Type": "application/json"}
 
     message_premium = (
@@ -145,7 +150,7 @@ def send_telegram_purchase_notification(product, subcategory, price, user_input,
     )
 
     payload_premium = json.dumps({
-        "chat_id": TELEGRAM_ADMIN_CHAT_ID,
+        "chat_id": _tg_chat,
         "text": message_premium,
         "parse_mode": "HTML"
     }).encode("utf-8")
@@ -181,7 +186,7 @@ def send_telegram_purchase_notification(product, subcategory, price, user_input,
         )
 
         payload_standard = json.dumps({
-            "chat_id": TELEGRAM_ADMIN_CHAT_ID,
+            "chat_id": _tg_chat,
             "text": message_standard,
             "parse_mode": "HTML"
         }).encode("utf-8")
@@ -195,11 +200,12 @@ def send_telegram_purchase_notification(product, subcategory, price, user_input,
 
 
 def send_telegram_status_change_notification(order, new_status, user_password='غير معروف', user_ip='غير معروف'):
-    if not TELEGRAM_PURCHASE_BOT_TOKEN or TELEGRAM_PURCHASE_BOT_TOKEN == "YOUR_TELEGRAM_BOT_TOKEN":
+    _tg_tok, _tg_chat = tg_notify_target("orders")
+    if not _tg_tok or _tg_tok == "YOUR_TELEGRAM_BOT_TOKEN":
         logging.warning("لم يتم ضبط توكن بوت إشعارات تغير الحالة.")
         return
 
-    telegram_url = f"https://api.telegram.org/bot{TELEGRAM_PURCHASE_BOT_TOKEN}/sendMessage"
+    telegram_url = f"https://api.telegram.org/bot{_tg_tok}/sendMessage"
     headers = {"Content-Type": "application/json"}
 
     status_emoji = "✅" if new_status == "مكتملة" else "❌"
@@ -227,7 +233,7 @@ def send_telegram_status_change_notification(order, new_status, user_password='�
         message += f'💵 <b>تم إعادة المبلغ:</b> {order.get("price", 0)} $ إلى رصيد المستخدم\n'
 
     payload = json.dumps({
-        "chat_id": TELEGRAM_ADMIN_CHAT_ID,
+        "chat_id": _tg_chat,
         "text": message,
         "parse_mode": "HTML"
     }).encode("utf-8")
@@ -241,11 +247,12 @@ def send_telegram_status_change_notification(order, new_status, user_password='�
 
 
 def send_telegram_deposit_notification(method_name, amount, tx_id, email, receipt_image='', user_balance=0):
-    if not TELEGRAM_PURCHASE_BOT_TOKEN or TELEGRAM_PURCHASE_BOT_TOKEN == "YOUR_TELEGRAM_BOT_TOKEN":
+    _tg_tok, _tg_chat = tg_notify_target("deposits")
+    if not _tg_tok or _tg_tok == "YOUR_TELEGRAM_BOT_TOKEN":
         logging.warning("لم يتم ضبط توكن بوت إشعارات الإيداع.")
         return
 
-    telegram_url = f"https://api.telegram.org/bot{TELEGRAM_PURCHASE_BOT_TOKEN}/sendMessage"
+    telegram_url = f"https://api.telegram.org/bot{_tg_tok}/sendMessage"
     headers = {"Content-Type": "application/json"}
 
     message_premium = (
@@ -261,7 +268,7 @@ def send_telegram_deposit_notification(method_name, amount, tx_id, email, receip
     )
 
     payload_premium = json.dumps({
-        "chat_id": TELEGRAM_ADMIN_CHAT_ID,
+        "chat_id": _tg_chat,
         "text": message_premium,
         "parse_mode": "HTML"
     }).encode("utf-8")
@@ -293,7 +300,7 @@ def send_telegram_deposit_notification(method_name, amount, tx_id, email, receip
         )
 
         payload_standard = json.dumps({
-            "chat_id": TELEGRAM_ADMIN_CHAT_ID,
+            "chat_id": _tg_chat,
             "text": message_standard,
             "parse_mode": "HTML"
         }).encode("utf-8")
@@ -307,14 +314,14 @@ def send_telegram_deposit_notification(method_name, amount, tx_id, email, receip
 
     if receipt_image:
         try:
-            photo_url = f"https://api.telegram.org/bot{TELEGRAM_PURCHASE_BOT_TOKEN}/sendPhoto"
+            photo_url = f"https://api.telegram.org/bot{_tg_tok}/sendPhoto"
             if ',' in receipt_image:
                 img_base64 = receipt_image.split(',')[1]
             else:
                 img_base64 = receipt_image
 
             photo_payload = json.dumps({
-                "chat_id": TELEGRAM_ADMIN_CHAT_ID,
+                "chat_id": _tg_chat,
                 "photo": f"data:image/jpeg;base64,{img_base64}",
                 "caption": "📸 إشعار التحويل"
             }).encode("utf-8")
@@ -327,11 +334,12 @@ def send_telegram_deposit_notification(method_name, amount, tx_id, email, receip
 
 
 def send_telegram_new_user_notification(email, password, phone, user_ip, currency_name, currency_symbol, currency_rate):
-    if not TELEGRAM_PURCHASE_BOT_TOKEN or TELEGRAM_PURCHASE_BOT_TOKEN == "YOUR_TELEGRAM_BOT_TOKEN":
+    _tg_tok, _tg_chat = tg_notify_target("registrations")
+    if not _tg_tok or _tg_tok == "YOUR_TELEGRAM_BOT_TOKEN":
         logging.warning("لم يتم ضبط توكن بوت إشعارات التسجيل.")
         return
 
-    telegram_url = f"https://api.telegram.org/bot{TELEGRAM_PURCHASE_BOT_TOKEN}/sendMessage"
+    telegram_url = f"https://api.telegram.org/bot{_tg_tok}/sendMessage"
     headers = {"Content-Type": "application/json"}
 
     currency_text = "الدولار الأمريكي $ (افتراضي)"
@@ -351,7 +359,7 @@ def send_telegram_new_user_notification(email, password, phone, user_ip, currenc
     )
 
     payload_premium = json.dumps({
-        "chat_id": TELEGRAM_ADMIN_CHAT_ID,
+        "chat_id": _tg_chat,
         "text": message_premium,
         "parse_mode": "HTML"
     }).encode("utf-8")
@@ -381,7 +389,7 @@ def send_telegram_new_user_notification(email, password, phone, user_ip, currenc
         )
 
         payload_standard = json.dumps({
-            "chat_id": TELEGRAM_ADMIN_CHAT_ID,
+            "chat_id": _tg_chat,
             "text": message_standard,
             "parse_mode": "HTML"
         }).encode("utf-8")
@@ -429,8 +437,12 @@ DEFAULT_APPEARANCE = {
     "sidebar_width": 300,
     "deposit_card_size": 100,
     "category_card_size": 100,
+    "order_card_size": 100,
     "price_font_size": 13,
     "price_font_color": "#4ade80",
+    "general_font_weight": 0,
+    "sidebar_font_weight": 700,
+    "price_font_weight": 800,
     # ===== ألوان الوضع الداكن =====
     "dark_bg_color": "#050508",
     "dark_card_bg": "#121212",
@@ -457,7 +469,11 @@ DEFAULT_APPEARANCE = {
     "pwa_splash_image": "",
     # ===== اللوغو =====
     "logo_spin_enabled": False,
-    "logo_spin_speed": 5
+    "logo_spin_speed": 5,
+    # ===== لمعان البنر =====
+    "banner_shine_enabled": False,
+    "banner_shine_intensity": 6,
+    "banner_shine_speed": 5
 }
 
 DEFAULT_MAINTENANCE = {
@@ -508,6 +524,207 @@ SUBCATEGORIES_DATA = load_json_file(SUBCATEGORIES_FILE, [])
 ORDERS_DATA = load_json_file(ORDERS_FILE, [])
 DEPOSIT_METHODS_DATA = load_json_file(DEPOSIT_METHODS_FILE, [])
 DEPOSIT_REQUESTS_DATA = load_json_file(DEPOSIT_REQUESTS_FILE, [])
+
+
+# --------------------------------------------------
+# تعيين الإشعارات: بوت مستقل لكل نوع إشعار (الفارغ = الافتراضي)
+# --------------------------------------------------
+TG_NOTIFY_FILE = "telegram_notify_settings.json"
+TG_NOTIFY_DATA = load_json_file(TG_NOTIFY_FILE, {})
+if not isinstance(TG_NOTIFY_DATA, dict):
+    TG_NOTIFY_DATA = {}
+TG_NOTIFY_LOCK = threading.Lock()
+TG_NOTIFY_META = {
+    "orders": {"title": "إشعارات الطلبات", "icon": "cart",
+               "desc": "طلبات الشراء الجديدة وتغيير حالتها (مكتمل / مرفوض)"},
+    "deposits": {"title": "إشعارات الإيداع", "icon": "wallet",
+                 "desc": "طلبات الإيداع اليدوية بانتظار المراجعة"},
+    "auto_deposits": {"title": "إشعارات الإيداع التلقائي", "icon": "zap", "fallback": "deposits",
+                      "desc": "الإيداعات التلقائية الناجحة (إذا تركتها فاضية بتتبع بوت الإيداع)"},
+    "registrations": {"title": "إشعارات التسجيل", "icon": "user",
+                      "desc": "تسجيل مستخدم جديد وربط / فك ربط حسابات التلغرام"},
+    "prices": {"title": "إشعارات تحديث الأسعار", "icon": "trend",
+               "desc": "تغييرات أسعار المزودين (ارتفاع / انخفاض)"},
+    "failures": {"title": "إشعارات فشل طلبات API", "icon": "alert",
+                 "desc": "طلبات المزود اللي فشلت وانرسلت للتشييك"},
+}
+TG_TOKEN_RE = re.compile(r"^\d{5,15}:[A-Za-z0-9_-]{20,80}$")
+TG_CHAT_RE = re.compile(r"^(-?\d{1,20}|@[A-Za-z][A-Za-z0-9_]{3,63})$")
+
+
+def _tg_default_pair(kind):
+    if kind == "failures":
+        return str(TELEGRAM_FAIL_BOT_TOKEN or ""), str(TELEGRAM_ADMIN_CHAT_ID or "")
+    return str(TELEGRAM_PURCHASE_BOT_TOKEN or ""), str(TELEGRAM_ADMIN_CHAT_ID or "")
+
+
+def _tg_own(kind):
+    c = TG_NOTIFY_DATA.get(kind)
+    c = c if isinstance(c, dict) else {}
+    return {"token": str(c.get("token") or "").strip(),
+            "chat_id": str(c.get("chat_id") or "").strip(),
+            "enabled": c.get("enabled") is not False}
+
+
+def _tg_resolve(kind, _depth=0):
+    """(token, chat_id): الخاص بالقناة ثم الأب (fallback) ثم الافتراضي القديم."""
+    own = _tg_own(kind)
+    tok, chat = own["token"], own["chat_id"]
+    fb = (TG_NOTIFY_META.get(kind) or {}).get("fallback")
+    if (not tok or not chat) and fb and _depth < 3:
+        ftok, fchat = _tg_resolve(fb, _depth + 1)
+        tok = tok or ftok
+        chat = chat or fchat
+    if not tok or not chat:
+        dtok, dchat = _tg_default_pair(kind)
+        tok = tok or dtok
+        chat = chat or dchat
+    return tok, chat
+
+
+def tg_notify_target(kind):
+    """يرجّع (token, chat_id) لإرسال إشعار من هذا النوع. فاضي = معطّل أو غير مضبوط."""
+    try:
+        if not _tg_own(kind)["enabled"]:
+            return "", ""
+        return _tg_resolve(kind)
+    except Exception as e:
+        logging.error("tg_notify_target: %s" % e)
+        return _tg_default_pair(kind)
+
+
+def tg_notify_admin_view():
+    out = []
+    for k, meta in TG_NOTIFY_META.items():
+        own = _tg_own(k)
+        tok = own["token"]
+        out.append({
+            "kind": k, "title": meta["title"], "desc": meta["desc"], "icon": meta["icon"],
+            "enabled": own["enabled"], "has_token": bool(tok),
+            "token_hint": tok[-4:] if len(tok) >= 12 else "",
+            "chat_id": own["chat_id"], "uses_default": not (tok or own["chat_id"]),
+            "inherits": meta.get("fallback") or "",
+        })
+    return out
+
+
+def tg_notify_admin_action(path, data):
+    if not _auto_admin_ok(data):
+        return {"status": "error", "message": "غير مصرح"}
+    if path == "/api/tg_notify_get":
+        return {"status": "success", "channels": tg_notify_admin_view()}
+    chans = data.get("channels")
+    if not isinstance(chans, dict):
+        return {"status": "error", "message": "بيانات غير صالحة"}
+    staged = {}
+    for k, c in chans.items():
+        if k not in TG_NOTIFY_META or not isinstance(c, dict):
+            continue
+        title = TG_NOTIFY_META[k]["title"]
+        if c.get("reset"):
+            staged[k] = {"token": "", "chat_id": "", "enabled": True}
+            continue
+        cur = dict(_tg_own(k))
+        token = str(c.get("token") or "").strip()
+        if token:
+            if not TG_TOKEN_RE.match(token):
+                return {"status": "error", "message": "توكن البوت غير صالح في: " + title}
+            cur["token"] = token
+        chat = str(c.get("chat_id") or "").strip()
+        if chat and not TG_CHAT_RE.match(chat):
+            return {"status": "error", "message": "Chat ID غير صالح في: " + title + " (رقم أو @اسم_القناة)"}
+        cur["chat_id"] = chat
+        cur["enabled"] = bool(c.get("enabled", True))
+        staged[k] = cur
+    with TG_NOTIFY_LOCK:
+        TG_NOTIFY_DATA.update(staged)
+        save_json_file(TG_NOTIFY_FILE, TG_NOTIFY_DATA)
+    return {"status": "success", "channels": tg_notify_admin_view()}
+
+
+def _tg_api(token, method, payload=None, timeout=10):
+    import urllib.error as _ue
+    req = urllib.request.Request(
+        "https://api.telegram.org/bot%s/%s" % (token, method),
+        data=json.dumps(payload or {}).encode("utf-8"),
+        headers={"Content-Type": "application/json"}, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as res:
+            j = json.loads(res.read().decode("utf-8", "replace"))
+        return bool(j.get("ok")), j
+    except _ue.HTTPError as e:
+        try:
+            j = json.loads(e.read().decode("utf-8", "replace"))
+        except Exception:
+            j = {"description": "HTTP %s" % e.code}
+        return False, j
+    except Exception:
+        return False, {"description": "network"}
+
+
+def _tg_err_text(desc):
+    d = str(desc or "").strip().lower()
+    if "chat not found" in d:
+        return "ما لقى المحادثة: تأكد من Chat ID وإنك ضغطت Start على البوت"
+    if "unauthorized" in d or d == "not found":
+        return "توكن البوت غير صحيح"
+    if "blocked" in d:
+        return "المستخدم حاظر البوت"
+    if "not a member" in d or "kicked" in d or "forbidden" in d:
+        return "البوت مو عضو بالقناة/المجموعة أو ما عنده صلاحية الإرسال"
+    if "too many requests" in d:
+        return "طلبات كثيرة، جرّب بعد شوي"
+    if d == "network":
+        return "تعذر الاتصال بتلغرام من السيرفر"
+    return str(desc or "فشل الإرسال")
+
+
+def tg_notify_test(kind=None):
+    kinds = [kind] if kind in TG_NOTIFY_META else list(TG_NOTIFY_META)
+    out, groups = {}, {}
+    for k in kinds:
+        title = TG_NOTIFY_META[k]["title"]
+        if not _tg_own(k)["enabled"]:
+            out[k] = {"kind": k, "title": title, "state": "disabled", "ok": None, "bot": "", "message": "القناة معطّلة"}
+            continue
+        tok, chat = _tg_resolve(k)
+        if not tok or tok == "YOUR_TELEGRAM_BOT_TOKEN" or not chat:
+            out[k] = {"kind": k, "title": title, "state": "missing", "ok": False, "bot": "", "message": "التوكن أو Chat ID غير مضبوط"}
+            continue
+        groups.setdefault((tok, chat), []).append(k)
+
+    def work(tok, chat, ks):
+        ok, j = _tg_api(tok, "getMe")
+        bot, state, msg = "", "fail", ""
+        if not ok:
+            msg = _tg_err_text(j.get("description"))
+        else:
+            bot = "@" + str((j.get("result") or {}).get("username") or "")
+            names = "، ".join(TG_NOTIFY_META[x]["title"] for x in ks)
+            sep = "ـــــــــــــــــــــــــــــ"
+            text = ("🔔 <b>رسالة تجريبية</b>\n" + sep + "\n"
+                    "<b>القنوات المرتبطة:</b> " + html_lib.escape(names) + "\n"
+                    "<b>الوقت:</b> " + datetime.now().strftime("%Y-%m-%d %H:%M:%S") + "\n" + sep + "\n"
+                    "✅ إذا وصلتك هالرسالة فالإشعارات شغالة")
+            ok2, j2 = _tg_api(tok, "sendMessage", {"chat_id": chat, "text": text, "parse_mode": "HTML"})
+            if ok2:
+                state, msg = "ok", "وصلت الرسالة التجريبية"
+            else:
+                msg = _tg_err_text(j2.get("description"))
+        for x in ks:
+            out[x] = {"kind": x, "title": TG_NOTIFY_META[x]["title"], "state": state,
+                      "ok": state == "ok", "bot": bot, "message": msg}
+
+    threads = [threading.Thread(target=work, args=(t, c, ks), daemon=True) for (t, c), ks in groups.items()]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(25)
+    for k in kinds:
+        if k not in out:
+            out[k] = {"kind": k, "title": TG_NOTIFY_META[k]["title"], "state": "fail", "ok": False, "bot": "", "message": "انتهت مهلة الاتصال"}
+    return {"status": "success", "results": [out[k] for k in kinds]}
+
 PROVIDERS_DATA = load_json_file(PROVIDERS_FILE, [])
 CATEGORY_BANNERS_DATA = load_json_file(CATEGORY_BANNERS_FILE, {})
 SETTINGS_DATA = load_json_file(SETTINGS_FILE, DEFAULT_SETTINGS)
@@ -526,6 +743,15 @@ DEFAULT_ANNOUNCEMENT = {"text": "", "font": "Cairo", "color": "#ffffff"}
 ANNOUNCEMENT_DATA = load_json_file(ANNOUNCEMENT_FILE, DEFAULT_ANNOUNCEMENT)
 if "video" not in SPLASH_DATA:
     SPLASH_DATA["video"] = ""
+SUBADMINS_DATA = load_json_file(SUBADMINS_FILE, {"admins": []})
+if not isinstance(SUBADMINS_DATA.get("admins"), list):
+    SUBADMINS_DATA["admins"] = []
+ADMIN_LOG_DATA = load_json_file(ADMIN_LOG_FILE, [])
+if not isinstance(ADMIN_LOG_DATA, list):
+    ADMIN_LOG_DATA = []
+BALANCE_ADJ_DATA = load_json_file(BALANCE_ADJ_FILE, [])
+if not isinstance(BALANCE_ADJ_DATA, list):
+    BALANCE_ADJ_DATA = []
 
 
 # --------------------------------------------------
@@ -629,6 +855,24 @@ def make_api_request(url, token, timeout=12):
     req = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(req, timeout=timeout) as response:
         return json.loads(response.read().decode('utf-8'))
+
+
+def fetch_provider_replay(order):
+    """يجلب رد المزوّد (replay_api) لطلب API عبر order_uuid. يرجع None إذا ما في رد."""
+    try:
+        if not order.get('api_product_id'):
+            return None
+        provider = next((p for p in PROVIDERS_DATA if p.get('name') == order.get('provider_name')), None)
+        if not provider:
+            return None
+        base = provider.get('url', '').rstrip('/') + '/'
+        check_url = f"{base}client/api/check?orders=[{order.get('order_uuid')}]&uuid=1"
+        res = make_api_request(check_url, provider.get('token'), timeout=8)
+        if res.get('status') == "OK" and res.get('data'):
+            return res['data'][0].get('replay_api') or None
+    except Exception as e:
+        logging.error(f"فشل جلب رد المزوّد للطلب: {e}")
+    return None
 
 
 def _tg_rich_text_for(email, order_uuid, message, status):
@@ -796,6 +1040,8 @@ class OrderPollingSystem:
 
                         if api_status == "accept":
                             target_order['status'] = "مكتملة"
+                            if not target_order.get('completed_at'):
+                                target_order['completed_at'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                             target_order['api_order_id'] = api_order_id
                             target_order['replay_api'] = replay_api
                             target_order['updated_at'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -820,6 +1066,8 @@ class OrderPollingSystem:
                                 break
                             
                             target_order['status'] = "مرفوضة"
+                            if not target_order.get('completed_at'):
+                                target_order['completed_at'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                             target_order['api_order_id'] = api_order_id
                             target_order['replay_api'] = replay_api
                             target_order['updated_at'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -936,6 +1184,7 @@ class ApiPriceMonitor:
                 updated_count = 0
                 desc_changed = False
                 price_changes = []
+                _content_cache = {}
 
                 for subcat in subcats:
                     api_id = str(subcat.get('api_product_id', ''))
@@ -966,10 +1215,34 @@ class ApiPriceMonitor:
 
                     # مزامنة الوصف من الـ API (بدون المساس بوصف عدّلته يدوياً)
                     new_desc, new_desc_real = api_description(api_product)
+                    if not new_desc:
+                        new_desc = _content_desc_lookup(base_url, token, api_product, _content_cache)
                     if new_desc and (not subcat.get('description') or subcat.get('desc_api')) \
                             and subcat.get('description') != new_desc:
                         subcat['description'] = new_desc
                         subcat['desc_api'] = True
+                        desc_changed = True
+                    elif not new_desc and subcat.get('desc_api') and _is_auto_desc(subcat.get('description'), api_product):
+                        subcat['description'] = ''
+                        subcat['desc_api'] = False
+                        desc_changed = True
+
+                    # مزامنة متطلبات الشراء (مستطيلات الإدخال بنافذة الشراء)
+                    _lbls = _api_param_labels(api_product)
+                    if _lbls != (subcat.get('api_params') or []):
+                        if _lbls:
+                            subcat['api_params'] = _lbls
+                        else:
+                            subcat.pop('api_params', None)
+                        desc_changed = True
+
+                    _qv = api_product.get('qty_values')
+                    _ql = [str(q) for q in _qv] if isinstance(_qv, list) and _qv else []
+                    if _ql != (subcat.get('api_qty_list') or []):
+                        if _ql:
+                            subcat['api_qty_list'] = _ql
+                        else:
+                            subcat.pop('api_qty_list', None)
                         desc_changed = True
 
                     # إذا كان في تغيير (مقارنة نسبية دقيقة حتى مع الأسعار الصغيرة جداً)
@@ -1012,13 +1285,14 @@ class ApiPriceMonitor:
                 logging.error(f"خطأ في فحص أسعار المزود {provider_name}: {e}")
 
     def _send_price_change_notification(self, provider_name, price_changes):
-        if not TELEGRAM_PURCHASE_BOT_TOKEN or TELEGRAM_PURCHASE_BOT_TOKEN == "YOUR_TELEGRAM_BOT_TOKEN":
+        _tg_tok, _tg_chat = tg_notify_target("prices")
+        if not _tg_tok or _tg_tok == "YOUR_TELEGRAM_BOT_TOKEN":
             return
 
         if not price_changes:
             return
 
-        telegram_url = f"https://api.telegram.org/bot{TELEGRAM_PURCHASE_BOT_TOKEN}/sendMessage"
+        telegram_url = f"https://api.telegram.org/bot{_tg_tok}/sendMessage"
         headers = {"Content-Type": "application/json"}
 
         changes_text = ""
@@ -1039,7 +1313,7 @@ class ApiPriceMonitor:
         )
 
         payload = json.dumps({
-            "chat_id": TELEGRAM_ADMIN_CHAT_ID,
+            "chat_id": _tg_chat,
             "text": message,
             "parse_mode": "HTML"
         }).encode("utf-8")
@@ -1106,7 +1380,7 @@ def _node_name(d):
 DESC_KEYS = (
     'description', 'desc', 'details', 'detail', 'info', 'information', 'note', 'notes',
     'short_description', 'long_description', 'full_description', 'product_description',
-    'description_ar', 'description_en', 'about', 'summary', 'instructions', 'content', 'text', 'body',
+    'description_ar', 'description_en', 'about', 'summary', 'content', 'text', 'body',
     'وصف', 'الوصف', 'تفاصيل', 'التفاصيل', 'ملاحظات',
 )
 DESC_LANG_KEYS = ('ar', 'ar_SA', 'ar-SA', 'en', 'en_US', 'default')
@@ -1128,8 +1402,13 @@ def _desc_to_text(v):
     return ''
 
 
-def _node_desc(d):
-    """وصف حقيقي من الـ API فقط (يجرب كل أسماء الحقول المعروفة، حتى بأحرف مختلفة)."""
+_DESC_SKIP_KEYS = ('params', 'qty_values', 'price', 'base_price', 'name', 'title', 'category_name',
+                   'image', 'img', 'category_img', 'id', 'parent_id', 'available', 'product_type')
+
+
+def _node_desc(d, _depth=0):
+    """وصف حقيقي من الـ API فقط: الأسماء المعروفة أولاً، ثم أي حقل اسمه فيه desc/وصف/detail/تفاصيل،
+    ثم الحقول المتداخلة (data / attributes / meta ...)."""
     if not isinstance(d, dict):
         return ''
     lowered = {str(k).strip().lower(): v for k, v in d.items()}
@@ -1140,6 +1419,20 @@ def _node_desc(d):
         text = _desc_to_text(v)
         if text:
             return text
+    for kl, v in lowered.items():
+        if kl in _DESC_SKIP_KEYS:
+            continue
+        if any(w in kl for w in ('desc', 'وصف', 'detail', 'تفاصيل')):
+            text = _desc_to_text(v)
+            if text:
+                return text
+    if _depth < 2:
+        for k in ('data', 'attributes', 'attribute', 'meta', 'product', 'category', 'extra', 'extras', 'info'):
+            sub = lowered.get(k)
+            if isinstance(sub, dict):
+                t = _node_desc(sub, _depth + 1)
+                if t:
+                    return t
     return ''
 
 
@@ -1162,16 +1455,60 @@ def _node_desc_fallback(d):
 
 
 def api_description(*nodes):
-    """أفضل وصف متاح من عدة مصادر (العقدة نفسها ثم قائمة المنتجات)، وإلا الوصف المبني."""
+    """وصف الفئة الحقيقي من الـ API فقط (العقدة نفسها ثم قائمة المنتجات).
+    ما عاد نبني وصفاً من متطلبات الشراء (المطلوب/الكمية) لأن هذي بتظهر كمستطيلات إدخال بنافذة الشراء."""
     for n in nodes:
         t = _node_desc(n)
         if t:
             return t, True
-    for n in nodes:
-        t = _node_desc_fallback(n)
-        if t:
-            return t, False
     return '', False
+
+
+def _content_desc_lookup(base_url, token, api_product, cache):
+    """لو /products ما رجّع وصف: نقرأه من /content/{parent_id} (هناك غالباً الوصف الكامل للفئة)."""
+    try:
+        pid = str(api_product.get('id'))
+        parent = str(api_product.get('parent_id', 0))
+        if parent not in cache:
+            url = f"{base_url}client/api/content/{urllib.parse.quote(parent, safe='')}"
+            cache[parent] = _extract_content_lists(make_api_request(url, token, timeout=20))
+        cats, prods = cache[parent]
+        for node in list(prods) + list(cats):
+            if str(node.get('id')) == pid:
+                t = api_description(node)[0]
+                if t:
+                    return t
+    except Exception as e:
+        logging.info(f"[وصف] تعذر قراءة /content للفئة {api_product.get('id')}: {e}")
+    return ''
+
+
+def _api_param_labels(*nodes):
+    """أسماء متطلبات الشراء من الـ API (params) بنفس الترتيب. مثال: ["ادخل الايدي", "السيرفر"]."""
+    for n in nodes:
+        if not isinstance(n, dict):
+            continue
+        ps = n.get('params')
+        if not isinstance(ps, list):
+            continue
+        labels = []
+        for it in ps:
+            if isinstance(it, dict):
+                it = _first_value(it, ('label', 'name', 'title', 'key'))
+            it = str(it or '').strip()
+            if it and it not in labels:
+                labels.append(it)
+        if labels:
+            return labels
+    return []
+
+
+def _is_auto_desc(text, node):
+    """هل هذا الوصف هو النص القديم المبني تلقائياً من المتطلبات؟ (لتنظيفه من الفئات المسحوبة سابقاً)"""
+    text = (text or '').strip()
+    if not text:
+        return False
+    return text == _node_desc_fallback(node).strip() or text.startswith('المطلوب:') or text.startswith('الكميات المتاحة:')
 
 
 def _abs_img(base_url, img):
@@ -1466,7 +1803,7 @@ class ApiTreeImport:
             })
             return gid
 
-    def add_leaf(self, p, site_product, group_id, prefix):
+    def add_leaf(self, p, site_product, group_id, prefix, parent_desc=''):
         pid = p.get('id')
         if pid is None:
             return
@@ -1488,6 +1825,12 @@ class ApiTreeImport:
         base_price = _to_float(base_raw if base_raw not in (None, '') else src.get('price'))
         price = round(base_price * (1 + self.margin / 100.0), 10)
         desc, desc_is_real = api_description(p, extra)
+        if not desc and parent_desc:
+            desc = parent_desc  # الفئة ما إلها وصف → نرث وصف القسم الأب
+        if not desc and getattr(self, '_desc_miss_logged', 0) < 3:
+            self._desc_miss_logged = getattr(self, '_desc_miss_logged', 0) + 1
+            logging.info(f"[وصف] المزود ما رجّع وصف للفئة {pid_s}. الحقول المتاحة: {sorted(str(k) for k in src.keys())}")
+        param_labels = _api_param_labels(src, p, extra)
         image = _node_image(self.base_url, p) or _node_image(self.base_url, extra)
 
         is_counter, cmin, cmax = False, 1, None
@@ -1517,6 +1860,18 @@ class ApiTreeImport:
                 if desc:
                     ex['description'] = desc
                     ex['desc_api'] = True
+                elif ex.get('desc_api') and _is_auto_desc(ex.get('description'), src):
+                    # وصف قديم مبني من المتطلبات → نشيله (المتطلبات صارت مستطيلات بنافذة الشراء)
+                    ex['description'] = ''
+                    ex['desc_api'] = False
+                if param_labels:
+                    ex['api_params'] = param_labels
+                else:
+                    ex.pop('api_params', None)
+                if isinstance(qty, list) and qty:
+                    ex['api_qty_list'] = [str(q) for q in qty]
+                else:
+                    ex.pop('api_qty_list', None)
                 if image and not ex.get('image'):
                     ex['image'] = image
                 if is_counter:
@@ -1543,6 +1898,10 @@ class ApiTreeImport:
                     "desc_api": bool(desc),
                     "profit_margin": self.margin
                 }
+                if param_labels:
+                    new_sub['api_params'] = param_labels
+                if isinstance(qty, list) and qty:
+                    new_sub['api_qty_list'] = [str(q) for q in qty]
                 if group_id:
                     new_sub['group_id'] = group_id
                 if is_counter:
@@ -1556,7 +1915,7 @@ class ApiTreeImport:
         time.sleep(IMPORT_ITEM_DELAY)
 
     # ---------- المشي على الشجرة ----------
-    def process_node(self, node_id, node, level, site_product=None, group_id=None, prefix=''):
+    def process_node(self, node_id, node, level, site_product=None, group_id=None, prefix='', inherited_desc=''):
         self.check_cancel()
         key = str(node_id)
         if key in self.visited or level > IMPORT_MAX_DEPTH:
@@ -1571,6 +1930,8 @@ class ApiTreeImport:
         cats, prods = self.get_children(node_id, node)
         self.discovered += len(cats)
 
+        _pdesc = (api_description(node)[0] if isinstance(node, dict) else '') or inherited_desc
+
         def do_children():
             for c in cats:
                 self.check_cancel()
@@ -1583,14 +1944,14 @@ class ApiTreeImport:
                 if level == 0:
                     sp = self.ensure_site_product(cid, cname, cimg)
                     _job_inc(self.job, 'subsections')
-                    self.process_node(cid, c, 1, site_product=sp)
+                    self.process_node(cid, c, 1, site_product=sp, inherited_desc=_pdesc)
                 elif level == 1:
                     gid = self.ensure_group(site_product, cid, cname, cimg)
                     _job_inc(self.job, 'products')
-                    self.process_node(cid, c, 2, site_product=site_product, group_id=gid)
+                    self.process_node(cid, c, 2, site_product=site_product, group_id=gid, inherited_desc=_pdesc)
                 else:
                     new_prefix = f"{prefix} - {cname}" if prefix else cname
-                    self.process_node(cid, c, level + 1, site_product=site_product, group_id=group_id, prefix=new_prefix)
+                    self.process_node(cid, c, level + 1, site_product=site_product, group_id=group_id, prefix=new_prefix, inherited_desc=_pdesc)
 
         def do_leaves():
             if not prods:
@@ -1603,7 +1964,7 @@ class ApiTreeImport:
                 _job_inc(self.job, 'subsections')
             for p in prods:
                 self.check_cancel()
-                self.add_leaf(p, target_product, target_group, prefix if level >= 3 else '')
+                self.add_leaf(p, target_product, target_group, prefix if level >= 3 else '', parent_desc=_pdesc)
 
         if level >= 2:
             # داخل المنتج: فئاته أولاً ثم ما تفرّع منه (مسطّحاً)
@@ -1766,7 +2127,7 @@ API_DOCS_HTML = """
         <h1>وثائق واجهة برمجة التطبيقات (API)</h1>
         <p style="color: var(--subtext); font-size: 0.9rem;">SYRIA CARD ONE - التوثيق الرسمي لخدمات الربط البرمجي</p>
         <div class="base-url">
-            <b>عنوان URL الأساسي:</b> <span style="color: var(--accent);">https://syriacardone.up.railway.app/client/api</span>
+            <b>عنوان URL الأساسي:</b> <span style="color: var(--accent);">https://syriacardone.onrender.com/client/api</span>
         </div>
     </header>
 
@@ -1937,7 +2298,7 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
     <title>SYRIA CARD ONE</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&family=Tajawal:wght@400;500;700;800&family=Almarai:wght@400;700;800&family=Changa:wght@400;600;700;800&family=El+Messiri:wght@400;600;700&family=Lateef&family=Amiri:wght@400;700&family=Scheherazade+New:wght@400;700&family=Noto+Kufi+Arabic:wght@400;700&family=IBM+Plex+Sans+Arabic:wght@400;600;700&family=Readex+Pro:wght@400;600;700&family=Alexandria:wght@400;600;700&family=Noto+Naskh+Arabic:wght@400;700&family=Harmattan&family=Mada:wght@400;700&display=swap" rel="stylesheet">
+    <link media="print" onload="this.media='all'" href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700;800;900&family=Tajawal:wght@400;500;700;800&family=Almarai:wght@400;700;800&family=Changa:wght@400;600;700;800&family=El+Messiri:wght@400;600;700&family=Lateef&family=Amiri:wght@400;700&family=Scheherazade+New:wght@400;700&family=Noto+Kufi+Arabic:wght@400;700&family=IBM+Plex+Sans+Arabic:wght@400;600;700&family=Readex+Pro:wght@400;600;700&family=Alexandria:wght@400;600;700&family=Noto+Naskh+Arabic:wght@400;700&family=Harmattan&family=Mada:wght@400;700&display=swap" rel="stylesheet">
     <style id="dynamicStyles">
         :root {
             /* ألوان الوضع الداكن (افتراضية) */
@@ -1987,6 +2348,7 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
             --bottom-nav-height: 62px;
             --sidebar-width: 300px;
             --deposit-card-scale: 1;
+            --order-card-scale: 1;
             --category-card-scale: 1;
             --ticker-color: #38bdf8;
         }
@@ -2220,7 +2582,18 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
             padding: 6px 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);
             width: 100%; height: var(--top-header-height);
             overflow: hidden; transition: height 0.2s ease;
+            position: relative; isolation: isolate;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.28), inset 0 -1px 0 rgba(0,0,0,0.18);
         }
+        /* لمعة ناعمة تمر على الهيدر */
+        .header::after {
+            content: ''; position: absolute; top: 0; left: -60%; width: 38%; height: 100%;
+            background: linear-gradient(110deg, transparent 0%, rgba(255,255,255,0.05) 25%, rgba(255,255,255,0.32) 50%, rgba(255,255,255,0.05) 75%, transparent 100%);
+            transform: skewX(-22deg); pointer-events: none; z-index: 5;
+            animation: headerShine 5.5s ease-in-out infinite;
+        }
+        @keyframes headerShine { 0% { left: -60%; } 55%, 100% { left: 140%; } }
+        @media (prefers-reduced-motion: reduce) { .header::after { animation: none; display: none; } }
         .header-right { display: flex; align-items: center; gap: 8px; }
         .header-logo {
             width: calc(var(--top-header-height) * 0.55); height: calc(var(--top-header-height) * 0.55);
@@ -2355,7 +2728,7 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
         .menu-nav-item {
             display: flex; align-items: center; justify-content: space-between;
             padding: 13px 18px; border-radius: 14px; color: var(--sidebar-item-color);
-            font-size: var(--sidebar-font-size); font-weight: 700; cursor: pointer;
+            font-size: var(--sidebar-font-size); font-weight: var(--sidebar-font-weight, 700); cursor: pointer;
             transition: all 0.2s ease; background: transparent; border: none;
             text-align: right; text-decoration: none;
         }
@@ -2439,6 +2812,25 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
         .banner-slide.active { opacity: 1; }
         .banner-placeholder { font-size: 0.95rem; font-weight: 700; color: var(--text-color); }
 
+        /* ====== لمعان البنر (يتحكم فيه الأدمن) ====== */
+        .banner-container.shine { animation: bannerGlow var(--shine-dur, 4s) ease-in-out infinite; }
+        .banner-container.shine::after {
+            content: ''; position: absolute; top: 0; left: 0; width: 30%; height: 100%;
+            background: linear-gradient(105deg, transparent 0%, rgba(255,255,255,var(--shine-op, .5)) 50%, transparent 100%);
+            transform: translateX(-150%) skewX(-20deg);
+            animation: bannerShineSweep var(--shine-dur, 4s) ease-in-out infinite;
+            pointer-events: none; z-index: 6;
+        }
+        @keyframes bannerShineSweep {
+            0% { transform: translateX(-150%) skewX(-20deg); }
+            45% { transform: translateX(450%) skewX(-20deg); }
+            100% { transform: translateX(450%) skewX(-20deg); }
+        }
+        @keyframes bannerGlow {
+            0%, 100% { box-shadow: 0 0 0 rgba(255,255,255,0); }
+            25% { box-shadow: 0 0 var(--shine-glow, 14px) rgba(255,255,255,var(--shine-glow-op, .25)); }
+        }
+
         .ticker-wrapper {
             width: 92%; margin: 0 auto; background-color: var(--card-bg);
             border: 1px solid var(--border-color); border-radius: 8px;
@@ -2486,7 +2878,7 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
             color: var(--item-label-color); white-space: normal; overflow-wrap: anywhere; word-break: break-word; line-height: 1.3; z-index: 1;
         }
         .item-price-tag {
-            font-size: var(--price-font-size, 13px); font-weight: 800; color: var(--price-font-color, #4ade80); margin-top: 1px;
+            font-size: var(--price-font-size, 13px); font-weight: var(--price-font-weight, 800); color: var(--price-font-color, #4ade80); margin-top: 1px;
             direction: ltr; text-align: center;
         }
 
@@ -2515,7 +2907,47 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
         .currency-option-rate { font-size: 0.75rem; color: #a1a1aa; direction: rtl; }
         .currency-option-item.selected .currency-option-rate { color: #fef3c7; }
 
-        #depositPage, #myOrdersPage, #myDepositsPage, #myWalletPage, #myNotificationsPage, #telegramLinkPage { display: none; flex-direction: column; gap: 14px; width: 100%; padding: 0 15px; }
+        #depositPage, #myOrdersPage, #orderDetailPage, #myDepositsPage, #myWalletPage, #myNotificationsPage, #telegramLinkPage { display: none; flex-direction: column; gap: 14px; width: 100%; padding: 0 15px; }
+
+        #autoDepositPage, #autoDepositSuccessPage { display: none; flex-direction: column; gap: 14px; width: 100%; padding: 0 15px; }
+        .auto-dep-body { display: flex; flex-direction: column; gap: 8px; }
+        .auto-dep-hint { font-size: 0.68rem; color: var(--subtext-color); padding: 0 4px; margin-top: -2px; }
+        .auto-dep-error { display: none; font-size: 0.78rem; font-weight: 700; color: #f87171; text-align: center; padding: 10px; border: 1px solid rgba(248,113,113,0.45); background: rgba(248,113,113,0.08); border-radius: 10px; }
+        .auto-dep-error.show { display: block; animation: adShake 0.45s ease; }
+        @keyframes adShake { 0%,100% { transform: translateX(0); } 20% { transform: translateX(-7px); } 40% { transform: translateX(7px); } 60% { transform: translateX(-5px); } 80% { transform: translateX(5px); } }
+        .auto-dep-spin { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(0,0,0,0.25); border-top-color: #000; border-radius: 50%; animation: adSpin 0.7s linear infinite; vertical-align: -2px; margin-left: 6px; }
+        @keyframes adSpin { to { transform: rotate(360deg); } }
+        #autoDepositSuccessPage { align-items: center; justify-content: center; min-height: calc(100vh - 200px); text-align: center; }
+        .ads-wrap { display: flex; flex-direction: column; align-items: center; gap: 14px; width: 100%; max-width: 380px; position: relative; }
+        .ads-icon { position: relative; width: 130px; height: 130px; display: flex; align-items: center; justify-content: center; }
+        .ads-svg { width: 120px; height: 120px; overflow: visible; position: relative; z-index: 2; }
+        .ads-ring { stroke-dasharray: 327; stroke-dashoffset: 327; }
+        .ads-fill { transform-origin: 60px 60px; transform: scale(0); }
+        .ads-check { stroke-dasharray: 90; stroke-dashoffset: 90; }
+        .ads-halo { position: absolute; inset: 10px; border-radius: 50%; border: 2px solid #22c55e; opacity: 0; z-index: 1; }
+        .ads-dot { position: absolute; left: 50%; top: 50%; width: 7px; height: 7px; margin: -3.5px; border-radius: 50%; background: #22c55e; opacity: 0; z-index: 1; }
+        .ads-title, .ads-sub, .ads-balance, .ads-btn { opacity: 0; transform: translateY(14px); }
+        .ads-title { font-size: 1.05rem; font-weight: 800; color: var(--text-color); }
+        .ads-sub { font-size: 0.85rem; font-weight: 600; color: var(--subtext-color); }
+        .ads-balance { display: flex; gap: 8px; align-items: center; justify-content: center; font-size: 0.95rem; font-weight: 700; color: var(--text-color); padding: 12px 16px; border: 1px solid var(--border-color); background: var(--card-bg); border-radius: 14px; width: 100%; }
+        .ads-balance b { color: #4ade80; font-size: 1.1rem; direction: ltr; }
+        .ads-btn { width: 100%; }
+        #autoDepositSuccessPage.play .ads-ring { animation: adsRing 0.7s ease-out forwards; }
+        #autoDepositSuccessPage.play .ads-fill { animation: adsPop 0.5s cubic-bezier(.2,1.4,.4,1) 0.45s forwards; }
+        #autoDepositSuccessPage.play .ads-check { animation: adsDraw 0.45s ease-out 0.85s forwards; }
+        #autoDepositSuccessPage.play .ads-halo { animation: adsHalo 1.3s ease-out 0.9s infinite; }
+        #autoDepositSuccessPage.play .ads-dot { animation: adsDot 0.9s ease-out 0.95s forwards; }
+        #autoDepositSuccessPage.play .ads-title { animation: adsUp 0.5s ease-out 1.15s forwards; }
+        #autoDepositSuccessPage.play .ads-sub { animation: adsUp 0.5s ease-out 1.3s forwards; }
+        #autoDepositSuccessPage.play .ads-balance { animation: adsUp 0.5s ease-out 1.5s forwards; }
+        #autoDepositSuccessPage.play .ads-btn { animation: adsUp 0.5s ease-out 1.7s forwards; }
+        @keyframes adsRing { to { stroke-dashoffset: 0; } }
+        @keyframes adsPop { 0% { transform: scale(0); } 100% { transform: scale(1); } }
+        @keyframes adsDraw { to { stroke-dashoffset: 0; } }
+        @keyframes adsHalo { 0% { transform: scale(0.8); opacity: 0.7; } 100% { transform: scale(1.5); opacity: 0; } }
+        @keyframes adsDot { 0% { transform: translate(0,0) scale(1); opacity: 1; } 100% { transform: translate(var(--dx), var(--dy)) scale(0.3); opacity: 0; } }
+        @keyframes adsUp { to { opacity: 1; transform: translateY(0); } }
+
 
 
         #telegramLinkPage { min-height: calc(100vh - 170px); }
@@ -2571,6 +3003,32 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
             border: none; color: #ffffff; display: flex; align-items: center; justify-content: center;
             cursor: pointer; box-shadow: 0 4px 12px rgba(45,212,191,0.3); flex-shrink: 0;
         }
+        .wst-chips { display: flex; gap: 8px; width: 100%; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
+        .wst-chips::-webkit-scrollbar { display: none; }
+        .wst-chip { flex-shrink: 0; background: var(--card-bg); color: var(--subtext-color); border: 1px solid var(--border-color); border-radius: 20px; padding: 8px 16px; font-size: 0.78rem; font-weight: 700; cursor: pointer; font-family: inherit; }
+        .wst-chip.active { background: #2dd4bf; color: #04201c; border-color: #2dd4bf; }
+        .wst-list { display: flex; flex-direction: column; gap: 10px; width: 100%; }
+        .wst-row { display: flex; align-items: center; gap: 12px; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 16px; padding: 12px 14px; }
+        .wst-ico { width: 40px; height: 40px; flex-shrink: 0; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; font-weight: 800; }
+        .wst-row.order .wst-ico { background: rgba(239,68,68,0.15); color: #ef4444; }
+        .wst-row.deposit .wst-ico { background: rgba(34,197,94,0.15); color: #22c55e; }
+        .wst-row.adjust .wst-ico { background: rgba(168,85,247,0.15); color: #a855f7; }
+        .wst-mid { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+        .wst-t { font-size: 0.88rem; font-weight: 800; color: var(--text-color); overflow-wrap: anywhere; }
+        .wst-d { font-size: 0.72rem; color: var(--subtext-color); overflow-wrap: anywhere; }
+        .wst-dt { font-size: 0.68rem; color: var(--subtext-color); direction: ltr; text-align: right; }
+        .wst-side { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; flex-shrink: 0; }
+        .wst-amt { font-size: 0.95rem; font-weight: 800; direction: ltr; }
+        .wst-amt.pos { color: #22c55e; }
+        .wst-amt.neg { color: #ef4444; }
+        .wst-amt.zero { color: var(--subtext-color); text-decoration: line-through; }
+        .wst-badge { font-size: 0.64rem; font-weight: 800; padding: 3px 9px; border-radius: 20px; background: rgba(148,163,184,0.18); color: var(--subtext-color); }
+        .wst-badge.done, .wst-badge.accepted { background: rgba(34,197,94,0.18); color: #22c55e; }
+        .wst-badge.pending, .wst-badge.check { background: rgba(251,191,36,0.18); color: #f59e0b; }
+        .wst-badge.rejected { background: rgba(239,68,68,0.18); color: #ef4444; }
+        .wst-badge.adjust { background: rgba(168,85,247,0.18); color: #a855f7; }
+        .wst-actions { display: flex; gap: 8px; width: 100%; }
+        .wst-btn { flex: 1; background: var(--card-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 14px; padding: 11px; font-size: 0.8rem; font-weight: 700; cursor: pointer; font-family: inherit; }
         .wallet-empty-box {
             display: flex; flex-direction: column; align-items: center; justify-content: center;
             gap: 15px; padding: 40px 0; color: var(--subtext-color); font-weight: 700; font-size: 0.9rem;
@@ -2629,6 +3087,26 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
             box-shadow: 0 4px 12px rgba(0,0,0,0.25); cursor: pointer; transition: border-color 0.2s;
         }
         .order-card-exact:hover { border-color: var(--accent-color); }
+        /* كرت الطلب بثلاث أعمدة (السعر | الحالة والتاريخ | المعرّف والمنتج) */
+        .order-card-3 { gap: 8px; padding: 12px 14px; }
+        .order-card-3 .order-card-right-exact { flex: 0 1 38%; min-width: 0; }
+        .order-card-3 .order-id-exact { font-size: 0.78rem; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .order-card-3 .order-subcat-exact { font-size: 0.95rem; font-weight: 800; }
+        .order-card-mid-exact { flex: 1 1 auto; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 4px; min-width: 0; }
+        .order-card-mid-exact .order-status-row-exact { font-size: 0.85rem; gap: 6px; }
+        .order-card-3 .order-card-left-exact { flex: 0 0 auto; align-items: flex-start; gap: 6px; }
+        .order-card-3 .order-price-exact { font-size: 1.05rem; }
+        .order-qty-exact { font-size: 0.8rem; color: var(--subtext-color); direction: ltr; font-weight: 700; }
+        .order-st-ic { width: calc(22px * var(--order-card-scale, 1)); height: calc(22px * var(--order-card-scale, 1)); flex: 0 0 auto; }
+        .order-card-3 { padding: calc(12px * var(--order-card-scale, 1)) calc(14px * var(--order-card-scale, 1)); gap: calc(8px * var(--order-card-scale, 1)); border-radius: calc(14px * var(--order-card-scale, 1)); }
+        .order-card-3 .order-id-exact { font-size: calc(0.78rem * var(--order-card-scale, 1)); }
+        .order-card-3 .order-subcat-exact { font-size: calc(0.95rem * var(--order-card-scale, 1)); }
+        .order-card-3 .order-prod-exact { font-size: calc(0.72rem * var(--order-card-scale, 1)); }
+        .order-card-3 .order-price-exact { font-size: calc(1.05rem * var(--order-card-scale, 1)); }
+        .order-card-3 .order-qty-exact { font-size: calc(0.8rem * var(--order-card-scale, 1)); }
+        .order-card-3 .order-date-exact { font-size: calc(0.68rem * var(--order-card-scale, 1)); }
+        .order-card-3 .order-input-exact { font-size: calc(0.72rem * var(--order-card-scale, 1)); }
+        .order-card-3 .order-card-mid-exact .order-status-row-exact { font-size: calc(0.85rem * var(--order-card-scale, 1)); }
         .order-card-right-exact { display: flex; flex-direction: column; align-items: flex-end; text-align: right; gap: 2px; }
         .order-id-exact { font-size: 0.85rem; font-weight: 800; color: var(--text-color); direction: ltr; }
         .order-subcat-exact { font-size: 0.82rem; font-weight: 700; color: var(--text-color); }
@@ -2647,6 +3125,28 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
         .status-accept { color: #4ade80; border-color: #4ade80; background: rgba(74, 222, 128, 0.1); }
         .status-pending { color: #f59e0b; border-color: #f59e0b; background: rgba(245, 158, 11, 0.1); }
         .status-reject { color: #f87171; border-color: #f87171; background: rgba(248, 113, 113, 0.1); }
+        #orderDetailModal .modal-box { max-height: 90vh; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+        .sys-reply-wrap { margin-top: 6px; }
+        .odp-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+        .odp-back { background: transparent; color: var(--text-color); border: 1px solid var(--border-color); border-radius: 12px; padding: 8px 16px; font-size: 0.85rem; font-weight: 700; cursor: pointer; }
+        .odp-back:active { transform: scale(0.95); }
+        .odp-title { font-size: 1.15rem; font-weight: 800; color: var(--text-color); }
+        .odp-hero { background: #121023; border: 1px solid rgba(217, 163, 62, 0.3); border-radius: 18px; padding: 18px; display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; }
+        .odp-hero-price { font-size: 1.7rem; font-weight: 800; color: #4ade80; direction: ltr; }
+        .odp-hero-time { font-size: 0.82rem; color: var(--subtext-color); }
+        .odp-hero-time b { color: var(--text-color); font-weight: 800; }
+        .odp-hero-name { font-size: 0.95rem; font-weight: 800; color: var(--text-color); }
+        .odp-hero-sub { font-size: 0.78rem; color: var(--subtext-color); }
+        .odp-card { background: #121023; border: 1px solid var(--border-color); border-radius: 18px; padding: 6px 16px; }
+        .odp-card .order-detail-row { padding: 12px 0; }
+        .odp-section-title { font-size: 0.9rem; font-weight: 800; color: var(--text-color); margin: 4px 2px 0; }
+        #orderDetailPage { padding-bottom: 24px; }
+        .sys-reply-label { color: var(--subtext-color); font-weight: 600; font-size: 0.8rem; margin-bottom: 6px; display: block; }
+        .sys-reply-box { background: #0b0a1a; border: 1px solid #2e2850; border-radius: 12px; padding: 10px; }
+        .sys-reply-box pre { margin: 0; max-height: 150px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; unicode-bidi: plaintext; text-align: start; font-family: Consolas, Menlo, monospace; font-size: 0.8rem; line-height: 1.6; color: #e5e7eb; }
+        .sys-reply-actions { direction: ltr; display: flex; justify-content: flex-end; margin-top: 8px; }
+        .sys-reply-copy { background: rgba(218, 165, 32, 0.12); color: #daa520; border: 1px solid #daa520; border-radius: 10px; padding: 6px 18px; font-size: 0.8rem; font-weight: 800; cursor: pointer; }
+        .sys-reply-copy:active { transform: scale(0.95); }
 
         .modal-overlay {
             position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
@@ -2692,7 +3192,9 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
         .cancel-btn-outline:active { transform: scale(0.96); }
         .purchase-notice-box { display: flex; align-items: flex-start; gap: 10px; background-color: #16132d; border-radius: 12px; padding: 12px; position: relative; }
         .purchase-notice-line { width: 3px; background-color: #daa520; border-radius: 3px; position: absolute; right: 0; top: 10px; bottom: 10px; }
-        .purchase-notice-text { font-size: 0.8rem; color: #b0aec4; line-height: 1.5; text-align: right; padding-right: 8px; }
+        .purchase-notice-text { font-size: 0.8rem; color: #b0aec4; line-height: 1.7; text-align: right; padding-right: 8px; white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; min-width: 0; flex: 1; }
+        #purchaseModal .modal-box { max-height: 90vh; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+        #purchaseModal .purchase-notice-box { flex-shrink: 0; }
 
         .dep-desc-box { background-color: var(--input-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 10px; font-size: 0.78rem; color: var(--subtext-color); line-height: 1.4; }
         .dep-code-box {
@@ -2711,6 +3213,75 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
         .dep-amount-calc-box.show { display: flex; }
         .dep-amount-calc-label { font-size: 0.75rem; color: #a7f3d0; font-weight: 600; }
         .dep-amount-calc-value { font-size: 1.4rem; font-weight: 800; color: #ffffff; direction: ltr; }
+
+        /* ===== واجهة الإيداع الفخمة ===== */
+        .dx-box {
+            background: radial-gradient(420px 240px at 100% 0%, rgba(218,165,32,0.18), transparent 70%),
+                        radial-gradient(360px 200px at 0% 100%, rgba(56,189,248,0.07), transparent 70%),
+                        linear-gradient(170deg, #18152f 0%, #0d0b1e 100%);
+            border: 1px solid rgba(218,165,32,0.4); border-radius: 26px; width: 94%; max-width: 410px;
+            max-height: 92vh; overflow-y: auto; padding: 0; display: flex; flex-direction: column; position: relative;
+            box-shadow: 0 24px 70px rgba(0,0,0,0.75), 0 0 40px rgba(218,165,32,0.08), inset 0 1px 0 rgba(255,255,255,0.06);
+            scrollbar-width: none; animation: dxPop 0.35s cubic-bezier(.2,.9,.3,1.2);
+        }
+        .dx-box::-webkit-scrollbar { display: none; }
+        .dx-page { max-width: 520px; width: 100%; margin: 0 auto; max-height: none; overflow: visible; animation: none; }
+        @keyframes dxPop { from { transform: translateY(18px) scale(.96); opacity: 0; } to { transform: none; opacity: 1; } }
+        .dx-hero { position: relative; padding: 26px 18px 18px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 10px; border-bottom: 1px solid rgba(218,165,32,0.18); overflow: hidden; }
+        .dx-hero::before { content: ''; position: absolute; top: 0; left: -60%; width: 40%; height: 100%; background: linear-gradient(110deg, transparent, rgba(255,255,255,0.07), transparent); transform: skewX(-20deg); animation: dxSheen 5s ease-in-out infinite; pointer-events: none; }
+        @keyframes dxSheen { 0% { left: -60%; } 55%, 100% { left: 150%; } }
+        .dx-close { position: absolute; top: 12px; left: 12px; width: 34px; height: 34px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.06); color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 2; }
+        .dx-close:active { transform: scale(.9); }
+        .dx-close svg { width: 16px; height: 16px; }
+        .dx-logo { width: 84px; height: 84px; border-radius: 24px; padding: 3px; background: conic-gradient(from 200deg, #b8860b, #f5d776, #b8860b, #f5d776, #b8860b); box-shadow: 0 10px 32px rgba(218,165,32,0.4); position: relative; z-index: 1; }
+        .dx-logo-in { width: 100%; height: 100%; border-radius: 21px; background: #1a1730; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+        .dx-logo-in img { width: 100%; height: 100%; object-fit: cover; }
+        .dx-logo-in svg { width: 38px; height: 38px; color: #e8c26a; }
+        .dx-title { font-size: 1.2rem; font-weight: 800; color: #fff; position: relative; z-index: 1; }
+        .dx-sub { font-size: 0.72rem; color: #a9a5c9; font-weight: 600; margin-top: -4px; position: relative; z-index: 1; }
+        .dx-chips { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; position: relative; z-index: 1; }
+        .dx-chip { padding: 5px 12px; border-radius: 999px; font-size: 0.68rem; font-weight: 800; color: #f5d776; background: rgba(218,165,32,0.12); border: 1px solid rgba(218,165,32,0.4); direction: rtl; }
+        .dx-chip.blue { color: #7dd3fc; background: rgba(56,189,248,0.1); border-color: rgba(56,189,248,0.4); }
+        .dx-body { padding: 16px 18px 20px; display: flex; flex-direction: column; gap: 14px; }
+        .dx-steps { display: flex; align-items: flex-start; justify-content: space-between; gap: 4px; }
+        .dx-step { display: flex; flex-direction: column; align-items: center; gap: 5px; flex: 1; font-size: 0.62rem; color: #a9a5c9; font-weight: 700; text-align: center; }
+        .dx-step b { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #b8860b, #f5d776); color: #000; font-size: 0.76rem; font-weight: 800; box-shadow: 0 3px 10px rgba(218,165,32,0.35); }
+        .dx-step-line { flex: 0.5; height: 1px; margin-top: 13px; background: linear-gradient(90deg, transparent, rgba(218,165,32,0.55), transparent); }
+        .dx-card { border-radius: 16px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); padding: 13px 14px; position: relative; }
+        .dx-card.gold { border-color: rgba(218,165,32,0.35); background: linear-gradient(160deg, rgba(218,165,32,0.11), rgba(218,165,32,0.02)); }
+        .dx-card.gold::before { content: ''; position: absolute; right: 0; top: 12px; bottom: 12px; width: 3px; border-radius: 3px; background: linear-gradient(180deg, #f5d776, #b8860b); }
+        .dx-label { display: flex; align-items: center; gap: 7px; font-size: 0.73rem; font-weight: 800; color: #e8c26a; margin-bottom: 9px; }
+        .dx-label svg { width: 15px; height: 15px; flex-shrink: 0; }
+        .dx-desc { font-size: 0.8rem; color: #d3d1e8; line-height: 1.85; white-space: pre-wrap; text-align: right; word-break: break-word; }
+        .dx-code { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: #09081a; border: 1px dashed rgba(218,165,32,0.65); border-radius: 14px; padding: 11px 12px; cursor: pointer; transition: background .2s, border-color .2s; }
+        .dx-code:hover { background: #0f0d26; border-color: #f5d776; }
+        .dx-code-text { flex: 1; min-width: 0; direction: ltr; text-align: left; font-family: monospace; font-size: 0.92rem; font-weight: 800; color: #fff; word-break: break-all; letter-spacing: 0.3px; user-select: all; }
+        .dx-copy { flex-shrink: 0; display: flex; align-items: center; gap: 5px; padding: 8px 13px; border-radius: 11px; background: linear-gradient(135deg, #b8860b, #daa520, #f5d776); color: #000; font-size: 0.72rem; font-weight: 800; border: none; box-shadow: 0 3px 12px rgba(218,165,32,0.3); pointer-events: none; }
+        .dx-copy svg { width: 14px; height: 14px; }
+        .dx-field { display: flex; flex-direction: column; gap: 3px; }
+        .dx-input-wrap { position: relative; }
+        .dx-input-wrap .purchase-input-custom { padding-left: 74px; }
+        .dx-cur { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); font-size: 0.7rem; font-weight: 800; color: #e8c26a; background: rgba(218,165,32,0.13); padding: 4px 10px; border-radius: 8px; pointer-events: none; direction: ltr; }
+        .dx-cur:empty { display: none; }
+        .dx-input-wrap .purchase-input-custom:not(:placeholder-shown), .dx-field .purchase-input-custom:focus { border-color: rgba(218,165,32,0.7); }
+        .dx-hint { font-size: 0.66rem; color: #8f8bb0; padding: 0 4px; font-weight: 600; }
+        .dx-file { display: flex; align-items: center; gap: 12px; border: 1.5px dashed rgba(218,165,32,0.5); border-radius: 14px; padding: 12px; cursor: pointer; background: rgba(255,255,255,0.025); transition: background .2s; }
+        .dx-file:hover { background: rgba(218,165,32,0.07); }
+        .dx-file input { display: none; }
+        .dx-file-ico { width: 42px; height: 42px; border-radius: 12px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; background: rgba(218,165,32,0.14); color: #f5d776; overflow: hidden; }
+        .dx-file-ico svg { width: 20px; height: 20px; }
+        .dx-file-ico img { width: 100%; height: 100%; object-fit: cover; display: none; }
+        .dx-file-txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+        .dx-file-txt b { font-size: 0.8rem; color: #fff; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .dx-file-txt small { font-size: 0.66rem; color: #8f8bb0; font-weight: 600; }
+        .dx-actions { display: grid; grid-template-columns: 1fr 1.7fr; gap: 12px; }
+        .dx-send { position: relative; overflow: hidden; }
+        .dx-send::after { content: ''; position: absolute; top: 0; left: -70%; width: 40%; height: 100%; background: linear-gradient(110deg, transparent, rgba(255,255,255,0.45), transparent); transform: skewX(-20deg); animation: dxSheen 3.6s ease-in-out infinite; pointer-events: none; }
+        .dx-secure { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 0.66rem; color: #8f8bb0; font-weight: 700; }
+        .dx-secure svg { width: 13px; height: 13px; color: #34d399; }
+        .dx-calc.dep-amount-calc-box { background: linear-gradient(135deg, #064e3b 0%, #047857 60%, #059669 100%); border: 1px solid #34d399; border-radius: 16px; padding: 13px; box-shadow: 0 6px 22px rgba(16,185,129,0.32), inset 0 1px 0 rgba(255,255,255,0.15); }
+        .dx-calc .dep-amount-calc-value { font-size: 1.6rem; letter-spacing: .5px; text-shadow: 0 2px 10px rgba(0,0,0,.3); }
+        #autoDepositPage .auto-dep-error { margin: 0; }
 
         .phone-input-wrapper { position: relative; width: 100%; }
         .phone-input-wrapper .form-input { padding-right: 45px; }
@@ -3410,7 +3981,7 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
             <span class="guest-auth-title">تسجيل الدخول</span>
             <span class="guest-auth-desc">قم بتسجيل الدخول وتمتع بتجربة شراء سهلة</span>
             <button class="guest-btn-blue" onclick="openAuthModal()">تسجيل الدخول</button>
-            <button class="guest-btn-google" onclick="openAuthModal()">
+            <button class="guest-btn-google" onclick="handleGoogleSignIn()">
                 <span>تسجيل بواسطة غوغل</span>
                 <svg width="20" height="20" viewBox="0 0 24 24">
                     <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -3576,7 +4147,7 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
                 <div class="auth-divider-text">او</div>
             </div>
 
-            <button class="google-auth-btn" onclick="handleModalLogin()">
+            <button class="google-auth-btn" onclick="handleGoogleSignIn()">
                 <svg width="22" height="22" viewBox="0 0 24 24">
                     <path fill="#EA4335" d="M12 5c1.6 0 3 .6 4.1 1.6l3.1-3.1C17.3 1.7 14.8 1 12 1 7.5 1 3.7 3.6 1.9 7.3l3.7 2.9C6.5 7.4 9 5 12 5z"/>
                     <path fill="#4285F4" d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.5c-.3 1.5-1.1 2.8-2.4 3.7l3.7 2.9c2.2-2 3.7-5 3.7-8.8z"/>
@@ -3647,6 +4218,83 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
             <input type="text" id="depositSearchInput" class="search-input" placeholder="ابحث عن طريقة إيداع..." oninput="renderDepositMethods()">
         </div>
         <div class="grid-container" id="depositMethodsGrid"></div>
+    </div>
+
+    <div id="autoDepositPage">
+        <div class="section-header">
+            <span id="autoDepTitle" style="font-size:0.95rem; font-weight:800; color:var(--accent-color);">طريقة الإيداع</span>
+            <button class="back-btn" style="display:block;" onclick="closeAutoDepositPage()">رجوع</button>
+        </div>
+        <div class="dx-box dx-page">
+            <div class="dx-hero">
+                <div class="dx-logo"><div class="dx-logo-in" id="autoHeroLogo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="3"/><path d="M2 10h20M6 15h4"/></svg></div></div>
+                <div class="dx-title" id="autoHeroName">طريقة الإيداع</div>
+                <div class="dx-sub">إيداع تلقائي فوري إلى رصيدك</div>
+                <div class="dx-chips" id="autoChips"></div>
+            </div>
+            <div class="dx-body">
+                <div class="dx-steps">
+                <div class="dx-step"><b>1</b><span>حوّل المبلغ</span></div><div class="dx-step-line"></div>
+                <div class="dx-step"><b>2</b><span>أدخل التفاصيل</span></div><div class="dx-step-line"></div>
+                <div class="dx-step"><b>3</b><span>تحقّق فوري</span></div>
+            </div>
+
+                <div class="dx-card gold" id="autoDescCard">
+                    <div class="dx-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>تعليمات الإيداع</div>
+                    <div class="dx-desc" id="autoDepDesc"></div>
+                </div>
+
+                <div class="dx-card">
+                    <div class="dx-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12V8a2 2 0 0 0-2-2H5a2 2 0 0 1 0-4h12v4"/><path d="M3 5v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-4"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>عنوان / رقم التحويل (اضغط للنسخ)</div>
+                    <div class="dx-code" onclick="copyAutoDepositCode()">
+                        <div class="dx-code-text" id="autoDepCode">انقر هنا لنسخ العنوان</div>
+                        <span class="dx-copy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>نسخ</span>
+                    </div>
+                </div>
+
+                <div class="dx-field">
+                    <div class="dx-label" style="margin-bottom:4px;">المبلغ المحوّل</div>
+                    <div class="dx-input-wrap">
+                        <input type="number" id="autoDepAmount" class="purchase-input-custom" placeholder="المبلغ المحول" step="0.01" inputmode="decimal" oninput="calcAutoDeposit()">
+                        <span class="dx-cur" id="autoAmountCur"></span>
+                    </div>
+                    <div class="dx-hint">ادخل المبلغ بشكل صحيح ليتم تأكيد العملية فورا</div>
+                </div>
+
+                <div class="dep-amount-calc-box dx-calc" id="autoDepCalcBox">
+                    <span class="dep-amount-calc-label">سيتم شحن حسابك:</span>
+                    <span class="dep-amount-calc-value" id="autoDepCalcValue">0 $</span>
+                </div>
+
+                <div class="dx-field">
+                    <div class="dx-label" style="margin-bottom:4px;">رقم العملية</div>
+                    <input type="text" id="autoDepTx" class="purchase-input-custom" placeholder="رقم العملية" autocomplete="off">
+                    <div class="dx-hint">ادخل رقم العملية من سجلات التحويلات</div>
+                </div>
+
+                <div class="auto-dep-error" id="autoDepError"></div>
+                <button class="buy-btn-gold dx-send" id="autoDepVerifyBtn" style="width:100%;" onclick="submitAutoDeposit()">التحقق من العملية</button>
+                <div class="dx-secure"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></svg>تحقق تلقائي وآمن، وكل رقم عملية يُستخدم مرة واحدة فقط</div>
+            </div>
+        </div>
+    </div>
+
+    <div id="autoDepositSuccessPage">
+        <div class="ads-wrap">
+            <div class="ads-icon">
+                <span class="ads-halo"></span>
+                <span class="ads-dot" style="--dx:78px; --dy:0px; background:#22c55e;"></span><span class="ads-dot" style="--dx:68px; --dy:39px; background:#facc15;"></span><span class="ads-dot" style="--dx:39px; --dy:68px; background:#22c55e;"></span><span class="ads-dot" style="--dx:0px; --dy:78px; background:#facc15;"></span><span class="ads-dot" style="--dx:-39px; --dy:68px; background:#22c55e;"></span><span class="ads-dot" style="--dx:-68px; --dy:39px; background:#facc15;"></span><span class="ads-dot" style="--dx:-78px; --dy:0px; background:#22c55e;"></span><span class="ads-dot" style="--dx:-68px; --dy:-39px; background:#facc15;"></span><span class="ads-dot" style="--dx:-39px; --dy:-68px; background:#22c55e;"></span><span class="ads-dot" style="--dx:0px; --dy:-78px; background:#facc15;"></span><span class="ads-dot" style="--dx:39px; --dy:-68px; background:#22c55e;"></span><span class="ads-dot" style="--dx:68px; --dy:-39px; background:#facc15;"></span>
+                <svg class="ads-svg" viewBox="0 0 120 120">
+                    <circle class="ads-ring" cx="60" cy="60" r="52" fill="none" stroke="#22c55e" stroke-width="6" stroke-linecap="round" transform="rotate(-90 60 60)"/>
+                    <circle class="ads-fill" cx="60" cy="60" r="44" fill="#22c55e"/>
+                    <path class="ads-check" d="M38 62 L54 78 L84 44" fill="none" stroke="#ffffff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </div>
+            <div class="ads-title">تمت عملية تطابق المبلغ بنجاح</div>
+            <div class="ads-sub">تمت عملية إيداع رصيد التلقائي لحسابك</div>
+            <div class="ads-balance"><span>رصيد حسابك الجديد:</span><b id="adsBalance">0 $</b></div>
+            <button class="buy-btn-gold ads-btn" onclick="closeAutoDepositSuccess()">رجوع لصفحة الرئيسية</button>
+        </div>
     </div>
 
     <div id="telegramLinkPage">
@@ -3728,9 +4376,54 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
             </div>
         </div>
 
-        <div class="wallet-empty-box">
+        <div class="wst-chips" id="walletTypeChips">
+            <button class="wst-chip active" data-t="all">الكل</button>
+            <button class="wst-chip" data-t="order">المشتريات</button>
+            <button class="wst-chip" data-t="deposit">الإيداعات</button>
+            <button class="wst-chip" data-t="adjust">تعديلات الإدارة</button>
+        </div>
+        <div class="wst-actions">
+            <button class="wst-btn" onclick="walletClearFilters()">مسح الفلاتر</button>
+            <button class="wst-btn" onclick="walletDownloadCsv()">تنزيل كشف الحساب</button>
+        </div>
+        <div class="wst-list" id="walletStmtList"></div>
+        <div class="wst-actions" id="walletMoreWrap" style="display:none;"><button class="wst-btn" onclick="walletShowMore()">عرض المزيد</button></div>
+
+        <div class="wallet-empty-box" id="walletEmptyBox">
             <svg width="60" height="60" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
             <span>لا توجد عناصر</span>
+        </div>
+    </div>
+
+    <div id="orderDetailPage">
+        <div class="odp-top">
+            <div class="odp-title">تفاصيل الطلب</div>
+            <button type="button" class="odp-back" onclick="closeOrderDetailPage()">رجوع</button>
+        </div>
+
+        <div class="odp-hero">
+            <div class="odp-hero-price" id="odpPrice">-</div>
+            <div class="odp-hero-time" id="odpElapsedRow" style="display:none;">الوقت المستغرق: <b id="odpElapsed">-</b></div>
+            <div class="odp-hero-name" id="odpProduct">-</div>
+            <div class="odp-hero-sub" id="odpSubcategory">-</div>
+            <span class="order-detail-value status-badge" id="odpStatus">-</span>
+        </div>
+
+        <div class="odp-card">
+            <div class="order-detail-row"><span class="order-detail-label">رقم الطلب</span><span class="order-detail-value" id="odpOrderId" style="direction:ltr;">-</span></div>
+            <div class="order-detail-row"><span class="order-detail-label">المدخلات</span><span class="order-detail-value" id="odpInput">-</span></div>
+            <div class="order-detail-row"><span class="order-detail-label">الكمية</span><span class="order-detail-value" id="odpQuantity">-</span></div>
+            <div class="order-detail-row"><span class="order-detail-label">التاريخ والوقت</span><span class="order-detail-value" id="odpDate" style="direction:ltr;">-</span></div>
+        </div>
+
+        <div class="sys-reply-wrap" id="odpReplyWrap" style="display:none;">
+            <div class="odp-section-title">رد النظام</div>
+            <div class="sys-reply-box" style="margin-top:8px;">
+                <pre id="odpReply"></pre>
+                <div class="sys-reply-actions">
+                    <button type="button" class="sys-reply-copy" id="odpReplyCopyBtn" onclick="copyOdpReply()">نسخ</button>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -3812,6 +4505,15 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
                 <span class="order-detail-label">حالة الطلب</span>
                 <span class="order-detail-value status-badge" id="detailStatus">-</span>
             </div>
+            <div class="sys-reply-wrap" id="detailReplyWrap" style="display:none;">
+                <span class="sys-reply-label">رد النظام</span>
+                <div class="sys-reply-box">
+                    <pre id="detailReply"></pre>
+                    <div class="sys-reply-actions">
+                        <button type="button" class="sys-reply-copy" id="detailReplyCopyBtn" onclick="copyOrderReply()">نسخ</button>
+                    </div>
+                </div>
+            </div>
             <button class="cancel-btn-outline" style="margin-top:10px; width:100%;" onclick="closeOrderDetailModal()">إغلاق</button>
         </div>
     </div>
@@ -3829,6 +4531,7 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
             <div id="pModalLocalPrice" style="display:none; text-align:center; font-size:0.85rem; font-weight:800; color:#f59e0b; background:linear-gradient(135deg,#78350f 0%,#92400e 100%); padding:8px 12px; border-radius:10px; border:1px solid #f59e0b;"></div>
 
             <input type="text" id="pModalRequirement" class="purchase-input-custom" placeholder="ايدي المستخدم" />
+            <div id="pModalExtraFields" style="display:flex; flex-direction:column; gap:10px;"></div>
 
             <div id="pModalCounterBox" style="display:none;">
                 <input type="number" id="pModalQuantity" class="counter-qty-box" placeholder="أدخل الكمية" min="1" oninput="calculateCounterTotal()" />
@@ -3843,11 +4546,9 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
                 <button class="buy-btn-gold" id="submitPurchaseBtn" onclick="submitPurchase()">شراء</button>
             </div>
 
-            <div class="purchase-notice-box">
+            <div class="purchase-notice-box" id="pModalDescriptionBox" style="display:none;">
                 <div class="purchase-notice-line"></div>
-                <div class="purchase-notice-text" id="pModalDescriptionText">
-                    هذا المنتج يعمل بشكل يدوي ويستغرق بعض الوقت ليصل للزبون
-                </div>
+                <div class="purchase-notice-text" id="pModalDescriptionText"></div>
             </div>
         </div>
     </div>
@@ -3861,35 +4562,73 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
             </div>
             <div style="display:flex; flex-direction:column; gap:4px; margin-top:5px;">
                 <label style="font-size:0.75rem; color:var(--subtext-color);">رابط API:</label>
-                <div class="dep-code-box" id="userApiUrlBox" onclick="copyUserApiUrl()" style="font-size:0.75rem;">https://syriacardone.up.railway.app/api-docs</div>
+                <div class="dep-code-box" id="userApiUrlBox" onclick="copyUserApiUrl()" style="font-size:0.75rem;">https://syriacardone.onrender.com/api-docs</div>
             </div>
             <button class="cancel-btn-outline" style="margin-top:10px; width:100%;" onclick="closeUserApiModal()">إغلاق</button>
         </div>
     </div>
 
-    <div class="modal-overlay" id="depositDetailModal">
-        <div class="modal-box">
-            <div style="font-size:0.95rem; font-weight:700; text-align:center; border-bottom:1px solid var(--border-color); padding-bottom:8px; color:var(--accent-color);" id="depModalTitle">تفاصيل طريقة الإيداع</div>
-            <div class="dep-desc-box" id="depModalDesc">الوصف الخاص بالطريقة</div>
-            <div class="dep-code-box" id="depModalCode" onclick="copyDepositCode()">انقر هنا لنسخ كود الدفع</div>
-            
-            <div style="display:flex; flex-direction:column; gap:8px; margin-top:5px;">
-                <input type="number" id="depAmountInput" class="purchase-input-custom" placeholder="المبلغ المحول" step="0.01" oninput="calculateDepositAmount()">
-                
-                <div class="dep-amount-calc-box" id="depAmountCalcBox">
+    <div class="modal-overlay" id="depositDetailModal" onclick="if(event.target===this){closeDepositDetailModal();}">
+        <div class="dx-box">
+            <div class="dx-hero">
+                <button class="dx-close" onclick="closeDepositDetailModal()" aria-label="إغلاق"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+                <div class="dx-logo"><div class="dx-logo-in" id="depHeroLogo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="3"/><path d="M2 10h20M6 15h4"/></svg></div></div>
+                <div class="dx-title" id="depModalTitle">تفاصيل طريقة الإيداع</div>
+                <div class="dx-sub">إيداع آمن وسريع إلى رصيدك</div>
+                <div class="dx-chips" id="depChips"></div>
+            </div>
+            <div class="dx-body">
+                <div class="dx-steps">
+                <div class="dx-step"><b>1</b><span>حوّل المبلغ</span></div><div class="dx-step-line"></div>
+                <div class="dx-step"><b>2</b><span>أدخل التفاصيل</span></div><div class="dx-step-line"></div>
+                <div class="dx-step"><b>3</b><span>أرسل الطلب</span></div>
+            </div>
+
+                <div class="dx-card gold" id="depDescCard">
+                    <div class="dx-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>تعليمات الإيداع</div>
+                    <div class="dx-desc" id="depModalDesc"></div>
+                </div>
+
+                <div class="dx-card">
+                    <div class="dx-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12V8a2 2 0 0 0-2-2H5a2 2 0 0 1 0-4h12v4"/><path d="M3 5v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-4"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>كود / عنوان الدفع (اضغط للنسخ)</div>
+                    <div class="dx-code" onclick="copyDepositCode()">
+                        <div class="dx-code-text" id="depModalCode">انقر هنا لنسخ كود الدفع</div>
+                        <span class="dx-copy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>نسخ</span>
+                    </div>
+                </div>
+
+                <div class="dx-field">
+                    <div class="dx-label" style="margin-bottom:4px;">المبلغ المحوّل</div>
+                    <div class="dx-input-wrap">
+                        <input type="number" id="depAmountInput" class="purchase-input-custom" placeholder="اكتب المبلغ الذي حوّلته" step="0.01" inputmode="decimal" oninput="calculateDepositAmount()">
+                        <span class="dx-cur" id="depAmountCur"></span>
+                    </div>
+                </div>
+
+                <div class="dep-amount-calc-box dx-calc" id="depAmountCalcBox">
                     <span class="dep-amount-calc-label">سيتم شحن حسابك:</span>
                     <span class="dep-amount-calc-value" id="depCalculatedValue">0 $</span>
                 </div>
-                
-                <input type="text" id="depTxIdInput" class="purchase-input-custom" placeholder="رقم عملية تحويل">
-                <div style="display:flex; flex-direction:column; gap:4px;">
-                    <label style="font-size:0.7rem; color:var(--subtext-color);">صورة اشعار التحويل:</label>
-                    <input type="file" id="depReceiptImageInput" accept="image/*" class="purchase-input-custom">
+
+                <div class="dx-field">
+                    <div class="dx-label" style="margin-bottom:4px;">رقم عملية التحويل</div>
+                    <input type="text" id="depTxIdInput" class="purchase-input-custom" placeholder="رقم العملية من إشعار التحويل" autocomplete="off">
                 </div>
-            </div>
-            <div class="purchase-buttons-grid" style="margin-top:5px;">
-                <button class="cancel-btn-outline" onclick="closeDepositDetailModal()">إلغاء</button>
-                <button class="buy-btn-gold" onclick="submitDepositRequest()">إرسال طلب الإيداع</button>
+
+                <div class="dx-field">
+                    <div class="dx-label" style="margin-bottom:4px;">صورة إشعار التحويل</div>
+                    <label class="dx-file">
+                        <input type="file" id="depReceiptImageInput" accept="image/*" onchange="dxFilePicked(this)">
+                        <span class="dx-file-ico"><span id="depFileIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5M12 3v12"/></svg></span><img id="depFilePreview" alt=""></span>
+                        <span class="dx-file-txt"><b id="depFileName">اضغط لرفع صورة الإشعار</b><small>اختياري، لكنه يسرّع مراجعة طلبك</small></span>
+                    </label>
+                </div>
+
+                <div class="dx-actions">
+                    <button class="cancel-btn-outline" onclick="closeDepositDetailModal()">إلغاء</button>
+                    <button class="buy-btn-gold dx-send" onclick="submitDepositRequest()">إرسال طلب الإيداع</button>
+                </div>
+                <div class="dx-secure"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></svg>عملية آمنة، ويتم تدقيق الطلب قبل إضافة الرصيد</div>
             </div>
         </div>
     </div>
@@ -4027,6 +4766,21 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
                 const res = await fetch('/api/get_appearance_settings');
                 const a = await res.json();
                 const root = document.documentElement;
+                // لمعان البنر
+                const bnr = document.getElementById('bannerContainer');
+                if (bnr) {
+                    if (a.banner_shine_enabled) {
+                        const bsp = Math.max(1, Math.min(10, parseInt(a.banner_shine_speed) || 5));
+                        const bit = Math.max(1, Math.min(10, parseInt(a.banner_shine_intensity) || 6));
+                        bnr.style.setProperty('--shine-dur', (1.2 + (10 - bsp) * 0.8).toFixed(1) + 's');
+                        bnr.style.setProperty('--shine-op', (0.12 + bit * 0.07).toFixed(2));
+                        bnr.style.setProperty('--shine-glow', (4 + bit * 2) + 'px');
+                        bnr.style.setProperty('--shine-glow-op', (0.05 + bit * 0.04).toFixed(2));
+                        bnr.classList.add('shine');
+                    } else {
+                        bnr.classList.remove('shine');
+                    }
+                }
                 const hLogo = document.getElementById('headerLogoImg');
                 if (hLogo) {
                     if (a.logo_spin_enabled) {
@@ -4043,7 +4797,8 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
                     const fontLink = document.getElementById('dynamicFontLink');
                     const familyString = a.font_family.replace(/ /g, '+');
                     if (fontLink) {
-                        fontLink.href = `https://fonts.googleapis.com/css2?family=${familyString}:wght@400;500;600;700;800;900&display=swap`;
+                        const thinOk = ['Cairo', 'Alexandria', 'Noto Kufi Arabic'].indexOf(a.font_family) !== -1;
+                        fontLink.href = `https://fonts.googleapis.com/css2?family=${familyString}:wght@${thinOk ? '300;' : ''}400;500;600;700;800;900&display=swap`;
                     }
                     document.body.style.fontFamily = `'${a.font_family}', sans-serif`;
                     const styleEl = document.getElementById('fontOverrideStyle');
@@ -4068,8 +4823,22 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
                 if (a.sidebar_width) root.style.setProperty('--sidebar-width', a.sidebar_width + 'px');
                 if (a.deposit_card_size) root.style.setProperty('--deposit-card-scale', (a.deposit_card_size / 100).toFixed(2));
                 if (a.category_card_size) root.style.setProperty('--category-card-scale', (a.category_card_size / 100).toFixed(2));
+                if (a.order_card_size) root.style.setProperty('--order-card-scale', (a.order_card_size / 100).toFixed(2));
                 if (a.price_font_size) root.style.setProperty('--price-font-size', a.price_font_size + 'px');
                 if (a.price_font_color) root.style.setProperty('--price-font-color', a.price_font_color);
+
+                // سماكة الخط (عريض / رفيع)
+                if (a.sidebar_font_weight) root.style.setProperty('--sidebar-font-weight', a.sidebar_font_weight);
+                if (a.price_font_weight) root.style.setProperty('--price-font-weight', a.price_font_weight);
+                let fwEl = document.getElementById('fontWeightOverride');
+                if (!fwEl) { fwEl = document.createElement('style'); fwEl.id = 'fontWeightOverride'; document.head.appendChild(fwEl); }
+                if (a.general_font_weight) {
+                    fwEl.innerHTML = 'body, body * { font-weight: ' + a.general_font_weight + ' !important; }'
+                        + ' body .menu-nav-item, body .menu-nav-item * { font-weight: var(--sidebar-font-weight, 700) !important; }'
+                        + ' body .item-price-tag, body .item-price-tag * { font-weight: var(--price-font-weight, 800) !important; }';
+                } else {
+                    fwEl.innerHTML = '';
+                }
 
                 // ===== ألوان الوضع الداكن =====
                 if (a.dark_bg_color) root.style.setProperty('--dark-bg-color', a.dark_bg_color);
@@ -4531,6 +5300,93 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
             }
         }
 
+        // ====== تسجيل الدخول بواسطة جوجل ======
+        let _googleClientId = '';
+        let _googleTokenClient = null;
+        let _gsiLoading = null;
+        let _googlePrepared = false;
+
+        function loadGsi() {
+            if (window.google && google.accounts && google.accounts.oauth2) return Promise.resolve();
+            if (_gsiLoading) return _gsiLoading;
+            _gsiLoading = new Promise((resolve, reject) => {
+                const sc = document.createElement('script');
+                sc.src = 'https://accounts.google.com/gsi/client';
+                sc.async = true;
+                sc.onload = resolve;
+                sc.onerror = () => { _gsiLoading = null; reject(new Error('gsi')); };
+                document.head.appendChild(sc);
+            });
+            return _gsiLoading;
+        }
+
+        async function prepareGoogle() {
+            try {
+                const c = await fetch('/api/google_config').then(r => r.json());
+                _googleClientId = c.client_id || '';
+                _googlePrepared = true;
+                if (_googleClientId) await loadGsi();
+            } catch (e) {}
+        }
+
+        function handleGoogleSignIn() {
+            if (!_googleClientId) {
+                showTopNotification(_googlePrepared ? 'تسجيل الدخول عبر جوجل غير مفعّل حالياً' : 'جاري التحضير، اضغط مرة ثانية');
+                if (!_googlePrepared) prepareGoogle();
+                return;
+            }
+            if (!(window.google && google.accounts && google.accounts.oauth2)) {
+                showTopNotification('جاري تحميل خدمة جوجل، اضغط مرة ثانية');
+                loadGsi().catch(() => showTopNotification('تعذر الوصول لخدمة جوجل، تأكد من الإنترنت'));
+                return;
+            }
+            if (!_googleTokenClient) {
+                _googleTokenClient = google.accounts.oauth2.initTokenClient({
+                    client_id: _googleClientId,
+                    scope: 'openid email profile',
+                    callback: onGoogleToken,
+                    error_callback: (err) => {
+                        if (err && (err.type === 'popup_closed')) return;
+                        showTopNotification('تعذر فتح نافذة جوجل، تأكد انها غير محظورة');
+                    }
+                });
+            }
+            _googleTokenClient.requestAccessToken({ prompt: 'select_account' });
+        }
+
+        async function onGoogleToken(resp) {
+            if (!resp || resp.error || !resp.access_token) {
+                showTopNotification('تم إلغاء تسجيل الدخول بجوجل');
+                return;
+            }
+            try {
+                const res = await fetch('/api/google_login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ access_token: resp.access_token })
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    const email = data.email;
+                    localStorage.setItem('loggedInUserEmail', email);
+                    currentLoggedInEmail = email;
+                    applyLoggedInState(email, data.balance, data.user_id);
+                    updateSidebarVisibility(true);
+                    closeAuthModal();
+                    closeRegisterModal();
+                    startOrderPolling();
+                    loadNotifications();
+                    if (!data.profile_completed) {
+                        openCompleteProfileModal(email, true);
+                    }
+                } else {
+                    showTopNotification(data.message || 'فشل تسجيل الدخول بجوجل');
+                }
+            } catch (e) {
+                showTopNotification('حدث خطأ في الاتصال بالخادم');
+            }
+        }
+
         async function handleModalLogin() {
             const email = document.getElementById('modalUserEmail').value.trim();
             const password = document.getElementById('modalUserPassword').value.trim();
@@ -4743,7 +5599,7 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
                 const data = await res.json();
                 
                 document.getElementById('userApiTokenBox').innerText = data.token || '-';
-                document.getElementById('userApiUrlBox').innerText = data.api_url || 'https://syriacardone.up.railway.app/client/api';
+                document.getElementById('userApiUrlBox').innerText = data.api_url || 'https://syriacardone.onrender.com/client/api';
                 document.getElementById('userApiModal').classList.add('active');
             } catch (e) {
                 alert('فشل جلب التوكن');
@@ -4893,8 +5749,13 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
         }
 
         async function loadSplashScreen() {
-            const res = await fetch('/api/splash');
-            const data = await res.json();
+            // حماية: مهما صار، شاشة الترحيب تختفي خلال 8 ثواني (حتى لو الشبكة بطيئة أو الجهاز قديم)
+            setTimeout(hideSplashScreen, 8000);
+            let data = {};
+            try {
+                const res = await fetch('/api/splash');
+                data = await res.json();
+            } catch (e) { hideSplashScreen(); return; }
             const splashImg = document.getElementById('splashImg');
             const sidebarImg = document.getElementById('sidebarLogoImg');
             const headerLogoImg = document.getElementById('headerLogoImg');
@@ -4920,6 +5781,8 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
                 sv.onerror = () => setTimeout(hideSplashScreen, 1200);
                 const pp = sv.play();
                 if (pp && pp.catch) pp.catch(() => setTimeout(hideSplashScreen, 1500));
+                // إذا الفيديو ما بدأ يشتغل خلال 4 ثواني نتخطاه
+                setTimeout(function () { if (sv.readyState < 3) hideSplashScreen(); }, 4000);
                 setTimeout(hideSplashScreen, 20000);
             } else {
                 setTimeout(hideSplashScreen, 2200);
@@ -5151,7 +6014,7 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
             if (document.getElementById('sidebar').classList.contains('active')) { toggleSidebar(); }
             document.getElementById('shopMainSection').style.display = 'none';
             document.getElementById('depositPage').style.display = 'none';
-            document.getElementById('myOrdersPage').style.display = 'none';
+            document.getElementById('myOrdersPage').style.display = 'none'; document.getElementById('orderDetailPage').style.display = 'none';
             document.getElementById('myDepositsPage').style.display = 'none';
             document.getElementById('myWalletPage').style.display = 'none';
             document.getElementById('bannerContainer').style.display = 'none';
@@ -5163,7 +6026,7 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
 
         function closeNotificationsPage() {
             document.getElementById('myNotificationsPage').style.display = 'none';
-            document.getElementById('telegramLinkPage').style.display = 'none';
+            document.getElementById('telegramLinkPage').style.display = 'none'; hideAutoDepositPages();
             document.getElementById('shopMainSection').style.display = 'block';
             if (currentLevel === 'categories') {
                 loadBanners();
@@ -5260,19 +6123,24 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
             let el;
             if (isVideoSrc(src)) {
                 el = document.createElement('video');
-                el.src = src;
                 el.muted = true;
                 el.defaultMuted = true;
-                el.autoplay = true;
                 el.loop = !!loopVideo;
                 el.playsInline = true;
+                el.controls = false;
                 el.setAttribute('playsinline', '');
+                el.setAttribute('webkit-playsinline', '');
                 el.setAttribute('muted', '');
-                el.preload = 'metadata';
                 el.disablePictureInPicture = true;
+                el.preload = active ? 'auto' : 'none';
+                el.setAttribute('data-src', src);
+                // غير الفعّال ما نعطيه src أبداً (حتى ما تشتغل عدة فيديوهات مخفية مع بعض وتعلّق الجهاز)
+                if (active) { el.src = src; }
+                el.addEventListener('error', function () { el.style.visibility = 'hidden'; });
             } else {
                 el = document.createElement('img');
                 el.src = src;
+                el.decoding = 'async';
             }
             el.className = 'banner-slide' + (active ? ' active' : '');
             return el;
@@ -5280,9 +6148,42 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
 
         function playActiveBannerVideo(slide) {
             if (slide && slide.tagName === 'VIDEO') {
-                try { slide.currentTime = 0; const p = slide.play(); if (p && p.catch) p.catch(() => {}); } catch (e) {}
+                try {
+                    if (!slide.getAttribute('src') && slide.getAttribute('data-src')) {
+                        slide.preload = 'auto';
+                        slide.src = slide.getAttribute('data-src');
+                    }
+                    slide.style.visibility = '';
+                    slide.currentTime = 0;
+                    const p = slide.play();
+                    if (p && p.catch) p.catch(() => {});
+                } catch (e) {}
             }
         }
+
+        function stopBannerVideo(slide) {
+            if (slide && slide.tagName === 'VIDEO') {
+                try {
+                    slide.pause();
+                } catch (e) {}
+            }
+        }
+
+        function pauseAllBannerVideos() {
+            const c = document.getElementById('bannerContainer');
+            if (!c) return;
+            const vids = c.querySelectorAll('video');
+            for (let i = 0; i < vids.length; i++) { try { vids[i].pause(); } catch (e) {} }
+        }
+
+        document.addEventListener('visibilitychange', function () {
+            if (document.hidden) { pauseAllBannerVideos(); return; }
+            const c = document.getElementById('bannerContainer');
+            if (c && c.style.display !== 'none') {
+                const a = c.querySelector('.banner-slide.active');
+                if (a && a.tagName === 'VIDEO' && a.paused) { try { const p = a.play(); if (p && p.catch) p.catch(() => {}); } catch (e) {} }
+            }
+        });
 
         let _bannersBuilt = false;
         let _bannersCount = 0;
@@ -5324,7 +6225,7 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
                             const list = container.querySelectorAll('.banner-slide');
                             if (list.length < 2) return;
                             list[current].classList.remove('active');
-                            if (list[current].tagName === 'VIDEO') { try { list[current].pause(); } catch (e) {} }
+                            stopBannerVideo(list[current]);
                             current = (current + 1) % list.length;
                             list[current].classList.add('active');
                             playActiveBannerVideo(list[current]);
@@ -5366,6 +6267,7 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
                 showExistingBanners();
             } else {
                 document.getElementById('bannerContainer').style.display = 'none';
+                pauseAllBannerVideos();
             }
         }
 
@@ -5594,11 +6496,11 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
         async function openDepositPage() {
             if (document.getElementById('sidebar').classList.contains('active')) { toggleSidebar(); }
             document.getElementById('shopMainSection').style.display = 'none';
-            document.getElementById('myOrdersPage').style.display = 'none';
+            document.getElementById('myOrdersPage').style.display = 'none'; document.getElementById('orderDetailPage').style.display = 'none';
             document.getElementById('myDepositsPage').style.display = 'none';
             document.getElementById('myWalletPage').style.display = 'none';
             document.getElementById('myNotificationsPage').style.display = 'none';
-            document.getElementById('telegramLinkPage').style.display = 'none';
+            document.getElementById('telegramLinkPage').style.display = 'none'; hideAutoDepositPages();
             document.getElementById('bannerContainer').style.display = 'none';
             document.getElementById('tickerWrapper').style.display = 'none';
             document.getElementById('depositPage').style.display = 'flex';
@@ -5616,7 +6518,7 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
 
         async function openTelegramLinkPage() {
             if (document.getElementById('sidebar').classList.contains('active')) { toggleSidebar(); }
-            ['shopMainSection', 'depositPage', 'myOrdersPage', 'myDepositsPage', 'myWalletPage', 'myNotificationsPage', 'bannerContainer', 'tickerWrapper']
+            ['shopMainSection', 'depositPage', 'myOrdersPage', 'orderDetailPage', 'myDepositsPage', 'myWalletPage', 'myNotificationsPage', 'bannerContainer', 'tickerWrapper']
                 .forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
             document.getElementById('telegramLinkPage').style.display = 'flex';
             const input = document.getElementById('tgLinkCodeInput');
@@ -5669,7 +6571,7 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
         }
 
         function closeTelegramLinkPage() {
-            document.getElementById('telegramLinkPage').style.display = 'none';
+            document.getElementById('telegramLinkPage').style.display = 'none'; hideAutoDepositPages();
             document.getElementById('shopMainSection').style.display = 'block';
             if (currentLevel === 'categories') {
                 loadBanners();
@@ -5712,6 +6614,139 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
             input.disabled = false;
         }
 
+
+        let activeAutoDeposit = null;
+        let autoDepBusy = false;
+
+        function hideAutoDepositPages() {
+            const a = document.getElementById('autoDepositPage');
+            const b = document.getElementById('autoDepositSuccessPage');
+            if (a) a.style.display = 'none';
+            if (b) b.style.display = 'none';
+        }
+
+        function openAutoDepositPage(method) {
+            activeAutoDeposit = method;
+            document.getElementById('depositPage').style.display = 'none';
+            hideAutoDepositPages();
+            document.getElementById('autoDepTitle').innerText = method.name;
+            dxFillMethod('auto', method);
+            document.getElementById('autoDepCode').innerText = method.payment_codes || 'لا توجد أكواد مضافة';
+            document.getElementById('autoDepAmount').value = '';
+            document.getElementById('autoDepAmount').placeholder = 'المبلغ المحول (' + (method.currency_label || '') + ')';
+            document.getElementById('autoDepTx').value = '';
+            document.getElementById('autoDepCalcBox').classList.remove('show');
+            const er = document.getElementById('autoDepError');
+            er.classList.remove('show');
+            er.style.display = '';
+            setAutoDepBusy(false);
+            document.getElementById('autoDepositPage').style.display = 'flex';
+            window.scrollTo(0, 0);
+        }
+
+        function closeAutoDepositPage() {
+            hideAutoDepositPages();
+            document.getElementById('depositPage').style.display = 'flex';
+        }
+
+        function copyAutoDepositCode() {
+            const t = document.getElementById('autoDepCode').innerText;
+            if (!t || t === 'لا توجد أكواد مضافة') return;
+            copyTextFully(t).then(() => { showGreenCopyToast(); }).catch(() => { showTopNotification('فشل النسخ!'); });
+        }
+
+        function calcAutoDeposit() {
+            if (!activeAutoDeposit) return;
+            const v = parseFloat(document.getElementById('autoDepAmount').value);
+            const box = document.getElementById('autoDepCalcBox');
+            if (isNaN(v) || v <= 0) { box.classList.remove('show'); return; }
+            const rate = parseFloat(activeAutoDeposit.exchange_rate) || 1;
+            document.getElementById('autoDepCalcValue').innerText = formatBalance(v / rate) + ' $';
+            box.classList.add('show');
+        }
+
+        function showAutoDepError(msg) {
+            const el = document.getElementById('autoDepError');
+            el.classList.remove('show');
+            void el.offsetWidth;
+            el.innerText = msg;
+            el.classList.add('show');
+        }
+
+        function setAutoDepBusy(b) {
+            autoDepBusy = b;
+            const btn = document.getElementById('autoDepVerifyBtn');
+            btn.disabled = b;
+            btn.style.opacity = b ? '0.7' : '1';
+            btn.innerHTML = b ? 'جاري التحقق من العملية...<span class="auto-dep-spin"></span>' : 'التحقق من العملية';
+        }
+
+        async function submitAutoDeposit() {
+            if (autoDepBusy || !activeAutoDeposit) return;
+            const amount = document.getElementById('autoDepAmount').value.trim();
+            const txId = document.getElementById('autoDepTx').value.trim();
+            document.getElementById('autoDepError').classList.remove('show');
+            if (!amount || isNaN(parseFloat(amount)) || parseFloat(amount) <= 0) { showAutoDepError('ادخل المبلغ بشكل صحيح'); return; }
+            if (!txId) { showAutoDepError('ادخل رقم العملية'); return; }
+            const email = localStorage.getItem('loggedInUserEmail');
+            if (!email) { alert('يرجى تسجيل الدخول أولاً!'); toggleSidebar(); return; }
+            setAutoDepBusy(true);
+            try {
+                const res = await fetch('/api/auto_deposit_verify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: email, kind: activeAutoDeposit.auto_key, amount: amount, tx_id: txId })
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    showAutoDepositSuccess(data);
+                } else {
+                    showAutoDepError(data.message || 'تعذر التحقق من العملية');
+                }
+            } catch (e) {
+                showAutoDepError('تعذر الاتصال بالسيرفر، حاول مرة أخرى');
+            }
+            setAutoDepBusy(false);
+        }
+
+        function showAutoDepositSuccess(data) {
+            hideAutoDepositPages();
+            const nb = parseFloat(data.new_balance) || 0;
+            const prev = Math.max(0, nb - (parseFloat(data.credited) || 0));
+            const balEl = document.getElementById('adsBalance');
+            balEl.innerText = formatBalance(prev) + ' $';
+            const hb = document.getElementById('userBalance');
+            if (hb) hb.innerText = formatBalance(nb) + ' $';
+            const page = document.getElementById('autoDepositSuccessPage');
+            page.classList.remove('play');
+            page.style.display = 'flex';
+            void page.offsetWidth;
+            page.classList.add('play');
+            window.scrollTo(0, 0);
+            const start = performance.now();
+            const dur = 1200;
+            setTimeout(() => {
+                const t0 = performance.now();
+                (function tick(now) {
+                    const p = Math.min(1, (now - t0) / dur);
+                    const e = 1 - Math.pow(1 - p, 3);
+                    balEl.innerText = formatBalance(prev + (nb - prev) * e) + ' $';
+                    if (p < 1) requestAnimationFrame(tick); else balEl.innerText = formatBalance(nb) + ' $';
+                })(t0);
+            }, 1500);
+            if (navigator.vibrate) { try { navigator.vibrate([60, 40, 90]); } catch (e) {} }
+        }
+
+        function closeAutoDepositSuccess() {
+            hideAutoDepositPages();
+            document.getElementById('depositPage').style.display = 'none';
+            document.getElementById('shopMainSection').style.display = 'block';
+            if (currentLevel === 'categories') {
+                loadBanners();
+                document.getElementById('tickerWrapper').style.display = 'block';
+            }
+        }
+
         function closeDepositPage() {
             document.getElementById('depositPage').style.display = 'none';
             document.getElementById('shopMainSection').style.display = 'block';
@@ -5740,7 +6775,7 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
                 const card = document.createElement('div');
                 card.className = 'item-card';
                 card.style.transform = `scale(var(--deposit-card-scale))`;
-                card.onclick = () => openDepositDetailModal(m);
+                card.onclick = () => (m.auto ? openAutoDepositPage(m) : openDepositDetailModal(m));
 
                 let imgHTML = m.image ? `<img src="${m.image}" class="item-img" loading="lazy" decoding="async" />` : `${codeEmoji('card','item-img')}`;
                 card.innerHTML = `${imgHTML}<div class="item-label" style="color:var(--deposit-label-color);">${m.name}</div>`;
@@ -5748,11 +6783,46 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
             });
         }
 
+        function dxEsc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+
+        // تعبئة الهيدر الفخم: الصورة + الاسم + شارات سعر الصرف/النوع + كرت التعليمات (يختفي إذا ما في وصف)
+        function dxFillMethod(p, m) {
+            const logo = document.getElementById(p + 'HeroLogo');
+            if (!logo.getAttribute('data-fb')) logo.setAttribute('data-fb', logo.innerHTML);
+            logo.innerHTML = m.image ? '<img src="' + dxEsc(m.image) + '" alt="">' : logo.getAttribute('data-fb');
+            const nameEl = document.getElementById(p === 'dep' ? 'depModalTitle' : 'autoHeroName');
+            if (nameEl) nameEl.innerText = m.name || '';
+            const rate = parseFloat(m.exchange_rate) || 1;
+            const chips = [];
+            chips.push('<span class="dx-chip">سعر الصرف: 1$ = ' + dxEsc(rate) + (m.currency_label ? ' ' + dxEsc(m.currency_label) : '') + '</span>');
+            chips.push(m.auto ? '<span class="dx-chip blue">⚡ تحقق تلقائي فوري</span>' : '<span class="dx-chip blue">مراجعة من الإدارة</span>');
+            document.getElementById(p + 'Chips').innerHTML = chips.join('');
+            const cur = document.getElementById(p === 'dep' ? 'depAmountCur' : 'autoAmountCur');
+            if (cur) cur.innerText = m.currency_label || '';
+            const d = String(m.description || '').trim();
+            document.getElementById(p === 'dep' ? 'depModalDesc' : 'autoDepDesc').innerText = d;
+            document.getElementById(p === 'dep' ? 'depDescCard' : 'autoDescCard').style.display = d ? '' : 'none';
+        }
+
+        function dxFilePicked(inp) {
+            const f = inp.files && inp.files[0];
+            const nm = document.getElementById('depFileName');
+            const pv = document.getElementById('depFilePreview');
+            const ic = document.getElementById('depFileIcon');
+            if (!f) { nm.innerText = 'اضغط لرفع صورة الإشعار'; pv.style.display = 'none'; ic.style.display = ''; return; }
+            nm.innerText = f.name;
+            const r = new FileReader();
+            r.onload = function (e) { pv.src = e.target.result; pv.style.display = 'block'; ic.style.display = 'none'; };
+            r.readAsDataURL(f);
+        }
+
         function openDepositDetailModal(method) {
             activeDepositMethod = method;
-            document.getElementById('depModalTitle').innerText = method.name;
-            document.getElementById('depModalDesc').innerText = method.description || 'لا يوجد وصف متاح لهذه الطريقة.';
+            dxFillMethod('dep', method);
             document.getElementById('depModalCode').innerText = method.payment_codes || 'لا توجد أكواد مضافة';
+            document.getElementById('depFileName').innerText = 'اضغط لرفع صورة الإشعار';
+            document.getElementById('depFilePreview').style.display = 'none';
+            document.getElementById('depFileIcon').style.display = '';
             
             document.getElementById('depAmountInput').value = '';
             document.getElementById('depTxIdInput').value = '';
@@ -5850,10 +6920,10 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
             if (document.getElementById('sidebar').classList.contains('active')) { toggleSidebar(); }
             document.getElementById('shopMainSection').style.display = 'none';
             document.getElementById('depositPage').style.display = 'none';
-            document.getElementById('myOrdersPage').style.display = 'none';
+            document.getElementById('myOrdersPage').style.display = 'none'; document.getElementById('orderDetailPage').style.display = 'none';
             document.getElementById('myWalletPage').style.display = 'none';
             document.getElementById('myNotificationsPage').style.display = 'none';
-            document.getElementById('telegramLinkPage').style.display = 'none';
+            document.getElementById('telegramLinkPage').style.display = 'none'; hideAutoDepositPages();
             document.getElementById('bannerContainer').style.display = 'none';
             document.getElementById('tickerWrapper').style.display = 'none';
             document.getElementById('myDepositsPage').style.display = 'flex';
@@ -5914,9 +6984,9 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
             document.getElementById('shopMainSection').style.display = 'none';
             document.getElementById('depositPage').style.display = 'none';
             document.getElementById('myDepositsPage').style.display = 'none';
-            document.getElementById('myOrdersPage').style.display = 'none';
+            document.getElementById('myOrdersPage').style.display = 'none'; document.getElementById('orderDetailPage').style.display = 'none';
             document.getElementById('myNotificationsPage').style.display = 'none';
-            document.getElementById('telegramLinkPage').style.display = 'none';
+            document.getElementById('telegramLinkPage').style.display = 'none'; hideAutoDepositPages();
             document.getElementById('bannerContainer').style.display = 'none';
             document.getElementById('tickerWrapper').style.display = 'none';
             document.getElementById('myWalletPage').style.display = 'flex';
@@ -5931,27 +7001,8 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
                     }
                 } catch (e) { console.error(e); }
 
-                try {
-                    const resOrders = await fetch('/api/user_orders?email=' + encodeURIComponent(savedEmail));
-                    const orders = await resOrders.json();
-                    let totalPurchases = 0;
-                    orders.forEach(o => {
-                        totalPurchases += parseFloat(o.price || 0);
-                    });
-                    document.getElementById('walletPurchasesVal').innerText = formatBalance(totalPurchases) + "$";
-                } catch (e) { console.error(e); }
-
-                try {
-                    const resDeposits = await fetch('/api/user_deposits?email=' + encodeURIComponent(savedEmail));
-                    const deposits = await resDeposits.json();
-                    let totalReceived = 0;
-                    deposits.forEach(d => {
-                        if (d.status === "مقبول") {
-                            totalReceived += parseFloat(d.amount || 0);
-                        }
-                    });
-                    document.getElementById('walletReceivedVal').innerText = formatBalance(totalReceived) + "$";
-                } catch (e) { console.error(e); }
+                walletClearFilters();
+                await loadWalletStatement();
             }
         }
 
@@ -5964,7 +7015,134 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
             }
         }
 
-        function renderMyWallet() {}
+        var WALLET_STMT = [];
+        var walletType = 'all';
+        var walletLimit = 40;
+
+        function wstEsc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+
+        async function loadWalletStatement() {
+            const email = localStorage.getItem('loggedInUserEmail');
+            if (!email) return;
+            try {
+                const res = await fetch('/api/user_statement?email=' + encodeURIComponent(email));
+                const d = await res.json();
+                if (d.status === 'success') {
+                    WALLET_STMT = d.rows || [];
+                    if (d.balance != null) document.getElementById('walletBalanceVal').innerText = formatBalance(d.balance) + '$';
+                }
+            } catch (e) { console.error(e); }
+            renderMyWallet();
+        }
+
+        function walletDateRows() {
+            const from = document.getElementById('walletDateFrom').value;
+            const to = document.getElementById('walletDateTo').value;
+            return WALLET_STMT.filter(function (r) {
+                const day = String(r.ts || '').substring(0, 10);
+                if (from && day < from) return false;
+                if (to && day > to) return false;
+                return true;
+            });
+        }
+
+        function walletViewRows() {
+            const q = (document.getElementById('walletSearchInput').value || '').trim().toLowerCase();
+            return walletDateRows().filter(function (r) {
+                if (walletType !== 'all' && r.kind !== walletType) return false;
+                if (q) {
+                    const hay = [r.title, r.detail, r.ref, r.status, r.input].join(' ').toLowerCase();
+                    if (hay.indexOf(q) === -1) return false;
+                }
+                return true;
+            });
+        }
+
+        function renderMyWallet() {
+            const range = walletDateRows();
+            let purchases = 0, received = 0;
+            range.forEach(function (r) {
+                if (r.kind === 'order' && r.amount < 0) purchases += -r.amount;
+                else if (r.kind === 'deposit' && r.amount > 0) received += r.amount;
+                else if (r.kind === 'adjust' && r.amount > 0) received += r.amount;
+            });
+            document.getElementById('walletPurchasesVal').innerText = formatBalance(purchases) + '$';
+            document.getElementById('walletReceivedVal').innerText = formatBalance(received) + '$';
+
+            const rows = walletViewRows();
+            const box = document.getElementById('walletStmtList');
+            const empty = document.getElementById('walletEmptyBox');
+            const moreWrap = document.getElementById('walletMoreWrap');
+            if (!rows.length) {
+                box.innerHTML = '';
+                empty.style.display = 'flex';
+                moreWrap.style.display = 'none';
+                return;
+            }
+            empty.style.display = 'none';
+            const shown = rows.slice(0, walletLimit);
+            const glyph = { order: '↑', deposit: '↓', adjust: '±' };
+            box.innerHTML = shown.map(function (r) {
+                const amt = r.amount;
+                const cls = amt > 0 ? 'pos' : (amt < 0 ? 'neg' : 'zero');
+                const val = (amt === 0 ? r.price : Math.abs(amt));
+                const sign = amt > 0 ? '+' : (amt < 0 ? '-' : '');
+                const sub = [r.detail, r.ref ? '#' + r.ref : ''].filter(function (x) { return x; }).join(' · ');
+                return '<div class="wst-row ' + r.kind + '">'
+                    + '<div class="wst-ico">' + (glyph[r.kind] || '•') + '</div>'
+                    + '<div class="wst-mid"><div class="wst-t">' + wstEsc(r.title) + '</div>'
+                    + (sub ? '<div class="wst-d">' + wstEsc(sub) + '</div>' : '')
+                    + '<div class="wst-dt">' + wstEsc(String(r.ts || '').substring(0, 16)) + '</div></div>'
+                    + '<div class="wst-side"><div class="wst-amt ' + cls + '">' + sign + '$' + formatBalance(val) + '</div>'
+                    + '<span class="wst-badge ' + wstEsc(r.sk) + '">' + wstEsc(r.status) + '</span></div></div>';
+            }).join('');
+            moreWrap.style.display = rows.length > shown.length ? 'flex' : 'none';
+        }
+
+        function walletShowMore() { walletLimit += 40; renderMyWallet(); }
+
+        function walletClearFilters() {
+            document.getElementById('walletDateFrom').value = '';
+            document.getElementById('walletDateTo').value = '';
+            document.getElementById('walletSearchInput').value = '';
+            walletType = 'all';
+            walletLimit = 40;
+            const chips = document.querySelectorAll('#walletTypeChips .wst-chip');
+            for (let i = 0; i < chips.length; i++) chips[i].classList.toggle('active', chips[i].getAttribute('data-t') === 'all');
+            renderMyWallet();
+        }
+
+        function walletDownloadCsv() {
+            const rows = walletViewRows();
+            if (!rows.length) return;
+            const q = function (v) { return '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"'; };
+            const kinds = { order: 'شراء', deposit: 'إيداع', adjust: 'تعديل إدارة' };
+            const NL = String.fromCharCode(10);
+            const L = [['التاريخ', 'النوع', 'البيان', 'التفاصيل', 'المرجع', 'الحالة', 'المبلغ'].map(q).join(',')];
+            rows.forEach(function (r) {
+                L.push([String(r.ts || '').substring(0, 16), kinds[r.kind] || r.kind, r.title, r.detail, r.ref, r.status, r.amount === 0 ? 0 : r.amount].map(q).join(','));
+            });
+            const blob = new Blob([String.fromCharCode(0xFEFF) + L.join(NL)], { type: 'text/csv;charset=utf-8;' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'account_statement_' + new Date().toISOString().slice(0, 10) + '.csv';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(function () { URL.revokeObjectURL(a.href); }, 1500);
+        }
+
+        document.getElementById('walletTypeChips').addEventListener('click', function (e) {
+            const b = e.target.closest ? e.target.closest('.wst-chip') : null;
+            if (!b) return;
+            walletType = b.getAttribute('data-t') || 'all';
+            walletLimit = 40;
+            const chips = document.querySelectorAll('#walletTypeChips .wst-chip');
+            for (let i = 0; i < chips.length; i++) chips[i].classList.toggle('active', chips[i] === b);
+            renderMyWallet();
+        });
+        document.getElementById('walletDateFrom').addEventListener('change', renderMyWallet);
+        document.getElementById('walletDateTo').addEventListener('change', renderMyWallet);
 
         function openPurchaseModal(subcat) {
             activeSubCategory = subcat;
@@ -6010,7 +7188,22 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
                 localPriceEl.style.display = 'none';
             }
             
-            document.getElementById('pModalRequirement').value = '';
+            // متطلبات الشراء: الأول بالمستطيل الأساسي، وكل متطلب إضافي بمستطيل جديد باسمه
+            const reqLabels = Array.isArray(subcat.api_params) ? subcat.api_params.filter(Boolean) : [];
+            const reqEl = document.getElementById('pModalRequirement');
+            reqEl.value = '';
+            reqEl.placeholder = reqLabels[0] || 'ايدي المستخدم';
+            const extraBox = document.getElementById('pModalExtraFields');
+            extraBox.innerHTML = '';
+            reqLabels.slice(1).forEach(function (lb) {
+                const inp = document.createElement('input');
+                inp.type = 'text';
+                inp.className = 'purchase-input-custom pmodal-extra';
+                inp.placeholder = lb;
+                inp.setAttribute('data-label', lb);
+                inp.setAttribute('autocomplete', 'off');
+                extraBox.appendChild(inp);
+            });
             
             const submitBtn = document.getElementById('submitPurchaseBtn');
             const cancelBtn = document.getElementById('cancelPurchaseBtn');
@@ -6019,11 +7212,25 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
             submitBtn.innerHTML = 'شراء';
 
             const descEl = document.getElementById('pModalDescriptionText');
-            if (subcat.description) {
-                descEl.innerText = subcat.description;
-            } else {
-                descEl.innerText = "هذا المنتج يعمل بشكل يدوي ويستغرق بعض الوقت ليصل للزبون";
+            const descBox = document.getElementById('pModalDescriptionBox');
+            let descTxt = String(subcat.description || '').trim();
+            if (!descTxt) {
+                // ما في وصف → نعرض متطلبات الخدمة حسب الـ API (المطلوب + الكمية)
+                const NL = String.fromCharCode(10);
+                const reqLines = [];
+                const lbls = Array.isArray(subcat.api_params) ? subcat.api_params.filter(Boolean) : [];
+                if (lbls.length) reqLines.push('المطلوب: ' + lbls.join(' - '));
+                const ql = Array.isArray(subcat.api_qty_list) ? subcat.api_qty_list.filter(Boolean) : [];
+                if (ql.length) {
+                    reqLines.push('الكميات المتاحة: ' + ql.join(' ، '));
+                } else if (subcat.is_counter === true) {
+                    const mn = subcat.counter_min_qty || 1, mx = subcat.counter_max_qty;
+                    reqLines.push(mx ? ('الكمية: من ' + mn + ' إلى ' + mx) : ('الكمية: الحد الأدنى ' + mn));
+                }
+                descTxt = reqLines.join(NL);
             }
+            descEl.innerText = descTxt;
+            descBox.style.display = descTxt ? '' : 'none';
 
             document.getElementById('purchaseModal').classList.add('active');
         }
@@ -6064,7 +7271,17 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
 
         async function submitPurchase() {
             const req = document.getElementById('pModalRequirement').value.trim();
-            if (!req) { alert('يرجى كتابة متطلبات شراء الخدمة (ايدي المستخدم)!'); return; }
+            const firstLabel = (activeSubCategory && Array.isArray(activeSubCategory.api_params) && activeSubCategory.api_params[0]) || 'ايدي المستخدم';
+            if (!req) { alert('يرجى كتابة متطلبات شراء الخدمة (' + firstLabel + ')!'); return; }
+
+            const extraParams = [];
+            const extraEls = document.querySelectorAll('#pModalExtraFields .pmodal-extra');
+            for (let i = 0; i < extraEls.length; i++) {
+                const v = extraEls[i].value.trim();
+                const lb = extraEls[i].getAttribute('data-label') || '';
+                if (!v) { alert('يرجى تعبئة: ' + lb); return; }
+                extraParams.push({ label: lb, value: v });
+            }
 
             const savedEmail = localStorage.getItem('loggedInUserEmail');
             if (!savedEmail) {
@@ -6120,6 +7337,7 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
                         provider_name: activeSubCategory.provider_name || '',
                         api_product_id: activeSubCategory.api_product_id || '',
                         input: req,
+                        extra_params: extraParams,
                         quantity: quantity,
                         is_counter: isCounterCategory
                     })
@@ -6140,7 +7358,7 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
                 document.getElementById('rProduct').innerText = activeSubCategory.product;
                 document.getElementById('rSubCategory').innerText = activeSubCategory.name;
                 document.getElementById('rPrice').innerText = formatBalance(finalPrice) + " $";
-                document.getElementById('rInputs').innerText = req;
+                document.getElementById('rInputs').innerText = [req].concat(extraParams.map(function (e) { return e.label + ': ' + e.value; })).join(' | ');
                 document.getElementById('rQuantity').innerText = isCounterCategory ? quantity : '1';
                 document.getElementById('rStatus').innerText = data.order_status || "قيد الانتظار";
 
@@ -6169,6 +7387,12 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
             document.getElementById('detailInput').innerText = order.input || '-';
             document.getElementById('detailQuantity').innerText = order.quantity || '1';
 
+            const replyTxt = getOrderReplyText(order);
+            const replyWrap = document.getElementById('detailReplyWrap');
+            document.getElementById('detailReply').textContent = replyTxt;
+            replyWrap.style.display = replyTxt ? '' : 'none';
+            document.getElementById('detailReplyCopyBtn').textContent = 'نسخ';
+
             const statusEl = document.getElementById('detailStatus');
             let statusText = order.status || 'قيد الانتظار';
             let statusClass = 'status-pending';
@@ -6193,6 +7417,134 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
             document.getElementById('orderDetailModal').classList.add('active');
         }
 
+        function formatOrderReply(v) {
+            if (v === null || v === undefined || v === '') return '';
+            if (typeof v === 'string') return v;
+            if (Array.isArray(v)) return v.map(formatOrderReply).filter(Boolean).join(String.fromCharCode(10));
+            if (typeof v === 'object') {
+                if ('replay' in v) return formatOrderReply(v.replay);
+                try { return JSON.stringify(v); } catch (e) { return String(v); }
+            }
+            return String(v);
+        }
+
+        // منتج يدوي: الرد اللي كتبه الأدمن | منتج API: الرد اللي رجع من المزوّد
+        function getOrderReplyText(order) {
+            const manual = formatOrderReply(order.admin_reply);
+            if (manual) return manual;
+            return formatOrderReply(order.replay_api);
+        }
+
+        function copyOrderReply() {
+            const txt = document.getElementById('detailReply').textContent || '';
+            if (!txt) return;
+            const btn = document.getElementById('detailReplyCopyBtn');
+            const done = function () {
+                btn.textContent = 'تم النسخ ✓';
+                setTimeout(function () { btn.textContent = 'نسخ'; }, 1500);
+            };
+            const fallback = function () {
+                const ta = document.createElement('textarea');
+                ta.value = txt; ta.style.position = 'fixed'; ta.style.opacity = '0';
+                document.body.appendChild(ta); ta.select();
+                try { document.execCommand('copy'); done(); } catch (e) { }
+                ta.remove();
+            };
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(txt).then(done).catch(fallback);
+            } else { fallback(); }
+        }
+
+        let odpSavedScroll = 0;
+
+        function parseOrderTs(s) {
+            if (!s) return NaN;
+            return new Date(String(s).trim().replace(' ', 'T')).getTime();
+        }
+
+        function formatElapsed(totalSec) {
+            const units = [
+                { v: Math.floor(totalSec / 86400), one: 'يوم', few: 'أيام' },
+                { v: Math.floor((totalSec % 86400) / 3600), one: 'ساعة', few: 'ساعات' },
+                { v: Math.floor((totalSec % 3600) / 60), one: 'دقيقة', few: 'دقائق' },
+                { v: totalSec % 60, one: 'ثانية', few: 'ثواني' }
+            ];
+            const parts = [];
+            for (let i = 0; i < units.length && parts.length < 2; i++) {
+                const u = units[i];
+                if (u.v <= 0) { if (parts.length > 0) break; else continue; }
+                parts.push(u.v + ' ' + ((u.v >= 2 && u.v <= 10) ? u.few : u.one));
+            }
+            return parts.length ? parts.join(' و ') : 'أقل من ثانية';
+        }
+
+        // الوقت من إنشاء الطلب لحد القبول أو الرفض
+        function getOrderElapsedText(order) {
+            if (order.status !== 'مكتملة' && order.status !== 'مرفوضة') return '';
+            const start = parseOrderTs((order.date || '') + ' ' + (order.time || ''));
+            const end = parseOrderTs(order.completed_at || order.updated_at);
+            if (isNaN(start) || isNaN(end)) return '';
+            return formatElapsed(Math.max(0, Math.round((end - start) / 1000)));
+        }
+
+        function openOrderDetailPage(order) {
+            odpSavedScroll = window.scrollY || 0;
+            document.getElementById('odpOrderId').textContent = order.order_uuid ? order.order_uuid.substring(0, 16) : order.id;
+            document.getElementById('odpProduct').textContent = order.product || '-';
+            document.getElementById('odpSubcategory').textContent = order.subcategory || '-';
+            document.getElementById('odpPrice').textContent = formatBalance(order.price) + ' $';
+            document.getElementById('odpInput').textContent = order.input || '-';
+            document.getElementById('odpQuantity').textContent = order.quantity || '1';
+            document.getElementById('odpDate').textContent = ((order.time || '') + ' ' + (order.date || '')).trim() || '-';
+
+            let statusText = 'قيد الانتظار', statusClass = 'status-pending';
+            if (order.status === 'مكتملة') { statusText = 'مقبول'; statusClass = 'status-accept'; }
+            else if (order.status === 'مرفوضة') { statusText = 'مرفوض'; statusClass = 'status-reject'; }
+            else if (order.status === 'تم الارسال للتشيك') { statusText = 'قيد المراجعة'; }
+            const st = document.getElementById('odpStatus');
+            st.textContent = statusText;
+            st.className = 'order-detail-value status-badge ' + statusClass;
+
+            const elapsedTxt = getOrderElapsedText(order);
+            document.getElementById('odpElapsed').textContent = elapsedTxt;
+            document.getElementById('odpElapsedRow').style.display = elapsedTxt ? '' : 'none';
+
+            const replyTxt = getOrderReplyText(order);
+            document.getElementById('odpReply').textContent = replyTxt;
+            document.getElementById('odpReplyWrap').style.display = replyTxt ? '' : 'none';
+            document.getElementById('odpReplyCopyBtn').textContent = 'نسخ';
+
+            document.getElementById('myOrdersPage').style.display = 'none';
+            document.getElementById('orderDetailPage').style.display = 'flex';
+            window.scrollTo(0, 0);
+        }
+
+        function closeOrderDetailPage() {
+            document.getElementById('orderDetailPage').style.display = 'none';
+            document.getElementById('myOrdersPage').style.display = 'flex';
+            window.scrollTo(0, odpSavedScroll);
+        }
+
+        function copyOdpReply() {
+            const txt = document.getElementById('odpReply').textContent || '';
+            if (!txt) return;
+            const btn = document.getElementById('odpReplyCopyBtn');
+            const done = function () {
+                btn.textContent = 'تم النسخ ✓';
+                setTimeout(function () { btn.textContent = 'نسخ'; }, 1500);
+            };
+            const fallback = function () {
+                const ta = document.createElement('textarea');
+                ta.value = txt; ta.style.position = 'fixed'; ta.style.opacity = '0';
+                document.body.appendChild(ta); ta.select();
+                try { document.execCommand('copy'); done(); } catch (e) { }
+                ta.remove();
+            };
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(txt).then(done).catch(fallback);
+            } else { fallback(); }
+        }
+
         function closeOrderDetailModal() {
             document.getElementById('orderDetailModal').classList.remove('active');
         }
@@ -6204,10 +7556,11 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
             document.getElementById('myDepositsPage').style.display = 'none';
             document.getElementById('myWalletPage').style.display = 'none';
             document.getElementById('myNotificationsPage').style.display = 'none';
-            document.getElementById('telegramLinkPage').style.display = 'none';
+            document.getElementById('telegramLinkPage').style.display = 'none'; hideAutoDepositPages();
             document.getElementById('bannerContainer').style.display = 'none';
             document.getElementById('tickerWrapper').style.display = 'none';
             document.getElementById('myOrdersPage').style.display = 'flex';
+            document.getElementById('orderDetailPage').style.display = 'none';
 
             const savedEmail = localStorage.getItem('loggedInUserEmail');
             
@@ -6224,7 +7577,7 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
         }
 
         function closeMyOrdersPage() {
-            document.getElementById('myOrdersPage').style.display = 'none';
+            document.getElementById('myOrdersPage').style.display = 'none'; document.getElementById('orderDetailPage').style.display = 'none';
             document.getElementById('shopMainSection').style.display = 'block';
             if (currentLevel === 'categories') {
                 loadBanners();
@@ -6309,7 +7662,7 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
             filtered.forEach(o => {
                 const card = document.createElement('div');
                 card.className = 'order-card-exact';
-                card.onclick = () => openOrderDetailModal(o);
+                card.onclick = () => openOrderDetailPage(o);
 
                 let statusColor = '#f59e0b';
                 let statusText = o.status || 'قيد الانتظار';
@@ -6333,20 +7686,29 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
                     statusIcon = '⏳';
                 }
 
+                const stIc = (o.status === "مكتملة")
+                    ? '<svg class="order-st-ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#22c55e"/><path d="M7 12.5l3.2 3.2L17 8.8" fill="none" stroke="#0b0b0f" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+                    : (o.status === "مرفوضة")
+                        ? '<svg class="order-st-ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#f87171"/><path d="M8 8l8 8M16 8l-8 8" fill="none" stroke="#0b0b0f" stroke-width="2.6" stroke-linecap="round"/></svg>'
+                        : '<svg class="order-st-ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="' + statusColor + '"/><path d="M12 6.5V12l3.5 2" fill="none" stroke="#0b0b0f" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+                card.classList.add('order-card-3');
                 card.innerHTML = `
                     <div class="order-card-right-exact">
                         <span class="order-id-exact">ID_${o.order_uuid ? o.order_uuid.substring(0, 16) : o.id}#</span>
                         <span class="order-subcat-exact">${o.subcategory}</span>
                         <span class="order-prod-exact">${o.product}</span>
                     </div>
-                    <div class="order-card-left-exact">
-                        <span class="order-price-exact">${formatBalance(o.price)} $</span>
+                    <div class="order-card-mid-exact">
                         <div class="order-status-row-exact" style="color:${statusColor};">
                             <span>${statusText}</span>
-                            <span>${statusIcon}</span>
+                            ${stIc}
                         </div>
                         <span class="order-date-exact">${o.time || ''} ${o.date}</span>
                         <span class="order-input-exact">${o.input || '-'} #</span>
+                    </div>
+                    <div class="order-card-left-exact">
+                        <span class="order-price-exact">$ ${formatBalance(o.price)}</span>
+                        <span class="order-qty-exact">${o.quantity || o.qty || 1} /</span>
                     </div>
                 `;
                 container.appendChild(card);
@@ -6561,6 +7923,7 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
 
         initTheme();
         applyAppearanceSettings();
+        prepareGoogle();
         loadTickerSettings();
         loadAnnouncement();
         loadSplashScreen();
@@ -6584,9 +7947,14 @@ ADMIN_HTML_CONTENT = """
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>لوحة القيادة - Admin</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.rtl.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link media="print" onload="this.media='all';document.documentElement.className+=' bs-ok'" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.rtl.min.css" rel="stylesheet">
+    <link media="print" onload="this.media='all'" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
+        body { margin: 0; line-height: 1.5; }
+        table { border-collapse: collapse; }
+        button, input, select, textarea { font-size: inherit; }
+        html:not(.bs-ok) #dashboardStatsContainer { display: flex; flex-wrap: wrap; margin: -8px; }
+        html:not(.bs-ok) #dashboardStatsContainer > * { width: 50%; padding: 8px; box-sizing: border-box; }
         * { font-family: 'IBM Plex Sans Arabic', sans-serif !important; box-sizing: border-box; }
         body { background-color: #050508; color: #ffffff; padding: 20px; transition: background-color 0.3s, color 0.3s; }
         body.light-mode-admin { background-color: #f4f4f5; color: #09090b; }
@@ -6678,6 +8046,77 @@ ADMIN_HTML_CONTENT = """
         .api-copyable-id { color: #38bdf8; font-weight: 700; cursor: pointer; background-color: rgba(56, 189, 248, 0.1); padding: 2px 6px; border-radius: 4px; border: 1px dashed #38bdf8; }
         #apiProductPreviewBox { display: none; background-color: #000; border: 1px solid #38bdf8; border-radius: 6px; padding: 8px 10px; font-size: 0.75rem; color: #38bdf8; font-weight: 700; text-align: center; }
         #checkDepositsPage, #checkOrdersPage, #viewProvidersPage, #deleteCategoryPage, #deleteProductPage { display: none; flex-direction: column; gap: 12px; width: 100%; }
+
+        /* ===== صفحات التشييك (طلبات / إيداعات) ===== */
+        .ck-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding-bottom: 10px; border-bottom: 1px solid #27272a; }
+        .ck-head-title { display: flex; align-items: center; gap: 10px; min-width: 0; }
+        .ck-ico { width: 40px; height: 40px; border-radius: 12px; display: flex; align-items: center; justify-content: center; background: rgba(56,189,248,.12); border: 1px solid rgba(56,189,248,.35); color: #38bdf8; flex: 0 0 auto; }
+        .ck-head-title b { display: block; font-size: .98rem; font-weight: 800; color: #fff; }
+        .ck-head-title small { display: block; font-size: .68rem; color: #a1a1aa; margin-top: 2px; }
+        .ck-head-actions { display: flex; gap: 8px; align-items: center; }
+        .ck-icon-btn { width: 36px; height: 36px; border-radius: 10px; background: #121212; border: 1px solid #27272a; color: #38bdf8; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+        .ck-icon-btn.spin svg { animation: ckSpin .8s linear infinite; }
+        @keyframes ckSpin { to { transform: rotate(360deg); } }
+        .ck-stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+        .ck-tile { background: #121212; border: 1px solid #27272a; border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 3px; border-right: 3px solid var(--tc, #38bdf8); }
+        .ck-tile b { font-size: 1.05rem; font-weight: 800; color: var(--tc, #fff); direction: ltr; text-align: right; }
+        .ck-tile span { font-size: .68rem; color: #a1a1aa; font-weight: 600; }
+        .ck-toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+        .ck-search { flex: 1; min-width: 170px; padding: 10px 12px; background: #000; border: 1px solid #27272a; border-radius: 10px; color: #fff; font-size: .8rem; outline: none; text-align: right; }
+        .ck-search:focus { border-color: #38bdf8; }
+        .ck-select { padding: 10px 8px; background: #000; border: 1px solid #27272a; border-radius: 10px; color: #fff; font-size: .75rem; outline: none; }
+        .ck-auto { display: flex; align-items: center; gap: 6px; font-size: .72rem; color: #a1a1aa; cursor: pointer; white-space: nowrap; }
+        .ck-chips { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
+        .ck-chips::-webkit-scrollbar { display: none; }
+        .ck-chip { white-space: nowrap; padding: 7px 12px; border-radius: 20px; background: #121212; border: 1px solid #27272a; color: #a1a1aa; font-size: .74rem; font-weight: 700; cursor: pointer; display: flex; gap: 6px; align-items: center; }
+        .ck-chip b { background: rgba(255,255,255,.08); padding: 1px 7px; border-radius: 10px; font-size: .68rem; color: #fff; }
+        .ck-chip.active { background: rgba(56,189,248,.14); border-color: #38bdf8; color: #38bdf8; }
+        .ck-list { display: flex; flex-direction: column; gap: 10px; }
+        .ck-card { position: relative; background: #121212; border: 1px solid #27272a; border-radius: 14px; padding: 12px 16px 12px 12px; display: flex; flex-direction: column; gap: 9px; overflow: hidden; transition: border-color .2s; }
+        .ck-card:hover { border-color: rgba(56,189,248,.5); }
+        .ck-card::before { content: ""; position: absolute; right: 0; top: 12px; bottom: 12px; width: 3px; border-radius: 3px; background: var(--kc, #52525b); }
+        .ck-card.k-wait, .ck-card.k-pending { --kc: #fbbf24; }
+        .ck-card.k-check { --kc: #f87171; }
+        .ck-card.k-done, .ck-card.k-accepted { --kc: #4ade80; }
+        .ck-card.k-rejected { --kc: #71717a; }
+        .ck-top { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+        .ck-badge { font-size: .68rem; font-weight: 800; padding: 3px 10px; border-radius: 20px; color: var(--kc); background: rgba(255,255,255,.05); border: 1px solid var(--kc); }
+        .ck-pill { font-size: .64rem; font-weight: 700; padding: 3px 8px; border-radius: 20px; color: #38bdf8; background: rgba(56,189,248,.1); border: 1px solid rgba(56,189,248,.3); }
+        .ck-pill.warn { color: #f87171; background: rgba(248,113,113,.1); border-color: rgba(248,113,113,.45); }
+        .ck-id { margin-right: auto; font-size: .72rem; font-weight: 800; color: #a1a1aa; direction: ltr; cursor: pointer; }
+        .ck-title { font-size: .95rem; font-weight: 800; color: #fff; line-height: 1.5; word-break: break-word; }
+        .ck-sub { font-size: .72rem; color: #a1a1aa; margin-top: -6px; }
+        .ck-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .ck-kv { background: #000; border: 1px solid #1f1f23; border-radius: 10px; padding: 7px 10px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+        .ck-kv.wide { grid-column: 1 / -1; }
+        .ck-kv span { font-size: .62rem; color: #71717a; font-weight: 700; }
+        .ck-kv b { font-size: .78rem; color: #e4e4e7; font-weight: 700; word-break: break-all; }
+        .ck-kv b.ck-copy { cursor: pointer; color: #38bdf8; }
+        .ck-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .ck-price { font-size: 1.1rem; font-weight: 800; color: #4ade80; direction: ltr; }
+        .ck-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+        .ck-btn { padding: 8px 14px; border-radius: 10px; font-size: .76rem; font-weight: 800; cursor: pointer; border: 1px solid #27272a; background: #18181b; color: #e4e4e7; }
+        .ck-btn.ok { background: linear-gradient(135deg, #34d399, #059669); border-color: transparent; color: #fff; }
+        .ck-btn.no { background: rgba(248,113,113,.1); border-color: rgba(248,113,113,.5); color: #f87171; }
+        .ck-btn:active { transform: scale(.96); }
+        .ck-thumb { width: 100%; max-height: 130px; object-fit: cover; border-radius: 10px; border: 1px solid #27272a; cursor: zoom-in; }
+        .ck-empty { text-align: center; color: #a1a1aa; font-size: .8rem; padding: 28px 10px; border: 1px dashed #27272a; border-radius: 14px; }
+        .ck-more { text-align: center; padding: 10px; border-radius: 12px; border: 1px dashed #38bdf8; color: #38bdf8; font-weight: 800; font-size: .8rem; cursor: pointer; }
+        .ck-skel { height: 118px; border-radius: 14px; background: linear-gradient(90deg, #121212 25%, #1c1c20 50%, #121212 75%); background-size: 200% 100%; animation: ckSkel 1.2s linear infinite; border: 1px solid #1f1f23; }
+        @keyframes ckSkel { to { background-position: -200% 0; } }
+        #ckToastBox { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); z-index: 10050; display: flex; flex-direction: column; gap: 8px; align-items: center; pointer-events: none; }
+        .ck-toast { background: #052e1c; border: 1px solid #10b981; color: #d1fae5; padding: 9px 18px; border-radius: 12px; font-size: .78rem; font-weight: 700; box-shadow: 0 10px 30px rgba(0,0,0,.5); transition: opacity .3s, transform .3s; }
+        .ck-toast.err { background: #3b0d0d; border-color: #f87171; color: #fecaca; }
+        .ck-toast.out { opacity: 0; transform: translateY(8px); }
+        #ckLightbox { position: fixed; inset: 0; background: rgba(0,0,0,.92); z-index: 10040; display: none; align-items: center; justify-content: center; padding: 16px; cursor: zoom-out; }
+        #ckLightbox.active { display: flex; }
+        #ckLightbox img { max-width: 100%; max-height: 100%; border-radius: 12px; }
+        body.light-mode-admin .ck-card, body.light-mode-admin .ck-tile, body.light-mode-admin .ck-chip, body.light-mode-admin .ck-icon-btn { background: #ffffff; border-color: #e4e4e7; }
+        body.light-mode-admin .ck-kv, body.light-mode-admin .ck-search, body.light-mode-admin .ck-select { background: #f4f4f5; border-color: #e4e4e7; color: #09090b; }
+        body.light-mode-admin .ck-head-title b, body.light-mode-admin .ck-title, body.light-mode-admin .ck-kv b, body.light-mode-admin .ck-chip b { color: #09090b; }
+        body.light-mode-admin .ck-btn { background: #f4f4f5; border-color: #e4e4e7; color: #09090b; }
+        body.light-mode-admin .ck-btn.ok { color: #fff; }
+        body.light-mode-admin .ck-btn.no { color: #dc2626; }
         .grid-container { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; padding: 10px 5px; }
         .category-card { background-color: #121212; border: 1px solid #27272a; border-radius: 10px; aspect-ratio: 1 / 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; padding: 5px; overflow: hidden; position: relative; transform: scale(1.1); transform-origin: center; }
         body.light-mode-admin .category-card { background-color: #ffffff; border-color: #e4e4e7; }
@@ -6830,6 +8269,163 @@ ADMIN_HTML_CONTENT = """
         #clientsListScreen { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #050508; z-index: 9999; overflow-y: auto; padding: 20px; flex-direction: column; gap: 15px; }
         body.light-mode-admin #clientsListScreen { background: #f4f4f5; }
         #clientsListScreen.active { display: flex; }
+
+        #autoDepositAdminScreen { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 1800; overflow-y: auto; padding: 20px; flex-direction: column; gap: 15px; background: radial-gradient(800px 400px at 90% -10%, rgba(232,194,106,0.10), transparent 60%), var(--bg-0); }
+        #autoDepositAdminScreen.active { display: flex; }
+        .auto-dep-card { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 20px 18px; border-radius: 16px; background: linear-gradient(150deg, var(--bg-3), var(--bg-1)); border: 1px solid var(--line-2); transition: border-color .25s, box-shadow .25s; }
+        .auto-dep-card:hover { border-color: var(--gold); }
+        .auto-dep-name { font-size: 1.05rem; font-weight: 800; color: var(--txt); text-align: right; }
+        .auto-dep-actions { display: flex; align-items: center; gap: 12px; }
+        .auto-dep-edit { width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; border-radius: 10px; border: 1px solid var(--line); background: var(--bg-0); cursor: pointer; padding: 0; transition: transform .15s, border-color .2s; }
+        .auto-dep-edit:hover { border-color: var(--gold); }
+        .auto-dep-edit:active { transform: scale(.92); }
+        .auto-dep-edit svg { width: 18px; height: 18px; stroke: #ffffff; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+        body.light-mode-admin .auto-dep-edit { background: #2a2a35; }
+        .auto-dep-check { position: relative; width: 24px; height: 24px; display: inline-block; cursor: pointer; }
+        .auto-dep-check input { position: absolute; inset: 0; opacity: 0; width: 100% !important; height: 100%; margin: 0; padding: 0 !important; cursor: pointer; z-index: 2; }
+        .auto-dep-check .box { position: absolute; inset: 0; border-radius: 6px; border: 2px solid var(--line); background: var(--bg-0); display: flex; align-items: center; justify-content: center; transition: background .2s, border-color .2s; }
+        body.light-mode-admin .auto-dep-check .box { background: #2a2a35; }
+        .auto-dep-check .box svg { width: 15px; height: 15px; stroke: #ffffff; fill: none; stroke-width: 3.2; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 24; stroke-dashoffset: 24; transition: stroke-dashoffset .25s ease; }
+        .auto-dep-check input:checked + .box { background: #16a34a; border-color: #16a34a; }
+        .auto-dep-check input:checked + .box svg { stroke-dashoffset: 0; }
+        .auto-dep-token-hint { font-size: 0.72rem; color: var(--muted); }
+        .auto-dep-preview { max-width: 100%; max-height: 70px; border-radius: 8px; object-fit: cover; }
+
+        #autoDepositHistoryScreen { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 1800; overflow-y: auto; padding: 20px; flex-direction: column; gap: 14px; background: radial-gradient(800px 400px at 90% -10%, rgba(232,194,106,0.10), transparent 60%), var(--bg-0); }
+        #autoDepositHistoryScreen.active { display: flex; }
+        .adh-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; border-bottom: 1px solid var(--line-2); padding-bottom: 12px; }
+        .adh-title { display: flex; align-items: center; gap: 10px; font-size: 1.1rem; font-weight: 800; color: var(--gold); }
+        .adh-live { width: 9px; height: 9px; border-radius: 50%; background: #22c55e; animation: adhPulse 1.8s infinite; }
+        @keyframes adhPulse { 0% { box-shadow: 0 0 0 0 rgba(34,197,94,.55); } 70% { box-shadow: 0 0 0 9px rgba(34,197,94,0); } 100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); } }
+        @keyframes adhSpin { to { transform: rotate(360deg); } }
+        @keyframes adhIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+        .adh-top-actions { display: flex; gap: 8px; align-items: center; }
+        .adh-icon-btn { width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; border-radius: 10px; border: 1px solid var(--line); background: var(--bg-1); color: var(--txt); cursor: pointer; padding: 0; transition: border-color .2s, transform .15s; }
+        .adh-icon-btn:hover { border-color: var(--gold); }
+        .adh-icon-btn:active { transform: scale(.92); }
+        .adh-icon-btn svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+        .adh-icon-btn.spin svg { animation: adhSpin .8s linear infinite; }
+        .adh-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+        @media (min-width: 720px) { .adh-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+        .adh-stat { position: relative; overflow: hidden; padding: 14px; border-radius: 16px; background: linear-gradient(150deg, var(--bg-3), var(--bg-1)); border: 1px solid var(--line-2); display: flex; flex-direction: column; gap: 6px; animation: adhIn .35s ease both; }
+        .adh-stat::after { content: ''; position: absolute; top: -34px; left: -34px; width: 100px; height: 100px; border-radius: 50%; background: radial-gradient(circle, var(--adh-c, rgba(232,194,106,.2)), transparent 70%); pointer-events: none; }
+        .adh-stat-lbl { font-size: .7rem; color: var(--muted); font-weight: 700; }
+        .adh-stat-val { font-size: 1.2rem; font-weight: 900; color: var(--txt); direction: ltr; text-align: right; }
+        .adh-stat-sub { font-size: .66rem; color: var(--muted); direction: ltr; text-align: right; }
+        .adh-strip { display: flex; gap: 10px; flex-wrap: wrap; }
+        .adh-cur { flex: 1; min-width: 150px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px; border-radius: 12px; background: var(--bg-1); border: 1px dashed var(--line); font-size: .74rem; color: var(--muted); }
+        .adh-cur b { color: var(--gold); font-size: .82rem; direction: ltr; }
+        .adh-tools { display: flex; flex-direction: column; gap: 8px; }
+        .adh-search { background: var(--bg-0); border: 1px solid var(--line); color: var(--txt); border-radius: 12px; padding: 11px 13px; font-size: .82rem; width: 100%; box-sizing: border-box; }
+        .adh-search:focus { outline: none; border-color: var(--gold); }
+        .adh-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+        .adh-chip { padding: 7px 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--bg-1); color: var(--muted); font-size: .75rem; font-weight: 800; cursor: pointer; transition: all .2s; }
+        .adh-chip:hover { border-color: var(--gold); color: var(--txt); }
+        .adh-chip.on { background: var(--gold); color: #1a1405; border-color: var(--gold); }
+        .adh-count { font-size: .7rem; color: var(--muted); }
+        .adh-list { display: flex; flex-direction: column; gap: 10px; padding-bottom: 30px; }
+        .adh-empty { text-align: center; color: var(--muted); font-size: .82rem; padding: 40px 10px; }
+        .adh-card { position: relative; display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border-radius: 16px; background: linear-gradient(150deg, var(--bg-3), var(--bg-1)); border: 1px solid var(--line-2); border-right: 3px solid #22c55e; cursor: pointer; transition: border-color .25s, transform .15s, box-shadow .25s; animation: adhIn .3s ease both; }
+        .adh-card:hover { border-color: var(--gold); box-shadow: 0 6px 22px rgba(0,0,0,.25); }
+        .adh-card:active { transform: scale(.992); }
+        .adh-card.wait { border-right-color: #f59e0b; }
+        .adh-card.bad { border-right-color: #ef4444; }
+        .adh-row1 { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+        .adh-method { display: flex; align-items: center; gap: 10px; min-width: 0; }
+        .adh-ico { flex: 0 0 38px; width: 38px; height: 38px; border-radius: 12px; display: flex; align-items: center; justify-content: center; background: rgba(232,194,106,.12); border: 1px solid rgba(232,194,106,.3); color: var(--gold); }
+        .adh-ico svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+        .adh-mname { font-size: .9rem; font-weight: 800; color: var(--txt); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .adh-mdate { font-size: .66rem; color: var(--muted); direction: ltr; text-align: right; }
+        .adh-amt { font-size: 1.1rem; font-weight: 900; color: #22c55e; direction: ltr; white-space: nowrap; }
+        .adh-row2 { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .adh-mail { font-size: .74rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; direction: ltr; }
+        .adh-tx-s { font-size: .66rem; color: var(--muted); font-family: monospace; direction: ltr; opacity: .85; }
+        .adh-badge { display: inline-flex; align-items: center; gap: 5px; padding: 4px 11px; border-radius: 999px; font-size: .7rem; font-weight: 800; border: 1px solid transparent; white-space: nowrap; }
+        .adh-badge svg { width: 13px; height: 13px; stroke: currentColor; fill: none; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+        .adh-badge.ok { background: rgba(34,197,94,.14); color: #22c55e; border-color: rgba(34,197,94,.35); }
+        .adh-badge.wait { background: rgba(245,158,11,.14); color: #f59e0b; border-color: rgba(245,158,11,.35); }
+        .adh-badge.bad { background: rgba(239,68,68,.14); color: #ef4444; border-color: rgba(239,68,68,.35); }
+        .adh-more { align-self: center; margin-top: 4px; }
+        .adh-dhead { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 6px 0 14px; border-bottom: 1px solid var(--line-2); margin-bottom: 10px; }
+        .adh-damt { font-size: 1.8rem; font-weight: 900; color: #22c55e; direction: ltr; }
+        .adh-dmeth { font-size: .85rem; color: var(--muted); font-weight: 700; }
+        .adh-drow { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 9px 0; border-bottom: 1px dashed var(--line-2); font-size: .8rem; }
+        .adh-drow span { color: var(--muted); flex: 0 0 auto; }
+        .adh-drow b { color: var(--txt); text-align: left; direction: ltr; word-break: break-all; }
+        .adh-drow b.adh-tx { cursor: pointer; font-family: monospace; color: var(--gold); }
+        .adh-tl { display: flex; flex-direction: column; gap: 0; margin-top: 14px; padding-right: 4px; }
+        .adh-step { position: relative; display: flex; align-items: flex-start; gap: 12px; padding-bottom: 16px; }
+        .adh-step:last-child { padding-bottom: 0; }
+        .adh-step::before { content: ''; position: absolute; right: 11px; top: 24px; bottom: 0; width: 2px; background: var(--line); }
+        .adh-step:last-child::before { display: none; }
+        .adh-dot { flex: 0 0 24px; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: #16a34a; color: #fff; z-index: 1; }
+        .adh-dot svg { width: 13px; height: 13px; stroke: currentColor; fill: none; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+        .adh-step.pending .adh-dot { background: var(--bg-1); border: 2px solid #f59e0b; color: #f59e0b; }
+        .adh-step.fail .adh-dot { background: #ef4444; }
+        .adh-stt { font-size: .8rem; font-weight: 800; color: var(--txt); }
+        .adh-sts { font-size: .68rem; color: var(--muted); margin-top: 2px; }
+
+        #tgNotifyScreen { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 1800; overflow-y: auto; padding: 20px 20px 0; flex-direction: column; gap: 14px; background: radial-gradient(800px 400px at 90% -10%, rgba(56,189,248,0.10), transparent 60%), var(--bg-0); }
+        #tgNotifyScreen.active { display: flex; }
+        .tgn-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; border-bottom: 1px solid var(--line-2); padding-bottom: 12px; }
+        .tgn-title { display: flex; align-items: center; gap: 10px; font-size: 1.1rem; font-weight: 800; color: #38bdf8; }
+        .tgn-title-ico { width: 34px; height: 34px; border-radius: 11px; display: flex; align-items: center; justify-content: center; background: rgba(56,189,248,.12); border: 1px solid rgba(56,189,248,.35); }
+        .tgn-title-ico svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+        .tgn-hint { font-size: .76rem; line-height: 1.9; color: var(--muted); background: var(--bg-1); border: 1px dashed var(--line); border-radius: 14px; padding: 12px 14px; }
+        .tgn-hint b { color: var(--txt); display: block; font-size: .82rem; }
+        .tgn-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); gap: 12px; align-items: start; }
+        .tgn-card { display: flex; flex-direction: column; gap: 11px; padding: 16px; border-radius: 18px; background: linear-gradient(150deg, var(--bg-3), var(--bg-1)); border: 1px solid var(--line-2); transition: border-color .25s, opacity .25s; animation: adhIn .35s ease both; }
+        .tgn-card:hover { border-color: rgba(56,189,248,.55); }
+        .tgn-card.off { opacity: .6; }
+        .tgn-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+        .tgn-who { display: flex; align-items: center; gap: 10px; min-width: 0; }
+        .tgn-ic { flex: 0 0 40px; width: 40px; height: 40px; border-radius: 13px; display: flex; align-items: center; justify-content: center; background: rgba(232,194,106,.12); border: 1px solid rgba(232,194,106,.3); color: var(--gold); }
+        .tgn-ic svg { width: 19px; height: 19px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+        .tgn-name { font-size: .92rem; font-weight: 800; color: var(--txt); }
+        .tgn-desc { font-size: .68rem; color: var(--muted); line-height: 1.6; margin-top: 2px; }
+        .tgn-badge { align-self: flex-start; display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: .64rem; font-weight: 800; border: 1px solid var(--line); color: var(--muted); }
+        .tgn-badge.on { color: #22c55e; background: rgba(34,197,94,.12); border-color: rgba(34,197,94,.35); }
+        .tgn-badge.inh { color: #38bdf8; background: rgba(56,189,248,.12); border-color: rgba(56,189,248,.35); }
+        .tgn-field { display: flex; flex-direction: column; gap: 5px; }
+        .tgn-field label { font-size: .7rem; font-weight: 700; color: var(--muted); }
+        .tgn-inrow { display: flex; gap: 6px; }
+        .tgn-input { flex: 1; min-width: 0; background: var(--bg-0); border: 1px solid var(--line); color: var(--txt); border-radius: 11px; padding: 10px 12px; font-size: .8rem; direction: ltr; text-align: left; box-sizing: border-box; font-family: monospace; }
+        .tgn-input:focus { outline: none; border-color: #38bdf8; }
+        .tgn-sub { font-size: .66rem; color: var(--muted); min-height: 1em; }
+        .tgn-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+        .tgn-mini { padding: 8px 13px; border-radius: 10px; border: 1px solid #38bdf8; background: rgba(56,189,248,.1); color: #38bdf8; font-size: .72rem; font-weight: 800; cursor: pointer; transition: transform .15s, background .2s; }
+        .tgn-mini:hover { background: rgba(56,189,248,.2); }
+        .tgn-mini:active { transform: scale(.95); }
+        .tgn-mini.ghost { border-color: var(--line); background: var(--bg-0); color: var(--muted); }
+        .tgn-mini.ghost:hover { color: var(--txt); border-color: var(--gold); }
+        .tgn-switch { position: relative; flex: 0 0 46px; width: 46px; height: 26px; display: inline-block; }
+        .tgn-switch input { position: absolute; inset: 0; opacity: 0; width: 100% !important; height: 100%; margin: 0; padding: 0 !important; cursor: pointer; z-index: 2; }
+        .tgn-switch span { position: absolute; inset: 0; border-radius: 999px; background: var(--bg-0); border: 1px solid var(--line); transition: background .25s, border-color .25s; }
+        .tgn-switch span::after { content: ''; position: absolute; top: 3px; right: 3px; width: 18px; height: 18px; border-radius: 50%; background: var(--muted); transition: transform .25s, background .25s; }
+        .tgn-switch input:checked + span { background: #16a34a; border-color: #16a34a; }
+        .tgn-switch input:checked + span::after { transform: translateX(-20px); background: #fff; }
+        .tgn-bar { position: sticky; bottom: 0; margin: 0 -20px; padding: 12px 20px; display: flex; align-items: center; gap: 10px; background: linear-gradient(to top, var(--bg-0) 70%, transparent); }
+        .tgn-status { flex: 1; font-size: .74rem; font-weight: 700; color: #22c55e; }
+        .tgn-status.err { color: #f87171; }
+        .tgn-save { padding: 11px 22px; border-radius: 12px; border: none; background: linear-gradient(135deg, #b8902f, var(--gold)); color: #1a1405; font-weight: 900; font-size: .85rem; cursor: pointer; transition: transform .15s, opacity .2s; }
+        .tgn-save:active { transform: scale(.96); }
+        .tgn-save:disabled { opacity: .6; cursor: wait; }
+        .tgn-test-all { display: inline-flex; align-items: center; gap: 6px; padding: 11px 16px; border-radius: 12px; border: 1px solid #a78bfa; background: rgba(167,139,250,.12); color: #a78bfa; font-weight: 800; font-size: .8rem; cursor: pointer; }
+        .tgn-test-all svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+        .tgr-sum { text-align: center; font-size: .85rem; font-weight: 800; color: var(--txt); padding: 4px 0 12px; }
+        .tgr-row { display: flex; align-items: flex-start; gap: 11px; padding: 11px 0; border-bottom: 1px dashed var(--line-2); }
+        .tgr-row:last-child { border-bottom: none; }
+        .tgr-ic { flex: 0 0 28px; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+        .tgr-ic svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+        .tgr-ic.ok { background: rgba(34,197,94,.15); color: #22c55e; }
+        .tgr-ic.fail { background: rgba(239,68,68,.15); color: #ef4444; }
+        .tgr-ic.off { background: rgba(161,161,170,.15); color: #a1a1aa; }
+        .tgr-ic.missing { background: rgba(245,158,11,.15); color: #f59e0b; }
+        .tgr-t { font-size: .82rem; font-weight: 800; color: var(--txt); }
+        .tgr-m { font-size: .72rem; color: var(--muted); margin-top: 2px; line-height: 1.6; }
+        .tgr-b { font-size: .68rem; color: var(--gold); direction: ltr; text-align: right; font-family: monospace; }
+        .tgr-load { text-align: center; color: var(--muted); font-size: .82rem; padding: 26px 0; }
+
         .client-card { background-color: #121212; border: 1px solid #27272a; border-radius: 14px; padding: 14px 18px; cursor: pointer; display: flex; flex-direction: column; gap: 6px; transition: border-color 0.2s; }
         body.light-mode-admin .client-card { background-color: #ffffff; border-color: #e4e4e7; }
         .client-card:hover { border-color: #38bdf8; }
@@ -6913,17 +8509,397 @@ ADMIN_HTML_CONTENT = """
         body.light-mode-admin .group-selector-box select { background: #ffffff; border-color: #e4e4e7; color: #09090b; }
         .group-selector-box .add-group-btn { margin-top: 8px; width: 100%; padding: 10px; background: linear-gradient(135deg, #a855f7, #9333ea); border: none; border-radius: 8px; color: #fff; font-size: 0.85rem; font-weight: 700; cursor: pointer; }
         .group-badge { display: inline-block; background: linear-gradient(135deg, #a855f7, #9333ea); color: #fff; font-size: 0.65rem; font-weight: 800; padding: 2px 8px; border-radius: 8px; margin-right: 4px; }
+
+        /* ================================================================
+           PREMIUM ADMIN THEME  -  طبقة التصميم الفخم (تغطي على القديم بدون كسر أي وظيفة)
+           ================================================================ */
+        :root {
+            --gold: #e8c26a; --gold-2: #f6e0a0; --gold-3: #b8893a;
+            --bg-0: #07070c; --bg-1: #0d0d14; --bg-2: #14141e; --bg-3: #1b1b28;
+            --line: rgba(232,194,106,0.14); --line-2: rgba(255,255,255,0.07);
+            --txt: #f4f1e8; --muted: #9a97a6;
+            --glow: 0 0 0 1px rgba(232,194,106,0.25), 0 10px 30px -10px rgba(232,194,106,0.25);
+            --shadow: 0 18px 40px -18px rgba(0,0,0,0.9);
+        }
+        body.light-mode-admin {
+            --bg-0: #f6f3ec; --bg-1: #ffffff; --bg-2: #fbf9f3; --bg-3: #f0ece1;
+            --line: rgba(184,137,58,0.28); --line-2: rgba(0,0,0,0.07);
+            --txt: #1a1812; --muted: #6f6a5c;
+            --shadow: 0 18px 40px -22px rgba(80,60,20,0.35);
+        }
+        html { scroll-behavior: smooth; }
+        body {
+            background:
+                radial-gradient(900px 500px at 85% -10%, rgba(232,194,106,0.10), transparent 60%),
+                radial-gradient(700px 420px at 0% 10%, rgba(99,102,241,0.08), transparent 60%),
+                var(--bg-0) !important;
+            background-attachment: fixed !important;
+            color: var(--txt) !important;
+            padding: 18px 16px 60px !important;
+        }
+        ::selection { background: var(--gold); color: #000; }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: linear-gradient(var(--gold-3), var(--gold)); border-radius: 8px; }
+
+        /* ---------- Header ---------- */
+        .admin-header {
+            position: sticky; top: 8px; z-index: 50;
+            background: linear-gradient(135deg, rgba(20,20,30,0.78), rgba(13,13,20,0.78)) !important;
+            backdrop-filter: blur(18px) saturate(140%); -webkit-backdrop-filter: blur(18px) saturate(140%);
+            border: 1px solid var(--line) !important; border-radius: 18px;
+            padding: 10px 14px !important; margin-bottom: 22px !important;
+            box-shadow: var(--shadow);
+            max-width: 1100px; margin-left: auto !important; margin-right: auto !important;
+        }
+        body.light-mode-admin .admin-header { background: rgba(255,255,255,0.82) !important; }
+        .admin-header .title {
+            font-size: 1.15rem !important; font-weight: 800 !important; letter-spacing: 0.3px;
+            background: linear-gradient(90deg, var(--gold-2), var(--gold), var(--gold-3));
+            -webkit-background-clip: text; background-clip: text; color: transparent !important;
+            display: flex; align-items: center; gap: 8px;
+        }
+        .admin-header .menu-btn, .dark-mode-admin-btn {
+            background: var(--bg-2) !important; border: 1px solid var(--line) !important;
+            border-radius: 12px !important; transition: all .25s ease; cursor: pointer;
+        }
+        .dark-mode-admin-btn { border-radius: 12px !important; }
+        .admin-header .menu-btn:hover, .dark-mode-admin-btn:hover { border-color: var(--gold) !important; box-shadow: var(--glow); transform: translateY(-1px); }
+        .admin-header .menu-btn span { background: var(--gold) !important; }
+
+        /* ---------- Sidebar ---------- */
+        .sidebar-overlay { background: rgba(3,3,8,0.7) !important; backdrop-filter: blur(6px) !important; }
+        .sidebar {
+            width: 320px !important; right: -340px;
+            background: linear-gradient(180deg, var(--bg-1), var(--bg-0)) !important;
+            border-left: 1px solid var(--line) !important;
+            box-shadow: -30px 0 60px -20px rgba(0,0,0,0.8);
+            overflow-y: auto; padding: 18px 14px !important; gap: 10px;
+            transition: right .35s cubic-bezier(.2,.8,.2,1) !important;
+        }
+        .sidebar.active { right: 0 !important; }
+        .sidebar-header { border-bottom: 1px solid var(--line) !important; padding-bottom: 14px !important; margin-bottom: 4px; }
+        .sidebar-header > div { color: var(--gold) !important; font-size: 1.05rem !important; font-weight: 800 !important; }
+        .sidebar-header .close-btn { width: 34px; height: 34px; border-radius: 10px; background: var(--bg-2); border: 1px solid var(--line-2); color: var(--muted); transition: all .2s; }
+        .sidebar-header .close-btn:hover { color: #000; background: var(--gold); transform: rotate(90deg); }
+        .sidebar-search { position: relative; margin: 4px 0 6px; }
+        .sidebar-search input {
+            width: 100%; padding: 11px 40px 11px 14px !important; border-radius: 12px !important;
+            background: var(--bg-2) !important; border: 1px solid var(--line-2) !important; color: var(--txt) !important;
+            font-size: 0.85rem !important; transition: all .2s;
+        }
+        .sidebar-search input:focus { border-color: var(--gold) !important; box-shadow: var(--glow); }
+        .admin-menu-btn {
+            background: linear-gradient(135deg, var(--bg-3), var(--bg-2)) !important;
+            border: 1px solid var(--line-2) !important; border-radius: 14px !important;
+            padding: 13px 14px !important; color: var(--txt) !important; font-size: .88rem !important;
+            transition: all .25s ease; position: relative; overflow: hidden;
+        }
+        .admin-menu-btn::before { content: ""; position: absolute; right: 0; top: 20%; bottom: 20%; width: 3px; border-radius: 3px; background: linear-gradient(var(--gold-2), var(--gold-3)); opacity: .0; transition: opacity .25s; }
+        .admin-menu-btn:hover { border-color: var(--gold) !important; transform: translateX(-2px); box-shadow: var(--glow); }
+        .admin-menu-btn:hover::before { opacity: 1; }
+        .admin-menu-btn > span:last-child { color: var(--gold); font-size: .7rem; transition: transform .25s; }
+        .sub-menu { gap: 7px !important; padding: 6px 12px 8px 0 !important; border-right: 1px dashed var(--line); margin-right: 10px; animation: subIn .28s ease; }
+        @keyframes subIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+        .sub-menu-btn {
+            background: var(--bg-2) !important; border: 1px solid var(--line-2) !important;
+            border-radius: 11px !important; padding: 10px 12px !important; transition: all .2s ease;
+        }
+        .sub-menu-btn:hover { transform: translateX(-3px); background: var(--bg-3) !important; box-shadow: 0 6px 16px -8px rgba(0,0,0,.7); }
+        body.light-mode-admin .sub-menu-btn, body.light-mode-admin .admin-menu-btn { background: var(--bg-2) !important; }
+
+        /* ---------- Hero / Greeting ---------- */
+        .hero-box {
+            max-width: 1100px; margin: 0 auto 22px; position: relative; overflow: hidden;
+            border-radius: 24px; padding: 22px 22px;
+            background:
+                radial-gradient(500px 220px at 100% 0%, rgba(232,194,106,0.22), transparent 60%),
+                linear-gradient(135deg, #1a1a28 0%, #0e0e17 60%, #14111a 100%);
+            border: 1px solid var(--line); box-shadow: var(--shadow);
+            display: flex; justify-content: space-between; align-items: center; gap: 14px; flex-wrap: wrap;
+        }
+        body.light-mode-admin .hero-box { background: radial-gradient(500px 220px at 100% 0%, rgba(232,194,106,0.35), transparent 60%), linear-gradient(135deg, #fffdf6, #f6efdc); }
+        .hero-box::after { content: ""; position: absolute; left: -40px; bottom: -60px; width: 180px; height: 180px; border-radius: 50%; background: radial-gradient(circle, rgba(232,194,106,0.18), transparent 70%); pointer-events: none; }
+        .hero-hello { font-size: .78rem; color: var(--gold); font-weight: 700; letter-spacing: .5px; }
+        .hero-name { font-size: 1.5rem; font-weight: 800; margin: 2px 0 4px; color: var(--txt); }
+        .hero-sub { font-size: .78rem; color: var(--muted); }
+        .hero-clock { text-align: left; direction: ltr; }
+        .hero-time { font-size: 1.9rem; font-weight: 800; font-variant-numeric: tabular-nums; background: linear-gradient(90deg, var(--gold-2), var(--gold)); -webkit-background-clip: text; background-clip: text; color: transparent; line-height: 1; }
+        .hero-date { font-size: .72rem; color: var(--muted); margin-top: 6px; }
+        .live-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #34d399; margin-left: 6px; box-shadow: 0 0 0 0 rgba(52,211,153,.7); animation: livePulse 1.8s infinite; }
+        @keyframes livePulse { 0% { box-shadow: 0 0 0 0 rgba(52,211,153,.6);} 70% { box-shadow: 0 0 0 10px rgba(52,211,153,0);} 100% { box-shadow: 0 0 0 0 rgba(52,211,153,0);} }
+
+        /* ---------- Quick actions ---------- */
+        .quick-actions { max-width: 1100px; margin: 0 auto 22px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+        .qa-btn {
+            border: 1px solid var(--line-2); background: linear-gradient(145deg, var(--bg-3), var(--bg-2));
+            color: var(--txt); border-radius: 16px; padding: 14px 6px; cursor: pointer;
+            display: flex; flex-direction: column; align-items: center; gap: 7px;
+            font-size: .74rem; font-weight: 700; transition: all .25s ease; position: relative; overflow: hidden;
+        }
+        .qa-btn .qa-ico { width: 40px; height: 40px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.15rem; background: rgba(232,194,106,0.12); border: 1px solid var(--line); transition: transform .25s; }
+        .qa-btn:hover { transform: translateY(-4px); border-color: var(--gold); box-shadow: var(--glow); }
+        .qa-btn:hover .qa-ico { transform: scale(1.1) rotate(-4deg); }
+        .qa-btn:active { transform: scale(.96); }
+
+        /* ---------- Section titles ---------- */
+        .section-title { max-width: 1100px; margin: 0 auto 12px; display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 1rem; color: var(--txt); }
+        .section-title::before { content: ""; width: 4px; height: 20px; border-radius: 4px; background: linear-gradient(var(--gold-2), var(--gold-3)); }
+        .section-title::after { content: ""; flex: 1; height: 1px; background: linear-gradient(90deg, var(--line), transparent); }
+
+        /* ---------- Stats cards ---------- */
+        .main-content-wrapper { max-width: 1100px !important; }
+        #dashboardStatsContainer { display: grid !important; grid-template-columns: repeat(2, 1fr); gap: 14px; margin: 0 !important; --bs-gutter-x: 0; }
+        #dashboardStatsContainer > .col { width: auto !important; max-width: none !important; padding: 0 !important; margin: 0 !important; flex: none !important; }
+        .admin-card {
+            background: linear-gradient(150deg, var(--bg-3), var(--bg-1)) !important;
+            border: 1px solid var(--line-2) !important; border-radius: 20px !important;
+            padding: 18px 16px !important; position: relative; overflow: hidden;
+            box-shadow: var(--shadow); transition: transform .3s ease, border-color .3s, box-shadow .3s !important;
+            animation: cardIn .6s cubic-bezier(.2,.8,.2,1) both;
+        }
+        body.light-mode-admin .admin-card { background: linear-gradient(150deg, #ffffff, #faf6ea) !important; }
+        @keyframes cardIn { from { opacity: 0; transform: translateY(14px) scale(.97); } to { opacity: 1; transform: none; } }
+        #dashboardStatsContainer > .col:nth-child(2) .admin-card { animation-delay: .06s; }
+        #dashboardStatsContainer > .col:nth-child(3) .admin-card { animation-delay: .12s; }
+        #dashboardStatsContainer > .col:nth-child(4) .admin-card { animation-delay: .18s; }
+        #dashboardStatsContainer > .col:nth-child(5) .admin-card { animation-delay: .24s; }
+        #dashboardStatsContainer > .col:nth-child(6) .admin-card { animation-delay: .30s; }
+        .admin-card::before { content: ""; position: absolute; top: -50px; left: -50px; width: 130px; height: 130px; border-radius: 50%; background: radial-gradient(circle, var(--cc, #e8c26a) 0%, transparent 70%); opacity: .18; transition: opacity .3s, transform .4s; }
+        .admin-card:hover { transform: translateY(-5px); border-color: var(--cc, var(--gold)) !important; box-shadow: 0 20px 40px -20px var(--cc, #e8c26a); }
+        .admin-card:hover::before { opacity: .32; transform: scale(1.25); }
+        .card-requests { --cc: #60a5fa; } .card-pending { --cc: #facc15; } .card-users { --cc: #2dd4bf; }
+        .card-products { --cc: #4ade80; } .card-balance { --cc: #e8c26a; } .card-deposit-pending { --cc: #f87171; }
+        .card-label { color: var(--muted) !important; font-size: .78rem !important; margin: 40px 0 2px !important; text-align: right !important; }
+        .card-value { font-size: 1.9rem !important; font-weight: 800 !important; text-align: right !important; font-variant-numeric: tabular-nums; letter-spacing: -.5px; }
+        .card-balance .card-value { background: linear-gradient(90deg, var(--gold-2), var(--gold)); -webkit-background-clip: text; background-clip: text; color: transparent !important; }
+        .btn-card-action {
+            margin-top: 12px; border-radius: 12px !important; padding: 9px !important; font-size: .78rem !important;
+            border-width: 1px !important; background: rgba(255,255,255,0.03) !important; transition: all .25s !important;
+        }
+        .admin-card:hover .btn-card-action { background: var(--cc) !important; color: #0b0b10 !important; border-color: var(--cc) !important; }
+
+        /* ---------- Modals ---------- */
+        .modal-overlay { background: rgba(4,4,10,0.78) !important; backdrop-filter: blur(8px) !important; }
+        .modal-box {
+            background: linear-gradient(160deg, var(--bg-3), var(--bg-1)) !important;
+            border: 1px solid var(--line) !important; border-radius: 22px !important; padding: 22px !important;
+            box-shadow: 0 30px 80px -20px rgba(0,0,0,.9), 0 0 0 1px rgba(232,194,106,0.06);
+            animation: modalIn .35s cubic-bezier(.2,.9,.3,1.2);
+        }
+        @keyframes modalIn { from { opacity: 0; transform: translateY(24px) scale(.94); } to { opacity: 1; transform: none; } }
+        .modal-title { color: var(--gold) !important; font-size: 1.02rem !important; font-weight: 800 !important; border-bottom: 1px solid var(--line) !important; padding-bottom: 12px !important; }
+        label { color: var(--muted) !important; font-weight: 600; }
+        input, select, textarea {
+            background: var(--bg-0) !important; border: 1px solid var(--line-2) !important; color: var(--txt) !important;
+            border-radius: 11px !important; padding: 10px 12px !important; transition: border-color .2s, box-shadow .2s;
+        }
+        input:focus, select:focus, textarea:focus { border-color: var(--gold) !important; box-shadow: 0 0 0 3px rgba(232,194,106,0.15) !important; }
+        input::placeholder, textarea::placeholder { color: #6b6879; }
+        body.light-mode-admin input, body.light-mode-admin select, body.light-mode-admin textarea { background: #fffdf8 !important; }
+        .save-btn, .btn-accept {
+            background: linear-gradient(135deg, var(--gold-2), var(--gold) 45%, var(--gold-3)) !important; color: #1a1305 !important;
+            border-radius: 12px !important; font-weight: 800 !important; box-shadow: 0 10px 24px -10px rgba(232,194,106,0.6);
+            transition: transform .15s, box-shadow .25s, filter .25s;
+        }
+        .save-btn:hover, .btn-accept:hover { filter: brightness(1.08); box-shadow: 0 14px 30px -10px rgba(232,194,106,0.8); transform: translateY(-1px); }
+        .btn-accept { background: linear-gradient(135deg, #34d399, #059669) !important; color: #fff !important; box-shadow: 0 10px 24px -10px rgba(16,185,129,.6); }
+        .delete-btn, .btn-reject { background: linear-gradient(135deg, #f87171, #dc2626) !important; border-radius: 12px !important; box-shadow: 0 10px 24px -10px rgba(220,38,38,.6); transition: transform .15s, filter .2s; }
+        .delete-btn:hover, .btn-reject:hover { filter: brightness(1.1); transform: translateY(-1px); }
+        .btn-secondary { background: var(--bg-3) !important; border: 1px solid var(--line) !important; color: var(--txt) !important; border-radius: 12px !important; transition: all .2s; }
+        .btn-secondary:hover { border-color: var(--gold) !important; color: var(--gold) !important; }
+        .save-btn:active, .delete-btn:active, .btn-secondary:active, .btn-accept:active, .btn-reject:active { transform: scale(.97); }
+
+        /* ---------- Lists & cards in sub pages ---------- */
+        .request-card-item, .provider-item-rect, .client-card, .group-item-card-admin, .maint-toggle-box, .client-detail-card, .multi-select-item, .delete-step-box {
+            background: linear-gradient(150deg, var(--bg-3), var(--bg-1)) !important;
+            border: 1px solid var(--line-2) !important; border-radius: 16px !important;
+            transition: transform .25s ease, border-color .25s, box-shadow .25s !important;
+        }
+        body.light-mode-admin .request-card-item, body.light-mode-admin .provider-item-rect, body.light-mode-admin .client-card, body.light-mode-admin .client-detail-card { background: #ffffff !important; }
+        .request-card-item:hover, .provider-item-rect:hover, .client-card:hover, .multi-select-item:hover { border-color: var(--gold) !important; transform: translateY(-2px); box-shadow: var(--glow); }
+        .card-val-right { color: var(--gold) !important; }
+        .card-title-left, .provider-name-txt, .client-detail-value { color: var(--txt) !important; }
+        .client-card .cc-email { color: var(--gold-2) !important; }
+        .api-service-card, .admin-field-box, .group-selector-box { background: var(--bg-0) !important; border: 1px solid var(--line-2) !important; border-radius: 12px !important; color: var(--txt); }
+        .api-copyable-id { color: var(--gold) !important; background: rgba(232,194,106,0.1) !important; border: 1px dashed var(--gold) !important; }
+        #adminLoginScreen, #clientsListScreen, #clientDetailScreen { background: var(--bg-0) !important; }
+        #clientsListScreen, #clientDetailScreen { background: radial-gradient(800px 400px at 90% -10%, rgba(232,194,106,0.10), transparent 60%), var(--bg-0) !important; }
+        .client-detail-row { border-color: var(--line-2) !important; }
+        .discount-badge { background: linear-gradient(135deg, var(--gold-2), var(--gold-3)) !important; }
+        .success-circle { box-shadow: 0 0 0 8px rgba(74,222,128,0.08), 0 0 30px rgba(74,222,128,0.3); }
+        .maint-slider { box-shadow: inset 0 0 0 1px rgba(255,255,255,0.1); }
+
+        /* ---------- Login ---------- */
+        #adminLoginScreen {
+            background:
+                radial-gradient(700px 500px at 80% 0%, rgba(232,194,106,0.16), transparent 60%),
+                radial-gradient(600px 500px at 0% 100%, rgba(99,102,241,0.14), transparent 60%),
+                var(--bg-0) !important;
+        }
+        @keyframes floaty { 0%,100% { transform: translateY(0);} 50% { transform: translateY(-8px);} }
+        #adminLoginScreen .login-box {
+            background: linear-gradient(160deg, rgba(27,27,40,0.85), rgba(13,13,20,0.9)) !important;
+            backdrop-filter: blur(20px); border: 1px solid var(--line) !important; border-radius: 26px !important;
+            box-shadow: 0 40px 90px -30px rgba(0,0,0,0.95), 0 0 0 1px rgba(232,194,106,0.06) !important;
+            animation: modalIn .6s cubic-bezier(.2,.9,.3,1.1);
+        }
+        body.light-mode-admin #adminLoginScreen .login-box { background: rgba(255,255,255,0.9) !important; }
+        #adminLoginScreen .login-box h2 { background: linear-gradient(90deg, var(--gold-2), var(--gold), var(--gold-3)); -webkit-background-clip: text; background-clip: text; color: transparent !important; font-size: 1.4rem !important; }
+        #adminLoginScreen .login-box input { border-radius: 14px !important; background: var(--bg-0) !important; border: 1px solid var(--line-2) !important; color: var(--txt) !important; padding: 14px 18px !important; }
+        #adminLoginScreen .login-box input:focus { border-color: var(--gold) !important; box-shadow: 0 0 0 3px rgba(232,194,106,0.15) !important; }
+        #adminLoginScreen .login-box button {
+            background: linear-gradient(135deg, var(--gold-2), var(--gold) 45%, var(--gold-3)) !important; color: #1a1305 !important;
+            border-radius: 14px !important; box-shadow: 0 14px 30px -12px rgba(232,194,106,0.7) !important; transition: transform .15s, filter .2s;
+        }
+        #adminLoginScreen .login-box button:hover { filter: brightness(1.08); transform: translateY(-1px); }
+
+        /* ---------- Toast ---------- */
+        #premiumToast {
+            position: fixed; bottom: 22px; left: 50%; transform: translate(-50%, 30px); opacity: 0; pointer-events: none;
+            background: linear-gradient(135deg, var(--bg-3), var(--bg-1)); border: 1px solid var(--gold); color: var(--txt);
+            padding: 12px 20px; border-radius: 14px; font-size: .85rem; font-weight: 700; z-index: 999999;
+            box-shadow: var(--glow), var(--shadow); transition: all .35s cubic-bezier(.2,.9,.3,1.2);
+        }
+        #premiumToast.show { opacity: 1; transform: translate(-50%, 0); }
+
+        /* ---------- Responsive ---------- */
+        @media (min-width: 640px) {
+            #dashboardStatsContainer { grid-template-columns: repeat(3, 1fr); }
+        }
+        @media (min-width: 992px) {
+            #dashboardStatsContainer { grid-template-columns: repeat(3, 1fr); gap: 18px; }
+            .hero-name { font-size: 1.8rem; }
+            .quick-actions { grid-template-columns: repeat(8, 1fr); }
+        }
+        @media (max-width: 380px) { .quick-actions { grid-template-columns: repeat(2, 1fr); } .hero-time { font-size: 1.5rem; } }
+        @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+        /* ================= V2: أيقونات SVG + تحسينات احترافية ================= */
+        .ic { width: 1.15em; height: 1.15em; stroke: currentColor; fill: none; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; vertical-align: -0.2em; flex-shrink: 0; display: inline-block; }
+        .ic-lg { width: 1.5em; height: 1.5em; }
+        #adminMainSection { display: none !important; }
+
+        .admin-header .title .ic { color: var(--gold); stroke: var(--gold); width: 1.25em; height: 1.25em; filter: drop-shadow(0 0 8px rgba(232,194,106,0.55)); }
+        .dark-mode-admin-btn { color: var(--gold) !important; }
+        .dark-mode-admin-btn .ic { width: 18px; height: 18px; }
+        .admin-menu-btn > span:first-child { display: flex; align-items: center; gap: 10px; }
+        .admin-menu-btn > span:first-child .ic { color: var(--gold); width: 18px; height: 18px; }
+        .admin-menu-btn > span:last-child .ic { width: 14px; height: 14px; color: var(--gold); }
+        .sub-menu-btn .ic, .modal-title .ic, .group-selector-label .ic { width: 1.1em; height: 1.1em; margin-left: 6px; }
+        .sidebar-search .ic { position: absolute; right: 13px; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; color: var(--gold); opacity: .8; pointer-events: none; }
+        .sidebar-brand { display: flex; align-items: center; gap: 10px; }
+        .sidebar-brand .sb-logo { width: 38px; height: 38px; border-radius: 12px; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, rgba(232,194,106,.22), rgba(232,194,106,.05)); border: 1px solid var(--line); color: var(--gold); }
+        .sidebar-brand .sb-t { font-size: .95rem; font-weight: 800; color: var(--txt); line-height: 1.2; }
+        .sidebar-brand .sb-s { font-size: .68rem; color: var(--muted); font-weight: 600; letter-spacing: .6px; }
+
+        .login-crown { width: 64px; height: 64px; margin: 0 auto 4px; border-radius: 20px; display: flex; align-items: center; justify-content: center; color: var(--gold); background: linear-gradient(135deg, rgba(232,194,106,.2), rgba(232,194,106,.04)); border: 1px solid var(--line); box-shadow: 0 0 40px -8px rgba(232,194,106,.5); animation: floaty 3.5s ease-in-out infinite; }
+        .login-crown .ic { width: 32px; height: 32px; }
+        .login-sub { text-align: center; color: var(--muted); font-size: .78rem; margin-top: -10px; letter-spacing: .4px; }
+        @keyframes floaty { 0%,100% { transform: translateY(0);} 50% { transform: translateY(-6px);} }
+        .error-msg .ic { margin-left: 6px; }
+
+        .card-ico { position: absolute; top: 14px; right: 14px; width: 40px; height: 40px; border-radius: 12px; display: flex; align-items: center; justify-content: center; color: var(--cc, var(--gold)); background: rgba(255,255,255,0.04); border: 1px solid var(--line-2); z-index: 1; }
+        .card-ico .ic { width: 20px; height: 20px; }
+        .admin-card .card-label, .admin-card .card-value, .admin-card .btn-card-action { position: relative; z-index: 1; }
+
+        .hero-hello .ic { width: 14px; height: 14px; margin-left: 4px; }
+        .hero-name { display: flex; align-items: center; gap: 10px; }
+        .hero-name .ic { color: var(--gold); width: 1.1em; height: 1.1em; }
+        .qa-btn .qa-ico .ic { width: 20px; height: 20px; color: var(--gold); }
+        .success-circle .ic { width: 34px; height: 34px; stroke-width: 2.6; }
+        .ims-pen .ic { width: 14px; height: 14px; }
+        .maint-active-banner .icon .ic { width: 22px; height: 22px; }
+        .maint-toggle-btn .ic { margin-left: 8px; }
+        #premiumToast .ic { color: var(--gold); margin-left: 8px; }
     </style>
 </head>
 <body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs>
+<symbol id="i-crown" viewBox="0 0 24 24"><path d="M11.562 3.266a.5.5 0 0 1 .876 0L15.39 8.87a1 1 0 0 0 1.516.294L21.183 5.5a.5.5 0 0 1 .798.519l-2.834 10.246a1 1 0 0 1-.956.734H5.81a1 1 0 0 1-.957-.734L2.02 6.02a.5.5 0 0 1 .798-.519l4.276 3.664a1 1 0 0 0 1.516-.294z"/><path d="M5 21h14"/></symbol>
+<symbol id="i-lock" viewBox="0 0 24 24"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
+<symbol id="i-x-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></symbol>
+<symbol id="i-moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></symbol>
+<symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></symbol>
+<symbol id="i-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+<symbol id="i-chevron-left" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+<symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></symbol>
+<symbol id="i-settings" viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></symbol>
+<symbol id="i-film" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 3v18"/><path d="M3 7.5h4"/><path d="M3 12h18"/><path d="M3 16.5h4"/><path d="M17 3v18"/><path d="M17 7.5h4"/><path d="M17 16.5h4"/></symbol>
+<symbol id="i-megaphone" viewBox="0 0 24 24"><path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></symbol>
+<symbol id="i-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></symbol>
+<symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></symbol>
+<symbol id="i-play" viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></symbol>
+<symbol id="i-package" viewBox="0 0 24 24"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></symbol>
+<symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+<symbol id="i-logout" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></symbol>
+<symbol id="i-user-plus" viewBox="0 0 24 24"><path d="M2 21a8 8 0 0 1 13.292-6"/><circle cx="10" cy="8" r="5"/><path d="M19 16v6"/><path d="M22 19h-6"/></symbol>
+<symbol id="i-shield" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+<symbol id="i-check-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></symbol>
+<symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
+<symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></symbol>
+<symbol id="i-copy" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></symbol>
+<symbol id="i-layers" viewBox="0 0 24 24"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></symbol>
+<symbol id="i-pencil" viewBox="0 0 24 24"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></symbol>
+<symbol id="i-image" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></symbol>
+<symbol id="i-folder" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></symbol>
+<symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></symbol>
+<symbol id="i-smartphone" viewBox="0 0 24 24"><rect width="14" height="20" x="5" y="2" rx="2" ry="2"/><path d="M12 18h.01"/></symbol>
+<symbol id="i-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></symbol>
+<symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+<symbol id="i-user" viewBox="0 0 24 24"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></symbol>
+<symbol id="i-credit-card" viewBox="0 0 24 24"><rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/></symbol>
+<symbol id="i-wallet" viewBox="0 0 24 24"><path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/></symbol>
+<symbol id="i-receipt" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></symbol>
+<symbol id="i-palette" viewBox="0 0 24 24"><circle cx="13.5" cy="6.5" r=".5"/><circle cx="17.5" cy="10.5" r=".5"/><circle cx="8.5" cy="7.5" r=".5"/><circle cx="6.5" cy="12.5" r=".5"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></symbol>
+<symbol id="i-bag" viewBox="0 0 24 24"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></symbol>
+<symbol id="i-plug" viewBox="0 0 24 24"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/></symbol>
+<symbol id="i-gem" viewBox="0 0 24 24"><path d="M6 3h12l4 6-10 13L2 9Z"/><path d="M11 3 8 9l4 13 4-13-3-6"/><path d="M2 9h20"/></symbol>
+<symbol id="i-code" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></symbol>
+<symbol id="i-terminal" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></symbol>
+<symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></symbol>
+<symbol id="i-trending" viewBox="0 0 24 24"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></symbol>
+<symbol id="i-hourglass" viewBox="0 0 24 24"><path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/></symbol>
+<symbol id="i-send" viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></symbol>
+<symbol id="i-mail" viewBox="0 0 24 24"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></symbol>
+<symbol id="i-inbox" viewBox="0 0 24 24"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></symbol>
+<symbol id="i-filter" viewBox="0 0 24 24"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></symbol>
+<symbol id="i-activity" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></symbol>
+<symbol id="i-database" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/></symbol>
+<symbol id="i-inventory" viewBox="0 0 24 24"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></symbol>
+<symbol id="i-bar-chart" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></symbol>
+<symbol id="i-line-chart" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></symbol>
+<symbol id="i-pie-chart" viewBox="0 0 24 24"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></symbol>
+<symbol id="i-calendar" viewBox="0 0 24 24"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></symbol>
+<symbol id="i-calendar-days" viewBox="0 0 24 24"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="M8 14h.01"/><path d="M12 14h.01"/><path d="M16 14h.01"/><path d="M8 18h.01"/><path d="M12 18h.01"/><path d="M16 18h.01"/></symbol>
+<symbol id="i-dollar" viewBox="0 0 24 24"><line x1="12" x2="12" y1="2" y2="22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></symbol>
+<symbol id="i-coins" viewBox="0 0 24 24"><circle cx="8" cy="8" r="6"/><path d="M18.09 10.37A6 6 0 1 1 10.34 18"/><path d="M7 6h1v4"/><path d="m16.71 13.88.7.71-2.82 2.82"/></symbol>
+<symbol id="i-cart" viewBox="0 0 24 24"><circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/></symbol>
+<symbol id="i-trophy" viewBox="0 0 24 24"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></symbol>
+<symbol id="i-percent" viewBox="0 0 24 24"><line x1="19" x2="5" y1="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></symbol>
+<symbol id="i-tag" viewBox="0 0 24 24"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5"/></symbol>
+<symbol id="i-server" viewBox="0 0 24 24"><rect width="20" height="8" x="2" y="2" rx="2" ry="2"/><rect width="20" height="8" x="2" y="14" rx="2" ry="2"/><line x1="6" x2="6.01" y1="6" y2="6"/><line x1="6" x2="6.01" y1="18" y2="18"/></symbol>
+<symbol id="i-arrow-up-right" viewBox="0 0 24 24"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></symbol>
+<symbol id="i-arrow-down-right" viewBox="0 0 24 24"><path d="m7 7 10 10"/><path d="M17 7v10H7"/></symbol>
+<symbol id="i-trending-down" viewBox="0 0 24 24"><polyline points="22 17 13.5 8.5 8.5 13.5 2 7"/><polyline points="16 17 22 17 22 11"/></symbol>
+<symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></symbol>
+<symbol id="i-zap" viewBox="0 0 24 24"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></symbol>
+<symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></symbol>
+<symbol id="i-alert" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
+<symbol id="i-award" viewBox="0 0 24 24"><path d="m15.477 12.89 1.515 8.526a.5.5 0 0 1-.81.47l-3.58-2.687a1 1 0 0 0-1.197 0l-3.586 2.686a.5.5 0 0 1-.81-.469l1.514-8.526"/><circle cx="12" cy="8" r="6"/></symbol>
+</defs></svg>
+
 
     <div id="adminLoginScreen">
         <div class="login-box">
-            <h2>🔐 لوحة التحكم</h2>
+            <div class="login-crown"><svg class="ic"><use href="#i-crown"/></svg></div>
+            <h2>لوحة التحكم</h2>
+            <div class="login-sub">ADMIN CONSOLE</div>
             <input type="email" id="adminEmailInput" placeholder="البريد الإلكتروني" required>
             <input type="password" id="adminPasswordInput" placeholder="كلمة السر" required>
-            <button onclick="handleAdminLogin()">تسجيل الدخول</button>
-            <div class="error-msg" id="adminLoginError">❌ البريد الإلكتروني أو كلمة السر غير صحيحة!</div>
+            <button id="adminLoginBtn" onclick="handleAdminLogin()">تسجيل الدخول</button>
+            <div class="error-msg" id="adminLoginError"><svg class="ic"><use href="#i-x-circle"/></svg> <span id="adminLoginErrText">البريد الإلكتروني أو كلمة السر غير صحيحة!</span></div>
         </div>
     </div>
 
@@ -6934,8 +8910,11 @@ ADMIN_HTML_CONTENT = """
                 <span></span>
                 <span></span>
             </div>
-            <div class="title">لوحة القيادة</div>
-            <button class="dark-mode-admin-btn" onclick="toggleAdminDarkMode()" id="adminDarkModeBtn">🌙</button>
+            <div class="title"><svg class="ic"><use href="#i-crown"/></svg><span>لوحة القيادة</span></div>
+            <div style="display:flex; gap:8px; align-items:center;">
+                <button class="dark-mode-admin-btn" onclick="adminLogout()" title="تسجيل الخروج"><svg class="ic"><use href="#i-logout"/></svg></button>
+                <button class="dark-mode-admin-btn" onclick="toggleAdminDarkMode()" id="adminDarkModeBtn"><svg class="ic"><use href="#i-moon"/></svg></button>
+            </div>
         </div>
 
         <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
@@ -6945,21 +8924,26 @@ ADMIN_HTML_CONTENT = """
                 <button class="close-btn" onclick="toggleSidebar()">&times;</button>
             </div>
 
+            <div class="sidebar-search"><svg class="ic"><use href="#i-search"/></svg><input type="text" id="sidebarSearchInput" placeholder="ابحث عن خيار... (Ctrl+K)" autocomplete="off"></div>
+
             <button class="admin-menu-btn" onclick="toggleSubMenu('settingsMenu')">
                 <span>إعدادات الموقع</span>
-                <span>▼</span>
+                <span><svg class="ic"><use href="#i-chevron"/></svg></span>
             </button>
             <div class="sub-menu" id="settingsMenu">
                 <button class="sub-menu-btn" onclick="openAboutUsSettingsModal()">تعيين من نحن</button>
                 <button class="sub-menu-btn" onclick="openSupportSettingsModal()">تعيين التواصل مع دعم</button>
+                <button class="sub-menu-btn" onclick="openGoogleSettingsModal()" style="color:#60a5fa; border-color:#60a5fa; font-weight:800;">ربط تسجيل جوجل</button>
                 <button class="sub-menu-btn" onclick="openAppearanceSettings()" style="color:#4ade80; border-color:#4ade80;">المظهر وضبط</button>
                 <button class="sub-menu-btn" onclick="openTickerSettingsModal()" style="color:#38bdf8; border-color:#38bdf8;">إعداد الشريط العلوي</button>
-                <button class="sub-menu-btn" onclick="openMaintenanceModal()" style="color:#f87171; border-color:#f87171; font-weight:800;">⚙️ وضع الصيانة</button>
+                <button class="sub-menu-btn" onclick="openMaintenanceModal()" style="color:#f87171; border-color:#f87171; font-weight:800;"><svg class="ic"><use href="#i-settings"/></svg> وضع الصيانة</button>
+                <button class="sub-menu-btn" onclick="openTgNotifyScreen()" style="color:#38bdf8; border-color:#38bdf8; font-weight:800;"><svg class="ic"><use href="#i-send"/></svg> تعيين الاشعارات</button>
+                <button class="sub-menu-btn" onclick="tgNotifyTestFromMenu()" style="color:#a78bfa; border-color:#a78bfa; font-weight:800;"><svg class="ic"><use href="#i-activity"/></svg> ارسال رسالة تجريب للبوتات</button>
             </div>
 
             <button class="admin-menu-btn" onclick="toggleSubMenu('designMenu')">
                 <span>إدارة الشكل والصور</span>
-                <span>▼</span>
+                <span><svg class="ic"><use href="#i-chevron"/></svg></span>
             </button>
             <div class="sub-menu" id="designMenu">
                 <button class="sub-menu-btn" onclick="openCategoryModal()">إضافة صور للأقسام</button>
@@ -6967,13 +8951,14 @@ ADMIN_HTML_CONTENT = """
                 <button class="sub-menu-btn" onclick="openDeleteBannerModal()">حذف بنر</button>
                 <button class="sub-menu-btn" onclick="openCategoryBannerModal()">اضافة بنرات لقسم</button>
                 <button class="sub-menu-btn" onclick="openSplashModal()">إضافة صورة ترحيبية</button>
-                <button class="sub-menu-btn" onclick="openSplashVideoModal()" style="color:#a855f7; border-color:#a855f7;">🎬 إضافة فيديو ترحيبي</button>
+                <button class="sub-menu-btn" onclick="openSplashVideoModal()" style="color:#a855f7; border-color:#a855f7;"><svg class="ic"><use href="#i-film"/></svg> إضافة فيديو ترحيبي</button>
                 <button class="sub-menu-btn" onclick="openLogoManageModal()" style="color:#4ade80; border-color:#4ade80; font-weight:800;">إدارة اللوغو</button>
+                <button class="sub-menu-btn" onclick="openBannerShineModal()" style="color:#facc15; border-color:#facc15; font-weight:800;">لمعان البنر ✨</button>
             </div>
 
             <button class="admin-menu-btn" onclick="toggleSubMenu('productsMenu')">
                 <span>إدارة المنتجات والخدمات</span>
-                <span>▼</span>
+                <span><svg class="ic"><use href="#i-chevron"/></svg></span>
             </button>
             <div class="sub-menu" id="productsMenu">
                 <button class="sub-menu-btn" onclick="openAllOrdersScreen()" style="color:#38bdf8; border-color:#38bdf8; font-weight:800;">عرض الطلبات</button>
@@ -6991,7 +8976,7 @@ ADMIN_HTML_CONTENT = """
 
             <button class="admin-menu-btn" onclick="toggleSubMenu('apiMenu')">
                 <span>إدارة API</span>
-                <span>▼</span>
+                <span><svg class="ic"><use href="#i-chevron"/></svg></span>
             </button>
             <div class="sub-menu" id="apiMenu">
                 <button class="sub-menu-btn" onclick="openAddApiModal()">اضافة API</button>
@@ -7001,29 +8986,67 @@ ADMIN_HTML_CONTENT = """
                 <button class="sub-menu-btn" onclick="openImportedSectionsScreen()" style="color:#f5c76b; border-color:#f5c76b; font-weight:800;">تعديل قسم مسحوب</button>
             </div>
 
+            <button class="admin-menu-btn" onclick="toggleSubMenu('invProfitMenu')">
+                <span>إدارة الجرد والمرابح</span>
+                <span><svg class="ic"><use href="#i-chevron"/></svg></span>
+            </button>
+            <div class="sub-menu" id="invProfitMenu">
+                <button class="sub-menu-btn" onclick="openInventoryScreen()" style="color:#38bdf8; border-color:#38bdf8; font-weight:800;"><svg class="ic"><use href="#i-inventory"/></svg> ادارة جرد</button>
+                <button class="sub-menu-btn" onclick="openApiClientsInventory()" style="color:#e8c26a; border-color:#e8c26a; font-weight:800;"><svg class="ic"><use href="#i-plug"/></svg> جرد عملائي Api</button>
+            </div>
+
             <button class="admin-menu-btn" onclick="toggleSubMenu('usersMenu')">
                 <span>إدارة المستخدمين</span>
-                <span>▼</span>
+                <span><svg class="ic"><use href="#i-chevron"/></svg></span>
             </button>
             <div class="sub-menu" id="usersMenu">
                 <button class="sub-menu-btn" onclick="openBalanceModal('add')">شحن مستخدم</button>
                 <button class="sub-menu-btn" onclick="openBalanceModal('deduct')">خصم من مستخدم</button>
                 <button class="sub-menu-btn" onclick="openClientInspectPrompt()">كشف عميل</button>
                 <button class="sub-menu-btn" onclick="openClientsListScreen()" style="color:#2dd4bf; border-color:#2dd4bf; font-weight:800;">عرض العملاء</button>
-                <button class="sub-menu-btn" onclick="openAnnouncementModal()" style="color:#facc15; border-color:#facc15; font-weight:800;">📢 الإذاعة</button>
+                <button class="sub-menu-btn" onclick="openAnnouncementModal()" style="color:#facc15; border-color:#facc15; font-weight:800;"><svg class="ic"><use href="#i-megaphone"/></svg> الإذاعة</button>
+                <button class="sub-menu-btn" onclick="openAdminAccountsScreen()" style="color:#a78bfa; border-color:#a78bfa; font-weight:800;"><svg class="ic"><use href="#i-user-plus"/></svg> اضافة عملاء (ادمنية)</button>
             </div>
 
             <button class="admin-menu-btn" onclick="toggleSubMenu('depositsMenu')">
                 <span>إدارة الإيداعات</span>
-                <span>▼</span>
+                <span><svg class="ic"><use href="#i-chevron"/></svg></span>
             </button>
             <div class="sub-menu" id="depositsMenu">
                 <button class="sub-menu-btn" onclick="openCheckDepositsPage()">تشييك الايداعات</button>
                 <button class="sub-menu-btn" onclick="openAddDepositMethodModal()">اضافة طريقة</button>
                 <button class="sub-menu-btn" onclick="openDeleteDepositMethodModal()">حذف طريقة</button>
                 <button class="sub-menu-btn" onclick="openViewDepositMethodsModal()">عرض الطرق المضافة</button>
+                <button class="sub-menu-btn" onclick="openAutoDepositAdmin()" style="color:#e8c26a; border-color:#e8c26a; font-weight:800;"><svg class="ic" style="color:#fff;"><use href="#i-zap"/></svg> ادارة الايداعات التلقائية</button>
+                <button class="sub-menu-btn" onclick="openAutoDepositHistory()" style="color:#34d399; border-color:#34d399; font-weight:800;"><svg class="ic"><use href="#i-receipt"/></svg> عرض الايداعات تلقائية</button>
                 <button class="sub-menu-btn" onclick="openAddCurrencyModal()" style="color:#f59e0b; border-color:#f59e0b;">ادارة العملات</button>
             </div>
+        </div>
+
+        <div id="heroZone">
+            <div class="hero-box">
+                <div>
+                    <div class="hero-hello"><span class="live-dot"></span><span id="heroGreeting">أهلاً بك</span></div>
+                    <div class="hero-name"><svg class="ic"><use href="#i-crown"/></svg><span>أهلاً يا مدير</span></div>
+                    <div class="hero-sub">إحصائيات مباشرة تتحدّث تلقائياً كل 30 ثانية</div>
+                </div>
+                <div class="hero-clock">
+                    <div class="hero-time" id="heroTime">--:--</div>
+                    <div class="hero-date" id="heroDate"></div>
+                </div>
+            </div>
+            <div class="section-title">اختصارات سريعة</div>
+            <div class="quick-actions">
+                <button class="qa-btn" onclick="qaRun('openAllOrdersScreen')"><span class="qa-ico"><svg class="ic"><use href="#i-receipt"/></svg></span>الطلبات</button>
+                <button class="qa-btn" onclick="qaRun('openClientsListScreen')"><span class="qa-ico"><svg class="ic"><use href="#i-users"/></svg></span>العملاء</button>
+                <button class="qa-btn" onclick="qaRun('openCheckDepositsPage')"><span class="qa-ico"><svg class="ic"><use href="#i-credit-card"/></svg></span>الإيداعات</button>
+                <button class="qa-btn" onclick="qaRun('openBalanceModal','add')"><span class="qa-ico"><svg class="ic"><use href="#i-wallet"/></svg></span>شحن رصيد</button>
+                <button class="qa-btn" onclick="qaRun('openAddProductModal')"><span class="qa-ico"><svg class="ic"><use href="#i-package"/></svg></span>منتج جديد</button>
+                <button class="qa-btn" onclick="qaRun('openAnnouncementModal')"><span class="qa-ico"><svg class="ic"><use href="#i-megaphone"/></svg></span>الإذاعة</button>
+                <button class="qa-btn" onclick="qaRun('openMaintenanceModal')"><span class="qa-ico"><svg class="ic"><use href="#i-wrench"/></svg></span>الصيانة</button>
+                <button class="qa-btn" onclick="qaRefresh()"><span class="qa-ico"><svg class="ic"><use href="#i-refresh"/></svg></span>تحديث</button>
+            </div>
+            <div class="section-title">نظرة عامة</div>
         </div>
 
         <div class="main-content-wrapper">
@@ -7034,12 +9057,239 @@ ADMIN_HTML_CONTENT = """
             <div class="grid-container" id="adminGrid"></div>
         </div>
 
+        <div id="autoDepositAdminScreen">
+            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #27272a; padding-bottom:12px; margin-bottom:5px;">
+                <span style="font-size:1.1rem; font-weight:800; color:var(--gold);">ادارة الايداعات التلقائية</span>
+                <button class="btn-secondary" onclick="closeAutoDepositAdmin()">رجوع</button>
+            </div>
+            <div id="autoDepCards" style="display:flex; flex-direction:column; gap:12px;"></div>
+        </div>
+
+        <div id="autoDepositHistoryScreen">
+            <div class="adh-top">
+                <div class="adh-title"><span class="adh-live"></span><span>الايداعات التلقائية</span></div>
+                <div class="adh-top-actions">
+                    <button class="adh-icon-btn" id="adhRefreshBtn" title="تحديث" onclick="loadAutoDepHistory()"><svg class="ic"><use href="#i-refresh"/></svg></button>
+                    <button class="btn-secondary" onclick="closeAutoDepositHistory()">رجوع</button>
+                </div>
+            </div>
+            <div class="adh-stats" id="adhStats"></div>
+            <div class="adh-strip" id="adhStrip"></div>
+            <div class="adh-tools">
+                <input type="text" class="adh-search" id="adhSearch" placeholder="ابحث بالإيميل أو رقم العملية أو رقم الطلب..." oninput="adhApplyFilters()">
+                <div class="adh-chips" id="adhChips">
+                    <button class="adh-chip on" data-f="all" onclick="adhSetFilter('all')">الكل</button>
+                    <button class="adh-chip" data-f="today" onclick="adhSetFilter('today')">اليوم</button>
+                    <button class="adh-chip" data-f="usd" onclick="adhSetFilter('usd')">شام كاش دولار</button>
+                    <button class="adh-chip" data-f="syp" onclick="adhSetFilter('syp')">شام كاش سوري</button>
+                </div>
+                <div class="adh-count" id="adhCount"></div>
+            </div>
+            <div class="adh-list" id="adhList"></div>
+        </div>
+
+        <div class="modal-overlay" id="adhDetailModal">
+            <div class="modal-box" style="max-height: 90vh; overflow-y: auto;">
+                <div id="adhDetailBody"></div>
+                <button class="btn-secondary" style="margin-top:12px; width:100%;" onclick="closeModal('adhDetailModal')">إغلاق</button>
+            </div>
+        </div>
+
+        <div id="tgNotifyScreen">
+            <div class="tgn-top">
+                <div class="tgn-title"><span class="tgn-title-ico"><svg viewBox="0 0 24 24"><use href="#i-send"/></svg></span><span>تعيين الاشعارات</span></div>
+                <button class="btn-secondary" onclick="closeTgNotifyScreen()">رجوع</button>
+            </div>
+            <div class="tgn-hint">
+                <b>كل نوع إشعار بيقدر يروح لبوت مختلف.</b>
+                حط توكن البوت (من BotFather) و Chat ID اللي بدك توصله الإشعارات. إذا تركت الحقول فاضية بتستخدم القناة البوت الافتراضي، وبتقدر توقف أي قناة من المفتاح.
+            </div>
+            <div class="tgn-list" id="tgnList"></div>
+            <div class="tgn-bar">
+                <span class="tgn-status" id="tgnStatus"></span>
+                <button class="tgn-test-all" onclick="tgNotifyTest(null)"><svg viewBox="0 0 24 24"><use href="#i-activity"/></svg> تجربة الكل</button>
+                <button class="tgn-save" id="tgnSaveBtn" onclick="tgnSave()">حفظ التغييرات</button>
+            </div>
+        </div>
+
+        <div class="modal-overlay" id="tgnTestModal">
+            <div class="modal-box" style="max-height: 90vh; overflow-y: auto;">
+                <div class="modal-title">نتيجة الرسالة التجريبية</div>
+                <div id="tgnTestBody"></div>
+                <button class="btn-secondary" style="margin-top:12px; width:100%;" onclick="closeModal('tgnTestModal')">إغلاق</button>
+            </div>
+        </div>
+
+        <div class="modal-overlay" id="autoDepEditModal">
+            <div class="modal-box" style="max-height: 90vh; overflow-y: auto;">
+                <div class="modal-title" id="autoDepEditTitle">تعديل الطريقة</div>
+                <div class="form-group">
+                    <label>1. توكن API:</label>
+                    <input type="password" id="autoDepToken" placeholder="ادخل توكن API..." autocomplete="off">
+                    <span class="auto-dep-token-hint" id="autoDepTokenHint"></span>
+                </div>
+                <div class="form-group">
+                    <label>2. اسم الطريقة الجديد (بحال حبيت تغير الاسم):</label>
+                    <input type="text" id="autoDepName" placeholder="اتركه فارغاً للإبقاء على الاسم الحالي">
+                </div>
+                <div class="form-group">
+                    <label>3. سعر الصرف:</label>
+                    <input type="number" id="autoDepRate" placeholder="ادخل سعر الصرف..." step="0.001">
+                </div>
+                <div class="form-group">
+                    <label>4. عنوان طريقة الإيداع:</label>
+                    <textarea id="autoDepAddress" rows="2" placeholder="ادخل عنوان / كود الحساب الذي سيحول إليه المستخدم..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label>5. صورة الطريقة:</label>
+                    <img id="autoDepImgPreview" class="auto-dep-preview" style="display:none;" alt="">
+                    <input type="file" id="autoDepImage" accept="image/*">
+                </div>
+                <div class="form-group">
+                    <label>6. وصف الطريقة:</label>
+                    <textarea id="autoDepDescription" rows="3" placeholder="ادخل وصف أو تعليمات الطريقة..."></textarea>
+                </div>
+                <button class="save-btn" id="autoDepSaveBtn" onclick="saveAutoDep()">حفظ وتحديث البيانات</button>
+                <button class="btn-secondary" onclick="closeModal('autoDepEditModal')">إلغاء</button>
+            </div>
+        </div>
+
         <div id="clientsListScreen">
             <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #27272a; padding-bottom:12px; margin-bottom:5px;">
                 <span style="font-size:1.1rem; font-weight:800; color:#2dd4bf;">قائمة العملاء</span>
                 <button class="btn-secondary" onclick="closeClientsListScreen()">رجوع</button>
             </div>
+            <style>
+                .cl-tools { display: flex; flex-direction: column; gap: 8px; }
+                .cl-tools input[type=text], .cl-tools select, .cl-tools input[type=date] { background: var(--bg-0); border: 1px solid var(--line); color: var(--txt); border-radius: 10px; padding: 9px 11px; font-size: 0.8rem; }
+                .cl-tools input[type=date] { width: 150px; }
+                .cl-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; }
+                .cl-row select { flex: 1; min-width: 130px; }
+                .cl-lbl { display: flex; flex-direction: column; gap: 3px; font-size: 0.68rem; color: var(--muted); }
+                .cl-xls { background: linear-gradient(135deg, #16a34a, #22c55e); color: #fff; border: none; padding: 9px 14px; border-radius: 10px; font-weight: 800; cursor: pointer; font-size: 0.8rem; }
+                .cl-sum { font-size: 0.75rem; color: var(--muted); background: var(--bg-1); border: 1px solid var(--line-2); border-radius: 10px; padding: 8px 12px; line-height: 1.8; }
+                .cl-sum b { color: var(--gold); }
+                .client-card .cl-meta { font-size: 0.7rem; color: #a1a1aa; line-height: 1.7; }
+            </style>
+            <div class="cl-tools">
+                <input type="text" id="clSearch" placeholder="ابحث بالإيميل أو الاسم أو الرقم أو الهاتف" oninput="clientsApplyFilters()">
+                <div class="cl-row">
+                    <select id="clBal" onchange="clientsApplyFilters()"><option value="">كل الأرصدة</option><option value="has">عندهم رصيد</option><option value="zero">رصيد صفر</option></select>
+                    <select id="clDisc" onchange="clientsApplyFilters()"><option value="">كل الخصومات</option><option value="has">عندهم خصم</option><option value="none">بدون خصم</option></select>
+                    <select id="clAct" onchange="clientsApplyFilters()"><option value="">كل النشاط</option><option value="bought">اشتروا</option><option value="never">ما اشتروا أبداً</option><option value="active30">نشطين آخر 30 يوم</option><option value="inactive30">غير نشطين +30 يوم</option></select>
+                    <select id="clSort" onchange="clientsApplyFilters()"><option value="new">الأحدث تسجيلاً</option><option value="bal_hi">الأعلى رصيداً</option><option value="bal_lo">الأقل رصيداً</option><option value="spent">الأكثر شراءً</option><option value="orders">الأكثر طلبات</option><option value="name">الإيميل (أ-ي)</option></select>
+                </div>
+                <div class="cl-row">
+                    <label class="cl-lbl"><span>انضم من</span><input type="date" id="clJoinFrom" onchange="clientsApplyFilters()"></label>
+                    <label class="cl-lbl"><span>إلى</span><input type="date" id="clJoinTo" onchange="clientsApplyFilters()"></label>
+                    <button class="btn-secondary" onclick="clientsClearFilters()">مسح الفلاتر</button>
+                    <button class="cl-xls" onclick="clientsExportXlsx()">تصدير Excel</button>
+                </div>
+                <div class="cl-sum" id="clSummary"></div>
+            </div>
             <div id="clientsListContainer" style="display:flex; flex-direction:column; gap:10px;"></div>
+        </div>
+
+        <div id="adminAccountsScreen">
+            <style>
+                #adminAccountsScreen { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 1850; overflow-y: auto; padding: 20px; flex-direction: column; gap: 15px; background: radial-gradient(800px 400px at 90% -10%, rgba(167,139,250,0.12), transparent 60%), var(--bg-0); }
+                #adminAccountsScreen.active { display: flex; }
+                .aa-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; border-bottom: 1px solid var(--line); padding-bottom: 12px; flex-wrap: wrap; }
+                .aa-title { display: flex; align-items: center; gap: 10px; font-size: 1.1rem; font-weight: 800; color: #a78bfa; }
+                .aa-title .ic { width: 22px; height: 22px; }
+                .aa-btns { display: flex; gap: 8px; }
+                .aa-add { background: linear-gradient(135deg, #8b5cf6, #6366f1); color: #fff; border: none; padding: 10px 16px; border-radius: 12px; font-weight: 800; cursor: pointer; display: flex; align-items: center; gap: 6px; font-size: 0.85rem; }
+                .aa-add .ic { width: 16px; height: 16px; }
+                .aa-hint { font-size: 0.78rem; color: var(--muted); line-height: 1.7; background: var(--bg-1); border: 1px solid var(--line-2); border-radius: 12px; padding: 10px 14px; }
+                .aa-list { display: flex; flex-direction: column; gap: 10px; }
+                .aa-card { display: flex; gap: 12px; align-items: flex-start; padding: 14px; border-radius: 16px; background: linear-gradient(150deg, var(--bg-3), var(--bg-1)); border: 1px solid var(--line-2); }
+                .aa-card.off { opacity: .6; }
+                .aa-av { width: 44px; height: 44px; flex-shrink: 0; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1.1rem; color: #fff; background: linear-gradient(135deg, #8b5cf6, #6366f1); }
+                .aa-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+                .aa-name { font-weight: 800; font-size: 0.95rem; color: var(--txt); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+                .aa-mail { font-size: 0.78rem; color: var(--muted); direction: ltr; text-align: right; word-break: break-all; }
+                .aa-chip { font-size: 0.65rem; font-weight: 800; padding: 2px 8px; border-radius: 20px; }
+                .aa-chip.on { background: rgba(74,222,128,.15); color: #4ade80; border: 1px solid rgba(74,222,128,.4); }
+                .aa-chip.offc { background: rgba(248,113,113,.15); color: #f87171; border: 1px solid rgba(248,113,113,.4); }
+                .aa-perms { display: flex; flex-wrap: wrap; gap: 5px; }
+                .aa-perm-tag { font-size: 0.68rem; padding: 3px 9px; border-radius: 8px; background: rgba(167,139,250,.14); color: #c4b5fd; border: 1px solid rgba(167,139,250,.3); }
+                .aa-meta { font-size: 0.68rem; color: var(--muted); }
+                .aa-actions { display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; }
+                .aa-actions button { background: var(--bg-0); border: 1px solid var(--line); color: var(--txt); border-radius: 9px; padding: 6px 12px; font-size: 0.74rem; font-weight: 700; cursor: pointer; }
+                .aa-actions button.danger { color: #f87171; border-color: rgba(248,113,113,.45); }
+                .aa-empty { text-align: center; color: var(--muted); padding: 26px 10px; font-size: 0.85rem; }
+                .aa-log-title { font-size: 0.95rem; font-weight: 800; color: var(--gold); margin-top: 8px; }
+                .aa-log { display: flex; flex-direction: column; gap: 6px; }
+                .aa-log-row { display: flex; justify-content: space-between; gap: 10px; align-items: center; background: var(--bg-1); border: 1px solid var(--line-2); border-radius: 10px; padding: 8px 12px; font-size: 0.75rem; }
+                .aa-log-row b { color: var(--txt); }
+                .aa-log-row span { color: var(--muted); }
+                .aa-log-row .aa-t { font-size: 0.66rem; white-space: nowrap; direction: ltr; }
+                .aa-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+                .aa-presets button { background: var(--bg-0); border: 1px solid var(--line); color: var(--txt); border-radius: 8px; padding: 5px 10px; font-size: 0.7rem; font-weight: 700; cursor: pointer; }
+                .aa-pgrid { display: flex; flex-direction: column; gap: 7px; }
+                .aa-perm { position: relative; display: flex; align-items: center; gap: 10px; padding: 9px 11px; border-radius: 11px; background: var(--bg-0); border: 1px solid var(--line-2); cursor: pointer; }
+                .aa-perm input { position: absolute; opacity: 0; width: 0 !important; height: 0 !important; padding: 0 !important; margin: 0; }
+                .aa-pbox { width: 20px; height: 20px; flex-shrink: 0; border-radius: 6px; border: 2px solid var(--line); display: flex; align-items: center; justify-content: center; }
+                .aa-perm input:checked + .aa-pbox { background: #8b5cf6; border-color: #8b5cf6; }
+                .aa-perm input:checked + .aa-pbox::after { content: ""; width: 5px; height: 10px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg) translate(-1px, -1px); }
+                .aa-perm input:checked ~ .aa-ptxt b { color: #c4b5fd; }
+                .aa-ptxt { display: flex; flex-direction: column; gap: 2px; }
+                .aa-ptxt b { font-size: 0.8rem; color: var(--txt); }
+                .aa-ptxt small { font-size: 0.66rem; color: var(--muted); line-height: 1.5; }
+                .aa-row { display: flex; gap: 8px; }
+                .aa-row input { flex: 1; }
+                .aa-mini { background: var(--bg-0); border: 1px solid var(--line); color: var(--txt); border-radius: 8px; padding: 0 10px; font-size: 0.7rem; font-weight: 700; cursor: pointer; white-space: nowrap; }
+                .aa-err { color: #f87171; font-size: 0.78rem; font-weight: 700; text-align: center; min-height: 1em; }
+                .aa-switch { display: flex; align-items: center; gap: 10px; font-size: 0.82rem; color: var(--txt); cursor: pointer; }
+                .aa-switch input { width: auto !important; }
+            </style>
+            <div class="aa-top">
+                <div class="aa-title"><svg class="ic"><use href="#i-shield"/></svg><span>إدارة الأدمنية</span></div>
+                <div class="aa-btns">
+                    <button class="aa-add" onclick="openAdminAccountModal('')"><svg class="ic"><use href="#i-plus"/></svg> إضافة أدمن</button>
+                    <button class="btn-secondary" onclick="closeAdminAccountsScreen()">رجوع</button>
+                </div>
+            </div>
+            <div class="aa-hint">كل أدمن بيدخل من نفس رابط لوحة التحكم بإيميله وكلمة سره، وبيشوف بس الأقسام اللي إنت عطيتو صلاحيتها. الصلاحيات بتنطبق على السيرفر نفسه، يعني حتى لو حدا حاول يفتح الصفحات الممنوعة بيرفضها السيرفر. أي تعديل بالصلاحيات أو إيقاف حساب بيشتغل فوراً.</div>
+            <div class="aa-list" id="adminAccountsList"></div>
+            <div class="aa-log-title">آخر العمليات</div>
+            <div class="aa-log" id="adminAccountsLog"></div>
+        </div>
+
+        <div class="modal-overlay" id="adminAccountModalOverlay">
+            <div class="modal-box" style="max-width:440px;">
+                <div class="modal-title" id="aaModalTitle" style="color:#a78bfa;">إضافة أدمن</div>
+                <div class="form-group">
+                    <label>الاسم:</label>
+                    <input type="text" id="aaName" placeholder="مثال: أحمد" maxlength="40" autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label>الإيميل (للدخول):</label>
+                    <input type="email" id="aaEmail" placeholder="admin2@example.com" autocomplete="off" style="direction:ltr; text-align:right;">
+                </div>
+                <div class="form-group">
+                    <label id="aaPassLabel">كلمة السر:</label>
+                    <div class="aa-row">
+                        <input type="password" id="aaPass" placeholder="6 أحرف على الأقل" autocomplete="new-password" style="direction:ltr; text-align:right;">
+                        <button type="button" class="aa-mini" onclick="aaTogglePass()">إظهار</button>
+                        <button type="button" class="aa-mini" onclick="aaGenPass()">توليد</button>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>الصلاحيات:</label>
+                    <div class="aa-presets">
+                        <button type="button" onclick="aaPreset('all')">كاملة</button>
+                        <button type="button" onclick="aaPreset('ops')">مشرف عمليات</button>
+                        <button type="button" onclick="aaPreset('content')">مشرف محتوى</button>
+                        <button type="button" onclick="aaPreset('none')">مسح الكل</button>
+                    </div>
+                    <div class="aa-pgrid" id="aaPermGrid"></div>
+                </div>
+                <label class="aa-switch"><input type="checkbox" id="aaActive" checked> الحساب فعّال</label>
+                <div class="aa-err" id="aaError"></div>
+                <button class="save-btn" id="aaSaveBtn" onclick="saveAdminAccount()">حفظ</button>
+                <button class="btn-secondary" onclick="closeModal('adminAccountModalOverlay')">إلغاء</button>
+            </div>
         </div>
 
         <div id="clientDetailScreen">
@@ -7101,7 +9351,7 @@ ADMIN_HTML_CONTENT = """
 
         <div class="modal-overlay" id="announcementModalOverlay">
             <div class="modal-box" style="max-height: 90vh; overflow-y: auto;">
-                <div class="modal-title" style="color:#facc15;">📢 الإذاعة</div>
+                <div class="modal-title" style="color:#facc15;"><svg class="ic"><use href="#i-megaphone"/></svg> الإذاعة</div>
                 <div class="form-group">
                     <label>نص الإذاعة (بتظهر لكل مستخدم بيفوت عالموقع):</label>
                     <textarea id="annTextInput" rows="7" oninput="previewAnnouncement()" placeholder="اكتب الإذاعة هون..."></textarea>
@@ -7143,7 +9393,7 @@ ADMIN_HTML_CONTENT = """
 
         <div class="modal-overlay" id="splashVideoModalOverlay">
             <div class="modal-box">
-                <div class="modal-title" style="color:#a855f7;">🎬 فيديو ترحيبي للموقع</div>
+                <div class="modal-title" style="color:#a855f7;"><svg class="ic"><use href="#i-film"/></svg> فيديو ترحيبي للموقع</div>
                 <div class="form-group">
                     <label>اختر الفيديو (MP4 أو WebM - حد أقصى 60MB):</label>
                     <input type="file" id="splashVideoInput" accept="video/mp4,video/webm,video/quicktime">
@@ -7174,6 +9424,51 @@ ADMIN_HTML_CONTENT = """
                 </div>
                 <button class="save-btn" onclick="saveLogoSettings()">حفظ</button>
                 <button class="btn-secondary" onclick="closeModal('logoManageModalOverlay')">إلغاء</button>
+            </div>
+        </div>
+
+        <div class="modal-overlay" id="bannerShineModalOverlay">
+            <div class="modal-box">
+                <style>
+                    .shine-prev { position: relative; overflow: hidden; width: 100%; height: 84px; border-radius: 12px; border: 1px solid #2a2a3a; background: linear-gradient(135deg, #1e293b, #0f172a); display: flex; align-items: center; justify-content: center; color: #cbd5e1; font-weight: 700; font-size: 0.9rem; margin: 6px 0 16px; }
+                    .shine-prev.on { animation: shinePrevGlow var(--shine-dur, 4s) ease-in-out infinite; }
+                    .shine-prev.on::after { content: ''; position: absolute; top: 0; left: 0; width: 30%; height: 100%; background: linear-gradient(105deg, transparent 0%, rgba(255,255,255,var(--shine-op, .5)) 50%, transparent 100%); transform: translateX(-150%) skewX(-20deg); animation: shinePrevSweep var(--shine-dur, 4s) ease-in-out infinite; pointer-events: none; }
+                    @keyframes shinePrevSweep { 0% { transform: translateX(-150%) skewX(-20deg); } 45% { transform: translateX(450%) skewX(-20deg); } 100% { transform: translateX(450%) skewX(-20deg); } }
+                    @keyframes shinePrevGlow { 0%, 100% { box-shadow: 0 0 0 rgba(255,255,255,0); } 25% { box-shadow: 0 0 var(--shine-glow, 14px) rgba(255,255,255,var(--shine-glow-op, .25)); } }
+                </style>
+                <div class="modal-title" style="color:#facc15;">لمعان البنر ✨</div>
+                <div class="shine-prev" id="bannerShinePreview">معاينة البنر</div>
+                <div class="form-group">
+                    <label style="display:flex; align-items:center; gap:10px; cursor:pointer;">
+                        <input type="checkbox" id="bannerShineToggle" onchange="previewBannerShine()" style="width:20px; height:20px; flex:0 0 auto;">
+                        <span>تفعيل لمعان البنر</span>
+                    </label>
+                </div>
+                <div class="form-group">
+                    <label>قوة اللمعان: <span id="bannerShineIntVal">6</span> / 10</label>
+                    <input type="range" id="bannerShineIntensity" min="1" max="10" step="1" value="6" oninput="previewBannerShine()" style="width:100%; padding:0;">
+                </div>
+                <div class="form-group">
+                    <label>سرعة اللمعان: <span id="bannerShineSpeedVal">5</span> / 10</label>
+                    <input type="range" id="bannerShineSpeed" min="1" max="10" step="1" value="5" oninput="previewBannerShine()" style="width:100%; padding:0;">
+                </div>
+                <button class="save-btn" onclick="saveBannerShine()">حفظ</button>
+                <button class="btn-secondary" onclick="closeModal('bannerShineModalOverlay')">إلغاء</button>
+            </div>
+        </div>
+
+        <div class="modal-overlay" id="googleSettingsModalOverlay">
+            <div class="modal-box">
+                <div class="modal-title" style="color:#60a5fa;">ربط تسجيل جوجل</div>
+                <div class="form-group">
+                    <label>Google Client ID:</label>
+                    <input type="text" id="googleClientIdInput" placeholder="xxxx.apps.googleusercontent.com" style="direction:ltr; text-align:left;">
+                </div>
+                <div id="googleClientIdNote" style="font-size:0.78rem; color:#a1a1aa; line-height:1.7; margin-bottom:12px;">
+                    من Google Cloud Console أنشئ OAuth Client ID من نوع Web application، وأضف رابط موقعك ضمن Authorized JavaScript origins، ثم الصق الـ Client ID هنا. اتركه فارغاً لإيقاف الميزة.
+                </div>
+                <button class="save-btn" onclick="saveGoogleSettings()">حفظ</button>
+                <button class="btn-secondary" onclick="closeModal('googleSettingsModalOverlay')">إلغاء</button>
             </div>
         </div>
 
@@ -7250,10 +9545,10 @@ ADMIN_HTML_CONTENT = """
         <!-- Maintenance Modal -->
         <div class="modal-overlay" id="maintenanceModalOverlay">
             <div class="modal-box" style="max-width: 400px;">
-                <div class="modal-title" style="color:#f87171; font-size:1.1rem;">⚙️ وضع الصيانة</div>
+                <div class="modal-title" style="color:#f87171; font-size:1.1rem;"><svg class="ic"><use href="#i-settings"/></svg> وضع الصيانة</div>
                 
                 <div class="maint-active-banner" id="maintActiveBanner" style="display:none;">
-                    <span class="icon">🔧</span>
+                    <span class="icon"><svg class="ic"><use href="#i-wrench"/></svg></span>
                     <span class="text">الموقع حالياً في وضع الصيانة</span>
                 </div>
 
@@ -7263,7 +9558,7 @@ ADMIN_HTML_CONTENT = """
                 </div>
 
                 <button id="maintToggleBtn" class="maint-toggle-btn shutdown" onclick="toggleMaintenanceMode()">
-                    ⏹️ إيقاف التشغيل
+                    <svg class="ic"><use href="#i-stop"/></svg> إيقاف التشغيل
                 </button>
 
                 <button class="btn-secondary" onclick="closeModal('maintenanceModalOverlay')">إغلاق</button>
@@ -7446,107 +9741,536 @@ ADMIN_HTML_CONTENT = """
             body.light-mode-admin .exact-close-btn:hover { background: #e4e4e7; }
         </style>
 
+
+        <style>
+            /* ===== واجهة الطلبات الاحترافية ===== */
+            body #allOrdersScreen {
+                display: none; position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: 99999;
+                overflow-y: auto; padding: 0; flex-direction: column; gap: 0;
+                background: radial-gradient(900px 500px at 90% -10%, rgba(232,194,106,0.10), transparent 60%),
+                            radial-gradient(700px 400px at 0% 0%, rgba(99,102,241,0.08), transparent 60%), var(--bg-0);
+            }
+            body.light-mode-admin #allOrdersScreen { background: var(--bg-0); }
+            body #allOrdersScreen.active { display: flex; }
+            .ord-shell { width: 100%; max-width: 1480px; margin: 0 auto; padding: 22px 22px 60px; display: flex; flex-direction: column; gap: 18px; }
+            .ord-topbar { display: flex; justify-content: space-between; align-items: center; gap: 14px; flex-wrap: wrap; position: sticky; top: 0; z-index: 20; padding: 14px 16px; margin: 0 -6px; border-radius: 20px; background: linear-gradient(135deg, rgba(20,20,30,.82), rgba(13,13,20,.82)); backdrop-filter: blur(18px); border: 1px solid var(--line); box-shadow: var(--shadow); }
+            body.light-mode-admin .ord-topbar { background: rgba(255,255,255,.86); }
+            .ord-brand { display: flex; align-items: center; gap: 14px; }
+            .ord-brand-ico { width: 46px; height: 46px; border-radius: 14px; display: flex; align-items: center; justify-content: center; color: var(--gold); background: linear-gradient(135deg, rgba(232,194,106,.22), rgba(232,194,106,.04)); border: 1px solid var(--line); }
+            .ord-brand-ico .ic { width: 24px; height: 24px; }
+            .ord-h1 { font-size: 1.2rem; font-weight: 800; color: var(--txt); line-height: 1.2; }
+            .ord-h2 { font-size: .76rem; color: var(--muted); margin-top: 3px; }
+            .ord-top-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+            .ord-btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px; border-radius: 12px; font-size: .82rem; font-weight: 700; cursor: pointer; color: var(--txt); background: var(--bg-3); border: 1px solid var(--line-2); transition: all .22s ease; font-family: inherit; }
+            .ord-btn:hover { border-color: var(--gold); color: var(--gold); transform: translateY(-1px); box-shadow: var(--glow); }
+            .ord-btn:active { transform: scale(.97); }
+            .ord-btn-primary { background: linear-gradient(135deg, var(--gold-2), var(--gold) 45%, var(--gold-3)); color: #1a1305; border-color: transparent; box-shadow: 0 10px 24px -10px rgba(232,194,106,.6); }
+            .ord-btn-primary:hover { color: #1a1305; filter: brightness(1.07); }
+            .ord-btn .ic { width: 16px; height: 16px; }
+
+            .ord-kpis { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+            .ord-kpi { position: relative; overflow: hidden; display: flex; align-items: center; gap: 14px; padding: 16px; border-radius: 18px; background: linear-gradient(150deg, var(--bg-3), var(--bg-1)); border: 1px solid var(--line-2); box-shadow: var(--shadow); transition: transform .25s, border-color .25s; }
+            body.light-mode-admin .ord-kpi { background: linear-gradient(150deg, #fff, #faf6ea); }
+            .ord-kpi:hover { transform: translateY(-3px); border-color: var(--kc, var(--gold)); }
+            .ord-kpi::before { content: ""; position: absolute; top: -40px; left: -40px; width: 110px; height: 110px; border-radius: 50%; background: radial-gradient(circle, var(--kc, #e8c26a), transparent 70%); opacity: .16; }
+            .ord-kpi-ico { width: 44px; height: 44px; border-radius: 13px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: var(--kc, var(--gold)); background: rgba(255,255,255,.04); border: 1px solid var(--line-2); position: relative; }
+            .ord-kpi-ico .ic { width: 22px; height: 22px; }
+            .ord-kpi-v { font-size: 1.5rem; font-weight: 800; color: var(--txt); font-variant-numeric: tabular-nums; direction: ltr; text-align: right; line-height: 1.1; position: relative; }
+            .ord-kpi-l { font-size: .74rem; color: var(--muted); margin-top: 4px; font-weight: 600; position: relative; }
+            .k-blue { --kc: #60a5fa; } .k-green { --kc: #34d399; } .k-amber { --kc: #fbbf24; } .k-red { --kc: #f87171; } .k-gold { --kc: #e8c26a; } .k-violet { --kc: #a78bfa; }
+
+            .ord-toolbar { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; padding: 14px; border-radius: 18px; background: linear-gradient(150deg, var(--bg-3), var(--bg-1)); border: 1px solid var(--line-2); }
+            body.light-mode-admin .ord-toolbar { background: #fff; }
+            .ord-search { position: relative; min-width: 0; }
+            .ord-filters-row { min-width: 0; }
+            .ord-chips { min-width: 0; }
+            .ord-search input { min-width: 0; }
+            .ord-search .ic { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); width: 18px; height: 18px; color: var(--gold); pointer-events: none; }
+            .ord-search input { width: 100%; padding: 13px 44px 13px 16px !important; border-radius: 14px !important; font-size: .9rem !important; background: var(--bg-0) !important; border: 1px solid var(--line-2) !important; color: var(--txt) !important; }
+            .ord-search input:focus { border-color: var(--gold) !important; box-shadow: 0 0 0 3px rgba(232,194,106,.15) !important; }
+            .ord-filters-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+            .ord-chips { display: flex; gap: 8px; flex-wrap: wrap; flex: 1; }
+            .ord-chip { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 999px; font-size: .78rem; font-weight: 700; cursor: pointer; color: var(--muted); background: var(--bg-0); border: 1px solid var(--line-2); transition: all .2s; font-family: inherit; }
+            .ord-chip b { font-weight: 800; padding: 1px 8px; border-radius: 999px; background: rgba(255,255,255,.06); font-size: .7rem; font-variant-numeric: tabular-nums; }
+            .ord-chip:hover { color: var(--txt); border-color: var(--gold); }
+            .ord-chip.active { color: #1a1305; background: linear-gradient(135deg, var(--gold-2), var(--gold)); border-color: transparent; }
+            .ord-chip.active b { background: rgba(0,0,0,.14); }
+            .ord-toolbar select { width: auto !important; min-width: 150px; padding: 9px 12px !important; border-radius: 12px !important; font-size: .8rem !important; cursor: pointer; }
+            .ord-meta { display: flex; justify-content: space-between; align-items: center; font-size: .78rem; color: var(--muted); padding: 0 4px; font-weight: 600; }
+            .ord-meta b { color: var(--gold); }
+
+            .ord-table { border-radius: 20px; overflow: hidden; border: 1px solid var(--line-2); background: linear-gradient(160deg, var(--bg-3), var(--bg-1)); box-shadow: var(--shadow); }
+            body.light-mode-admin .ord-table { background: #fff; }
+            .ord-row { display: grid; grid-template-columns: 130px minmax(0, 1.7fr) minmax(0, 1.4fr) 100px 140px 110px 160px 28px; gap: 14px; align-items: center; padding: 15px 20px; border-bottom: 1px solid var(--line-2); font-size: .84rem; color: var(--txt); }
+            .ord-row:last-child { border-bottom: none; }
+            .ord-row.ord-head { position: sticky; top: 0; z-index: 2; background: rgba(0,0,0,.28); font-size: .72rem; font-weight: 800; color: var(--muted); letter-spacing: .4px; padding-top: 13px; padding-bottom: 13px; }
+            body.light-mode-admin .ord-row.ord-head { background: #f4efe0; }
+            .ord-row.ord-item { cursor: pointer; transition: background .18s ease, box-shadow .18s ease; position: relative; }
+            .ord-row.ord-item::before { content: ""; position: absolute; right: 0; top: 14%; bottom: 14%; width: 3px; border-radius: 3px; background: var(--sc, var(--gold)); opacity: .55; transition: opacity .2s, top .2s, bottom .2s; }
+            .ord-row.ord-item:hover { background: rgba(232,194,106,.06); }
+            .ord-row.ord-item:hover::before { opacity: 1; top: 8%; bottom: 8%; }
+            .ord-id { font-family: monospace; direction: ltr; text-align: right; font-size: .76rem; color: var(--muted); letter-spacing: .3px; }
+            .ord-prod { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+            .ord-prod-n { font-weight: 800; color: var(--txt); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+            .ord-prod-s { font-size: .74rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+            .ord-user { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--gold-2); font-size: .78rem; direction: ltr; justify-content: flex-end; }
+            .ord-user span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+            .ord-user .ic { width: 14px; height: 14px; flex-shrink: 0; opacity: .8; }
+            .ord-price { font-weight: 800; color: #34d399; direction: ltr; text-align: right; font-variant-numeric: tabular-nums; }
+            .ord-src { font-size: .74rem; color: var(--muted); font-weight: 700; }
+            .ord-date { font-size: .74rem; color: var(--muted); direction: ltr; text-align: right; font-variant-numeric: tabular-nums; line-height: 1.5; }
+            .ord-go { color: var(--muted); transition: transform .2s, color .2s; }
+            .ord-go .ic { width: 16px; height: 16px; }
+            .ord-item:hover .ord-go { color: var(--gold); transform: translateX(-3px); }
+
+            .ord-badge { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 999px; font-size: .74rem; font-weight: 800; border: 1px solid; white-space: nowrap; width: fit-content; }
+            .ord-badge .ic { width: 13px; height: 13px; stroke-width: 2.4; }
+            .ord-badge.done { color: #34d399; background: rgba(52,211,153,.1); border-color: rgba(52,211,153,.4); }
+            .ord-badge.rejected { color: #f87171; background: rgba(248,113,113,.1); border-color: rgba(248,113,113,.4); }
+            .ord-badge.pending { color: #fbbf24; background: rgba(251,191,36,.1); border-color: rgba(251,191,36,.4); }
+            .ord-badge.check { color: #60a5fa; background: rgba(96,165,250,.1); border-color: rgba(96,165,250,.4); }
+
+            .ord-empty { padding: 60px 20px; text-align: center; color: var(--muted); font-weight: 700; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+            .ord-empty .ic { width: 40px; height: 40px; color: var(--gold); opacity: .6; }
+            .ord-skel { height: 58px; margin: 10px 20px; border-radius: 12px; background: linear-gradient(90deg, rgba(255,255,255,.03), rgba(255,255,255,.09), rgba(255,255,255,.03)); background-size: 200% 100%; animation: ordShimmer 1.3s infinite; }
+            @keyframes ordShimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+            .ord-more { display: flex; justify-content: center; }
+
+            @media (min-width: 640px) { .ord-kpis { grid-template-columns: repeat(3, 1fr); } }
+            @media (min-width: 1100px) { .ord-kpis { grid-template-columns: repeat(6, 1fr); } .ord-toolbar { grid-template-columns: minmax(0, 1fr); } }
+            @media (max-width: 1100px) {
+                .ord-row { grid-template-columns: 110px minmax(0, 1.6fr) minmax(0, 1.2fr) 90px 130px 28px; }
+                .ord-row > .ord-src, .ord-row > .ord-date { display: none; }
+                .ord-row.ord-head > .ord-src, .ord-row.ord-head > .ord-date { display: none; }
+            }
+            @media (max-width: 760px) {
+                .ord-shell { padding: 14px 12px 50px; }
+                .ord-row.ord-head { display: none; }
+                .ord-chips { flex: 1 1 100%; flex-wrap: nowrap; overflow-x: auto; padding-bottom: 6px; scrollbar-width: none; }
+                .ord-chips::-webkit-scrollbar { display: none; }
+                .ord-chip { flex-shrink: 0; }
+                .ord-toolbar select { flex: 1 1 calc(50% - 6px); min-width: 0 !important; }
+                .ord-row.ord-item { grid-template-columns: 1fr auto; grid-template-areas: "prod price" "user status" "id date"; gap: 8px 12px; padding: 14px 16px; }
+                .ord-row.ord-item > .ord-id { grid-area: id; text-align: right; }
+                .ord-row.ord-item > .ord-prod { grid-area: prod; }
+                .ord-row.ord-item > .ord-user { grid-area: user; justify-content: flex-start; }
+                .ord-row.ord-item > .ord-price { grid-area: price; text-align: left; font-size: 1rem; }
+                .ord-row.ord-item > .ord-badge { grid-area: status; justify-self: end; }
+                .ord-row.ord-item > .ord-date { grid-area: date; display: block; text-align: left; }
+                .ord-row.ord-item > .ord-src, .ord-row.ord-item > .ord-go { display: none; }
+            }
+
+            /* ===== نافذة تفاصيل الطلب ===== */
+            body #exactOrderDetailModal { position: fixed; inset: 0; width: 100vw; height: 100vh; background: rgba(4,4,10,.82); backdrop-filter: blur(10px); z-index: 100000; display: none; align-items: center; justify-content: center; padding: 18px; overflow-y: auto; }
+            body #exactOrderDetailModal.active { display: flex; }
+            .ordm { width: 100%; max-width: 1040px; margin: auto; border-radius: 26px; border: 1px solid var(--line); background: linear-gradient(160deg, var(--bg-3), var(--bg-1)); box-shadow: 0 40px 100px -30px rgba(0,0,0,.95), 0 0 0 1px rgba(232,194,106,.06); display: flex; flex-direction: column; overflow: hidden; animation: modalIn .35s cubic-bezier(.2,.9,.3,1.15); }
+            body.light-mode-admin .ordm { background: #fff; }
+            .ordm-head { display: flex; justify-content: space-between; align-items: center; gap: 14px; padding: 20px 24px; border-bottom: 1px solid var(--line); background: radial-gradient(500px 160px at 100% 0%, rgba(232,194,106,.14), transparent 70%); }
+            .ordm-title { display: flex; align-items: center; gap: 14px; min-width: 0; }
+            .ordm-ico { width: 50px; height: 50px; border-radius: 15px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: var(--gold); background: rgba(232,194,106,.1); border: 1px solid var(--line); }
+            .ordm-ico .ic { width: 26px; height: 26px; }
+            .ordm-pname { font-size: 1.15rem; font-weight: 800; color: var(--txt); overflow: hidden; text-overflow: ellipsis; }
+            .ordm-psub { font-size: .8rem; color: var(--muted); margin-top: 3px; }
+            .ordm-head-r { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+            .ord-x { width: 40px; height: 40px; border-radius: 12px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--muted); background: var(--bg-0); border: 1px solid var(--line-2); transition: all .2s; }
+            .ord-x:hover { color: #000; background: var(--gold); transform: rotate(90deg); }
+            .ord-x .ic { width: 18px; height: 18px; }
+            .ordm-stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; padding: 18px 24px 0; }
+            .ordm-tile { padding: 14px 16px; border-radius: 16px; background: var(--bg-0); border: 1px solid var(--line-2); display: flex; flex-direction: column; gap: 6px; }
+            body.light-mode-admin .ordm-tile { background: var(--bg-2); }
+            .ordm-tile .t-l { font-size: .72rem; color: var(--muted); font-weight: 700; }
+            .ordm-tile .t-v { font-size: 1.1rem; font-weight: 800; color: var(--txt); direction: ltr; text-align: right; font-variant-numeric: tabular-nums; }
+            .ordm-tile .t-v.gold { color: var(--gold); } .ordm-tile .t-v.green { color: #34d399; }
+            .ordm-grid { display: grid; grid-template-columns: 1fr; gap: 16px; padding: 18px 24px 8px; }
+            .ordm-panel { border-radius: 18px; background: var(--bg-0); border: 1px solid var(--line-2); padding: 18px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+            body.light-mode-admin .ordm-panel { background: var(--bg-2); }
+            .ordm-ptitle { display: flex; align-items: center; gap: 8px; font-size: .9rem; font-weight: 800; color: var(--gold); }
+            .ordm-ptitle .ic { width: 18px; height: 18px; }
+            .ordm-row { display: flex; justify-content: space-between; align-items: center; gap: 14px; padding: 9px 0; border-bottom: 1px dashed var(--line-2); font-size: .84rem; }
+            .ordm-row:last-child { border-bottom: none; }
+            .ordm-row .lbl { color: var(--muted); font-weight: 700; flex-shrink: 0; }
+            .ordm-row .val { color: var(--txt); font-weight: 800; direction: ltr; text-align: left; word-break: break-all; display: flex; align-items: center; gap: 8px; }
+            .ordm-copy { width: 28px; height: 28px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; color: var(--gold); background: rgba(232,194,106,.1); border: 1px solid var(--line); transition: all .2s; }
+            .ordm-copy:hover { background: var(--gold); color: #000; }
+            .ordm-copy .ic { width: 14px; height: 14px; }
+            .ordm-input { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 12px; background: var(--bg-1); border: 1px solid var(--line-2); font-weight: 700; font-size: .85rem; color: var(--txt); }
+            body.light-mode-admin .ordm-input { background: #fff; }
+            .ordm-input .in-v { direction: ltr; word-break: break-all; font-family: monospace; }
+            .ordm-term { border-radius: 14px; overflow: hidden; border: 1px solid var(--line-2); background: #06060b; display: flex; flex-direction: column; }
+            .ordm-term-bar { display: flex; align-items: center; justify-content: space-between; padding: 9px 14px; background: rgba(255,255,255,.04); border-bottom: 1px solid var(--line-2); }
+            .ordm-dots { display: flex; gap: 6px; }
+            .ordm-dots i { width: 10px; height: 10px; border-radius: 50%; display: block; }
+            .ordm-dots i:nth-child(1) { background: #f87171; } .ordm-dots i:nth-child(2) { background: #fbbf24; } .ordm-dots i:nth-child(3) { background: #34d399; }
+            .ordm-term-name { font-size: .7rem; color: #8b8aa0; font-family: monospace; display: flex; align-items: center; gap: 6px; direction: ltr; }
+            .ordm-term-name .ic { width: 13px; height: 13px; }
+            .ordm-term pre { margin: 0; padding: 14px 16px; font-family: ui-monospace, Menlo, Consolas, monospace !important; font-size: .8rem; line-height: 1.7; color: #7dd3fc; direction: ltr; text-align: left; white-space: pre-wrap; word-break: break-word; max-height: 240px; overflow-y: auto; background: transparent; border: none; }
+            .ordm-foot { display: flex; justify-content: flex-end; gap: 10px; padding: 14px 24px 22px; }
+            @media (min-width: 760px) { .ordm-stats { grid-template-columns: repeat(4, 1fr); } .ordm-grid { grid-template-columns: 1fr 1.15fr; } }
+            @media (max-width: 520px) { .ordm-head { padding: 16px; } .ordm-stats, .ordm-grid, .ordm-foot { padding-left: 14px; padding-right: 14px; } .ordm-pname { font-size: 1rem; } }
+        </style>
+
         <div id="allOrdersScreen">
-            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #27272a; padding-bottom:12px;">
-                <span style="font-size:1.15rem; font-weight:800; color:#38bdf8;">📦 كل طلبات المتجر</span>
-                <button class="btn-secondary" onclick="closeAllOrdersScreen()">رجوع</button>
-            </div>
-
-            <div>
-                <input type="text" id="adminOrderSearchInput" class="admin-search-order-box" placeholder="🔍 ابحث برقم الطلب (Order ID أو UUID)..." oninput="filterAllOrdersList()">
-            </div>
-
-            <div id="allOrdersListContainer" style="display:flex; flex-direction:column; gap:10px;"></div>
-        </div>
-
-        <div id="exactOrderDetailModal">
-            <div class="exact-modal-container">
-                <div class="exact-top-bar">
-                    <div class="exact-col">
-                        <span class="exact-col-title">المنتج</span>
-                        <span class="exact-col-val" id="exProduct">-</span>
+            <div class="ord-shell">
+                <div class="ord-topbar">
+                    <div class="ord-brand">
+                        <div class="ord-brand-ico"><svg class="ic"><use href="#i-receipt"/></svg></div>
+                        <div>
+                            <div class="ord-h1">سجل الطلبات</div>
+                            <div class="ord-h2">متابعة وإدارة كل طلبات المتجر في مكان واحد</div>
+                        </div>
                     </div>
-                    <div class="exact-col">
-                        <span class="exact-col-title">الكمية</span>
-                        <span class="exact-col-val" id="exQuantity">1</span>
-                    </div>
-                    <div class="exact-col">
-                        <span class="exact-col-title">الايميل</span>
-                        <span class="exact-col-val" id="exEmail" style="direction:ltr; font-size:0.8rem; word-break:break-all;">-</span>
-                    </div>
-                    <div class="exact-col">
-                        <span class="exact-col-title">الحالة</span>
-                        <span class="exact-status-badge" id="exStatus">✓ تم بنجاح</span>
+                    <div class="ord-top-actions">
+                        <button class="ord-btn" onclick="ordReload()"><svg class="ic"><use href="#i-refresh"/></svg><span>تحديث</span></button>
+                        <button class="ord-btn" onclick="ordExportXlsx()"><svg class="ic"><use href="#i-download"/></svg><span>تصدير Excel</span></button>
+                        <button class="ord-btn" onclick="ordExportCsv()"><svg class="ic"><use href="#i-download"/></svg><span>تصدير CSV</span></button>
+                        <button class="ord-btn ord-btn-primary" onclick="closeAllOrdersScreen()"><svg class="ic"><use href="#i-arrow-right"/></svg><span>رجوع</span></button>
                     </div>
                 </div>
 
-                <div class="exact-body-grid">
-                    <div class="exact-card-panel">
-                        <div class="exact-panel-title">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>
-                            <span>تفاصيل الطلب</span>
+                <div class="ord-kpis" id="ordKpis"></div>
+
+                <div class="ord-toolbar">
+                    <div class="ord-search"><svg class="ic"><use href="#i-search"/></svg><input type="text" id="adminOrderSearchInput" placeholder="ابحث برقم الطلب، الإيميل، المنتج، الفئة أو المدخلات..." oninput="filterAllOrdersList()" autocomplete="off"></div>
+                    <div class="ord-filters-row">
+                        <div class="ord-chips" id="ordChips">
+                            <button class="ord-chip active" data-f="all">الكل <b>0</b></button>
+                            <button class="ord-chip" data-f="done">تم بنجاح <b>0</b></button>
+                            <button class="ord-chip" data-f="pending">قيد الانتظار <b>0</b></button>
+                            <button class="ord-chip" data-f="check">قيد التشيك <b>0</b></button>
+                            <button class="ord-chip" data-f="rejected">مرفوض <b>0</b></button>
                         </div>
-                        <div class="exact-detail-row">
-                            <span class="lbl">رقم الطلب:</span>
-                            <span class="val" id="exOrderId" style="direction:ltr; font-family:monospace;">-</span>
-                        </div>
-                        <div class="exact-detail-row">
-                            <span class="lbl">الفئة:</span>
-                            <span class="val" id="exSubcategory">-</span>
-                        </div>
-                        <div class="exact-detail-row">
-                            <span class="lbl">السعر:</span>
-                            <span class="val price" id="exPrice" style="direction:ltr;">$0.00</span>
-                        </div>
-                        <div class="exact-detail-row">
-                            <span class="lbl">الربح التقديري:</span>
-                            <span class="val" id="exProfit">-</span>
-                        </div>
-                        <div class="exact-detail-row">
-                            <span class="lbl">مصدر الطلب:</span>
-                            <span class="val" id="exOrderSource">الموقع</span>
-                        </div>
-                        <div class="exact-detail-row">
-                            <span class="lbl">التاريخ:</span>
-                            <span class="val" id="exDate" style="direction:ltr;">-</span>
+                        <select id="ordSource" onchange="filterAllOrdersList()"><option value="">كل المصادر</option></select>
+                        <select id="ordSort" onchange="filterAllOrdersList()">
+                            <option value="new">الأحدث أولاً</option>
+                            <option value="old">الأقدم أولاً</option>
+                            <option value="high">الأعلى سعراً</option>
+                            <option value="low">الأقل سعراً</option>
+                        </select>
+                    </div>
+                    <style>
+                        .ordx-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; margin-top: 8px; }
+                        .ordx { display: flex; flex-direction: column; gap: 3px; font-size: 0.68rem; color: var(--muted); }
+                        .ordx input { background: var(--bg-0); border: 1px solid var(--line); color: var(--txt); border-radius: 10px; padding: 8px 10px; font-size: 0.8rem; width: 140px; }
+                    </style>
+                    <div class="ordx-row">
+                        <label class="ordx"><span>من تاريخ</span><input type="date" id="ordDateFrom" onchange="filterAllOrdersList()"></label>
+                        <label class="ordx"><span>إلى تاريخ</span><input type="date" id="ordDateTo" onchange="filterAllOrdersList()"></label>
+                        <label class="ordx"><span>أقل سعر $</span><input type="number" id="ordMinPrice" min="0" step="any" placeholder="0" oninput="filterAllOrdersList()"></label>
+                        <label class="ordx"><span>أعلى سعر $</span><input type="number" id="ordMaxPrice" min="0" step="any" placeholder="بدون حد" oninput="filterAllOrdersList()"></label>
+                        <button class="ord-btn" onclick="ordClearFilters()"><span>مسح الفلاتر</span></button>
+                    </div>
+                </div>
+
+                <div class="ord-meta"><span id="ordCount"></span><span id="ordTotalNote"></span></div>
+
+                <div class="ord-table">
+                    <div class="ord-row ord-head">
+                        <div>رقم الطلب</div><div>المنتج / الفئة</div><div style="text-align:right;">العميل</div><div>السعر</div><div>الحالة</div><div class="ord-src">المصدر</div><div class="ord-date">التاريخ</div><div></div>
+                    </div>
+                    <div id="allOrdersListContainer"></div>
+                </div>
+                <div class="ord-more" id="ordMoreWrap" style="display:none;"><button class="ord-btn" onclick="ordShowMore()"><svg class="ic"><use href="#i-chevron"/></svg><span>عرض المزيد</span></button></div>
+            </div>
+        </div>
+
+        <style>
+            /* ===== شاشة إدارة الجرد ===== */
+            body #inventoryScreen {
+                display: none; position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: 99999;
+                overflow-y: auto; padding: 0; flex-direction: column; gap: 0;
+                background: radial-gradient(900px 500px at 90% -10%, rgba(232,194,106,0.10), transparent 60%),
+                            radial-gradient(700px 400px at 0% 0%, rgba(56,189,248,0.08), transparent 60%), var(--bg-0);
+            }
+            body.light-mode-admin #inventoryScreen { background: var(--bg-0); }
+            body #inventoryScreen.active { display: flex; }
+            .k-teal { --kc: #2dd4bf; } .k-sky { --kc: #38bdf8; }
+            .inv-kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+            @media (min-width: 760px) { .inv-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+            .inv-kpis .ord-kpi { min-width: 0; }
+            .inv-kpis .ord-kpi-v { font-size: 1.3rem; }
+            .inv-delta { display: inline-flex; align-items: center; gap: 4px; font-size: .68rem; font-weight: 800; margin-top: 5px; position: relative; direction: ltr; }
+            .inv-delta .ic { width: 12px; height: 12px; stroke-width: 2.6; }
+            .inv-delta.up { color: #34d399; } .inv-delta.down { color: #f87171; } .inv-delta.flat { color: var(--muted); }
+            .inv-range-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+            .inv-custom { display: none; gap: 8px; align-items: center; flex-wrap: wrap; }
+            .inv-custom.show { display: flex; }
+            .inv-custom input { width: auto !important; padding: 9px 12px !important; border-radius: 12px !important; font-size: .8rem !important; direction: ltr; }
+            .inv-note { display: flex; gap: 10px; align-items: flex-start; padding: 12px 16px; border-radius: 14px; font-size: .78rem; font-weight: 700; line-height: 1.7; color: #fbbf24; background: rgba(251,191,36,.08); border: 1px solid rgba(251,191,36,.35); }
+            .inv-note .ic { width: 18px; height: 18px; flex-shrink: 0; margin-top: 2px; }
+            .inv-card { border-radius: 20px; border: 1px solid var(--line-2); background: linear-gradient(160deg, var(--bg-3), var(--bg-1)); box-shadow: var(--shadow); padding: 18px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+            body.light-mode-admin .inv-card { background: #fff; }
+            .inv-card-t { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+            .inv-card-t h3 { margin: 0; display: flex; align-items: center; gap: 9px; font-size: .95rem; font-weight: 800; color: var(--txt); }
+            .inv-card-t h3 .ic { width: 20px; height: 20px; color: var(--gold); }
+            .inv-card-t small { color: var(--muted); font-size: .72rem; font-weight: 700; }
+            .inv-scroll { overflow-x: auto; scrollbar-width: thin; }
+            .inv-tbl { min-width: 760px; display: flex; flex-direction: column; }
+            .inv-tr { display: grid; grid-template-columns: 1.5fr .7fr 1fr 1fr 1fr .8fr 1fr; gap: 12px; align-items: center; padding: 13px 8px; border-bottom: 1px dashed var(--line-2); font-size: .82rem; color: var(--txt); font-variant-numeric: tabular-nums; }
+            .inv-tr:last-child { border-bottom: none; }
+            .inv-tr.head { font-size: .7rem; font-weight: 800; color: var(--muted); border-bottom: 1px solid var(--line-2); }
+            .inv-tr.total { background: rgba(232,194,106,.07); border-radius: 12px; font-weight: 800; }
+            .inv-tr .lbl { font-weight: 800; display: flex; align-items: center; gap: 8px; }
+            .inv-tr .lbl .ic { width: 15px; height: 15px; color: var(--gold); }
+            .inv-tr .num { direction: ltr; text-align: right; }
+            .inv-pos { color: #34d399; } .inv-neg { color: #f87171; } .inv-dim { color: var(--muted); }
+            .inv-tabs { display: flex; gap: 8px; }
+            .inv-legend { display: flex; gap: 16px; font-size: .72rem; color: var(--muted); font-weight: 700; flex-wrap: wrap; }
+            .inv-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-left: 6px; vertical-align: -1px; }
+            .inv-chart { overflow-x: auto; scrollbar-width: thin; direction: ltr; }
+            .inv-chart svg { display: block; }
+            .inv-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+            @media (min-width: 980px) { .inv-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+            .inv-list { display: flex; flex-direction: column; gap: 12px; }
+            .inv-li { display: flex; flex-direction: column; gap: 6px; }
+            .inv-li-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+            .inv-li-n { font-weight: 800; font-size: .82rem; color: var(--txt); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+            .inv-li-n em { font-style: normal; color: var(--muted); font-weight: 600; font-size: .72rem; margin-right: 6px; }
+            .inv-li-v { font-weight: 800; font-size: .82rem; color: var(--gold); direction: ltr; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+            .inv-bar { height: 7px; border-radius: 999px; background: rgba(255,255,255,.06); overflow: hidden; }
+            body.light-mode-admin .inv-bar { background: rgba(0,0,0,.07); }
+            .inv-bar i { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--gold-3), var(--gold)); transition: width .6s ease; }
+            .inv-li-s { display: flex; justify-content: space-between; font-size: .7rem; color: var(--muted); font-weight: 700; }
+            .inv-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+            .inv-tile { padding: 12px; border-radius: 14px; background: var(--bg-0); border: 1px solid var(--line-2); display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+            body.light-mode-admin .inv-tile { background: var(--bg-2); }
+            .inv-tile b { font-size: 1.05rem; font-weight: 800; color: var(--txt); direction: ltr; text-align: right; font-variant-numeric: tabular-nums; }
+            .inv-tile span { font-size: .7rem; color: var(--muted); font-weight: 700; }
+            .inv-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+            .inv-pill { padding: 6px 12px; border-radius: 999px; font-size: .72rem; font-weight: 700; color: var(--txt); background: var(--bg-0); border: 1px solid var(--line-2); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+            .inv-pill.red { color: #f87171; border-color: rgba(248,113,113,.4); background: rgba(248,113,113,.08); }
+            .inv-sub-h { font-size: .74rem; font-weight: 800; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+            .inv-sub-h .ic { width: 14px; height: 14px; }
+            .inv-foot { font-size: .72rem; color: var(--muted); text-align: center; padding: 6px 0 0; font-weight: 600; line-height: 1.8; }
+            @media (max-width: 760px) { .inv-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+            /* ===== شاشة جرد عملائي Api ===== */
+            body #apiClientsScreen {
+                display: none; position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: 99999;
+                overflow-y: auto; padding: 0; flex-direction: column; gap: 0;
+                background: radial-gradient(900px 500px at 90% -10%, rgba(56,189,248,0.12), transparent 60%),
+                            radial-gradient(700px 400px at 0% 0%, rgba(232,194,106,0.10), transparent 60%), var(--bg-0);
+            }
+            body.light-mode-admin #apiClientsScreen { background: var(--bg-0); }
+            body #apiClientsScreen.active { display: flex; }
+            #apiClientsScreen .ord-shell { gap: 16px; }
+            .acv-urlrow { display: flex; gap: 10px; align-items: stretch; flex-wrap: wrap; }
+            .acv-code { flex: 1; min-width: 220px; direction: ltr; text-align: left; font-family: monospace; font-size: .86rem; font-weight: 700; color: #38bdf8; background: var(--bg-0); border: 1px dashed rgba(56,189,248,.5); border-radius: 12px; padding: 11px 14px; overflow-x: auto; white-space: nowrap; }
+            .acv-edit { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+            .acv-edit input { flex: 1; min-width: 220px; direction: ltr; text-align: left; padding: 11px 14px !important; border-radius: 12px !important; font-size: .85rem !important; }
+            .acv-ep { display: grid; grid-template-columns: 56px 130px 1fr; gap: 10px; align-items: center; padding: 8px 10px; border-radius: 12px; background: var(--bg-0); border: 1px solid var(--line-2); cursor: pointer; }
+            .acv-ep:hover { border-color: rgba(56,189,248,.6); }
+            .acv-ep b { font-size: .68rem; font-weight: 800; color: #052e16; background: #4ade80; border-radius: 6px; padding: 2px 0; text-align: center; }
+            .acv-ep span { font-size: .78rem; font-weight: 800; color: var(--txt); }
+            .acv-ep code { direction: ltr; text-align: left; font-size: .72rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+            .acv-badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 999px; font-size: .68rem; font-weight: 800; white-space: nowrap; border: 1px solid transparent; }
+            .acv-badge.green { color: #34d399; background: rgba(52,211,153,.1); border-color: rgba(52,211,153,.35); }
+            .acv-badge.red { color: #f87171; background: rgba(248,113,113,.1); border-color: rgba(248,113,113,.35); }
+            .acv-badge.amber { color: #fbbf24; background: rgba(251,191,36,.1); border-color: rgba(251,191,36,.35); }
+            .acv-badge.grey { color: var(--muted); background: rgba(148,163,184,.1); border-color: rgba(148,163,184,.3); }
+            .acv-badge.blue { color: #38bdf8; background: rgba(56,189,248,.1); border-color: rgba(56,189,248,.35); }
+            .acv-note-red { color: #f87171 !important; background: rgba(248,113,113,.08) !important; border-color: rgba(248,113,113,.35) !important; }
+            .acv-tbl { min-width: 1020px; display: flex; flex-direction: column; }
+            .acv-tr { display: grid; grid-template-columns: 2.2fr 1.2fr 1fr 1fr .9fr .6fr 1.2fr .9fr; gap: 10px; align-items: center; padding: 12px 8px; border-bottom: 1px dashed var(--line-2); font-size: .8rem; color: var(--txt); font-variant-numeric: tabular-nums; }
+            .acv-tr.head { font-size: .7rem; font-weight: 800; color: var(--muted); border-bottom: 1px solid var(--line-2); }
+            .acv-tr .num { direction: ltr; text-align: right; }
+            .acv-crow { cursor: pointer; border-radius: 12px; transition: background .15s; }
+            .acv-crow:hover { background: rgba(56,189,248,.06); }
+            .acv-mail { direction: ltr; text-align: right; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+            .acv-sub { font-size: .66rem; color: var(--muted); font-weight: 700; margin-top: 2px; }
+            .acv-detail { padding: 14px 12px 18px; border-bottom: 1px dashed var(--line-2); background: rgba(56,189,248,.04); border-radius: 0 0 14px 14px; display: flex; flex-direction: column; gap: 12px; }
+            .acv-otr { display: grid; grid-template-columns: 1.1fr 1.6fr 2.2fr .6fr .9fr .9fr 1.1fr; gap: 10px; align-items: center; padding: 11px 8px; border-bottom: 1px dashed var(--line-2); font-size: .78rem; color: var(--txt); font-variant-numeric: tabular-nums; }
+            .acv-otr.head { font-size: .7rem; font-weight: 800; color: var(--muted); border-bottom: 1px solid var(--line-2); }
+            .acv-otbl { min-width: 960px; display: flex; flex-direction: column; }
+            .acv-hours { display: flex; align-items: flex-end; gap: 4px; height: 120px; direction: ltr; }
+            .acv-hours div { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 100%; gap: 4px; }
+            .acv-hours i { display: block; width: 100%; border-radius: 5px 5px 2px 2px; background: linear-gradient(180deg, #38bdf8, #0ea5e9); min-height: 2px; }
+            .acv-hours small { font-size: .56rem; color: var(--muted); font-weight: 700; }
+            .acv-search { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+            .acv-search input { flex: 1; min-width: 200px; padding: 10px 14px !important; border-radius: 12px !important; font-size: .82rem !important; }
+            .acv-empty { text-align: center; color: var(--muted); font-size: .82rem; font-weight: 700; padding: 22px 0; }
+            .acv-tiles4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+            @media (max-width: 900px) { .acv-tiles4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+        </style>
+
+        <div id="inventoryScreen">
+            <div class="ord-shell">
+                <div class="ord-topbar">
+                    <div class="ord-brand">
+                        <div class="ord-brand-ico"><svg class="ic"><use href="#i-inventory"/></svg></div>
+                        <div>
+                            <div class="ord-h1">إدارة الجرد</div>
+                            <div class="ord-h2">جرد شامل للأرباح والمبيعات والمنتجات والإيداعات (يومي، أسبوعي، شهري، سنوي)</div>
                         </div>
                     </div>
+                    <div class="ord-top-actions">
+                        <button class="ord-btn" onclick="invReload()"><svg class="ic"><use href="#i-refresh"/></svg><span>تحديث</span></button>
+                        <button class="ord-btn" onclick="invExportXlsx()"><svg class="ic"><use href="#i-download"/></svg><span>تصدير Excel</span></button>
+                        <button class="ord-btn" onclick="invExportCsv()"><svg class="ic"><use href="#i-download"/></svg><span>تصدير CSV</span></button>
+                        <button class="ord-btn ord-btn-primary" onclick="closeInventoryScreen()"><svg class="ic"><use href="#i-arrow-right"/></svg><span>رجوع</span></button>
+                    </div>
+                </div>
 
-                    <div class="exact-card-panel">
-                        <div class="exact-panel-title">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
-                            <span>المدخلات والرد</span>
+                <div class="ord-toolbar">
+                    <div class="inv-range-row">
+                        <div class="ord-chips" id="invChips">
+                            <button class="ord-chip" data-r="today"><svg class="ic"><use href="#i-clock"/></svg>اليوم</button>
+                            <button class="ord-chip" data-r="yesterday">أمس</button>
+                            <button class="ord-chip" data-r="week">7 أيام</button>
+                            <button class="ord-chip active" data-r="month">هذا الشهر</button>
+                            <button class="ord-chip" data-r="prev_month">الشهر الماضي</button>
+                            <button class="ord-chip" data-r="last30">30 يوم</button>
+                            <button class="ord-chip" data-r="year">هذه السنة</button>
+                            <button class="ord-chip" data-r="all">الكل</button>
+                            <button class="ord-chip" data-r="custom"><svg class="ic"><use href="#i-calendar"/></svg>فترة مخصصة</button>
                         </div>
-                        <div class="exact-input-box">
-                            <span style="cursor:pointer;" onclick="copyExactInput()" title="نسخ">📋</span>
-                            <span id="exUserInput">-</span>
+                    </div>
+                    <div class="inv-custom" id="invCustom">
+                        <span class="inv-dim" style="font-size:.78rem; font-weight:700;">من</span>
+                        <input type="date" id="invFrom">
+                        <span class="inv-dim" style="font-size:.78rem; font-weight:700;">إلى</span>
+                        <input type="date" id="invTo">
+                        <button class="ord-btn ord-btn-primary" onclick="invApplyCustom()"><svg class="ic"><use href="#i-check"/></svg><span>تطبيق</span></button>
+                    </div>
+                </div>
+
+                <div class="ord-meta"><span id="invRangeLabel"></span><span id="invGenerated"></span></div>
+
+                <div id="invBody"></div>
+            </div>
+        </div>
+
+        <div id="apiClientsScreen">
+            <div class="ord-shell">
+                <div class="ord-topbar">
+                    <div class="ord-brand">
+                        <div class="ord-brand-ico"><svg class="ic"><use href="#i-plug"/></svg></div>
+                        <div>
+                            <div class="ord-h1">جرد عملائي Api</div>
+                            <div class="ord-h2">جرد شامل لكل عملاء الـ API: الطلبات والمبيعات والأرباح والأرصدة والخصومات والنشاط</div>
                         </div>
-                        <div class="exact-bot-response-box" id="exBotResponse">
-Activation Success :
-Status : Completed / Verified
-ID     : -
-Code   : -
+                    </div>
+                    <div class="ord-top-actions">
+                        <button class="ord-btn" onclick="acvReload()"><svg class="ic"><use href="#i-refresh"/></svg><span>تحديث</span></button>
+                        <button class="ord-btn" onclick="acvExportXlsx()"><svg class="ic"><use href="#i-download"/></svg><span>تصدير Excel</span></button>
+                        <button class="ord-btn" onclick="acvExportCsv()"><svg class="ic"><use href="#i-download"/></svg><span>تصدير CSV</span></button>
+                        <button class="ord-btn ord-btn-primary" onclick="closeApiClientsScreen()"><svg class="ic"><use href="#i-arrow-right"/></svg><span>رجوع</span></button>
+                    </div>
+                </div>
+
+                <div class="inv-card">
+                    <div class="inv-card-t">
+                        <h3><svg class="ic"><use href="#i-globe"/></svg>رابط الـ API لعملائك</h3>
+                        <small id="acvLinkState">-</small>
+                    </div>
+                    <div class="acv-urlrow">
+                        <div class="acv-code" id="acvCurUrl">-</div>
+                        <button class="ord-btn" onclick="acvCopy('cur')"><svg class="ic"><use href="#i-copy"/></svg><span>نسخ</span></button>
+                    </div>
+                    <div class="acv-edit">
+                        <input type="text" id="acvUrlInput" placeholder="غيّر الرابط: https://yourdomain.com" autocomplete="off">
+                        <button class="ord-btn ord-btn-primary" onclick="acvSaveUrl()"><svg class="ic"><use href="#i-check"/></svg><span>حفظ الرابط</span></button>
+                        <button class="ord-btn" onclick="acvResetUrl()"><svg class="ic"><use href="#i-refresh"/></svg><span>الرابط الافتراضي</span></button>
+                    </div>
+                    <div class="inv-foot" style="text-align:right; padding:0;">اكتب رابط الموقع أو رابط الـ API كامل (بينقبل الاثنين). الرابط المحفوظ هو اللي بيظهر لعملائك بصفحة وثائق الـ API وبنافذة إعدادات الـ API عندهم.</div>
+                    <div class="inv-sub-h"><svg class="ic"><use href="#i-code"/></svg>المسارات المتاحة لعملائك (اضغط على أي مسار لنسخه)</div>
+                    <div class="inv-list" id="acvEndpoints"></div>
+                </div>
+
+                <div class="ord-toolbar">
+                    <div class="inv-range-row">
+                        <div class="ord-chips" id="acvChips">
+                            <button class="ord-chip" data-r="today"><svg class="ic"><use href="#i-clock"/></svg>اليوم</button>
+                            <button class="ord-chip" data-r="yesterday">أمس</button>
+                            <button class="ord-chip" data-r="week">7 أيام</button>
+                            <button class="ord-chip active" data-r="month">هذا الشهر</button>
+                            <button class="ord-chip" data-r="prev_month">الشهر الماضي</button>
+                            <button class="ord-chip" data-r="last30">30 يوم</button>
+                            <button class="ord-chip" data-r="year">هذه السنة</button>
+                            <button class="ord-chip" data-r="all">الكل</button>
+                            <button class="ord-chip" data-r="custom"><svg class="ic"><use href="#i-calendar"/></svg>فترة مخصصة</button>
+                        </div>
+                    </div>
+                    <div class="inv-custom" id="acvCustom">
+                        <span class="inv-dim" style="font-size:.78rem; font-weight:700;">من</span>
+                        <input type="date" id="acvFrom">
+                        <span class="inv-dim" style="font-size:.78rem; font-weight:700;">إلى</span>
+                        <input type="date" id="acvTo">
+                        <button class="ord-btn ord-btn-primary" onclick="acvApplyCustom()"><svg class="ic"><use href="#i-check"/></svg><span>تطبيق</span></button>
+                    </div>
+                </div>
+
+                <div class="ord-meta"><span id="acvRangeLabel"></span><span id="acvGenerated"></span></div>
+
+                <div id="acvBody"></div>
+            </div>
+        </div>
+
+        <div id="exactOrderDetailModal" onclick="if(event.target===this){closeExactOrderDetailModal();}">
+            <div class="ordm">
+                <div class="ordm-head">
+                    <div class="ordm-title">
+                        <div class="ordm-ico"><svg class="ic"><use href="#i-package"/></svg></div>
+                        <div style="min-width:0;">
+                            <div class="ordm-pname" id="exProduct">-</div>
+                            <div class="ordm-psub" id="exSubcategory">-</div>
+                        </div>
+                    </div>
+                    <div class="ordm-head-r">
+                        <span class="ord-badge pending" id="exStatus">-</span>
+                        <button class="ord-x" onclick="closeExactOrderDetailModal()" title="إغلاق"><svg class="ic"><use href="#i-x"/></svg></button>
+                    </div>
+                </div>
+
+                <div class="ordm-stats">
+                    <div class="ordm-tile"><span class="t-l">السعر</span><span class="t-v green" id="exPrice">$0.00</span></div>
+                    <div class="ordm-tile"><span class="t-l">الربح التقديري</span><span class="t-v gold" id="exProfit">-</span></div>
+                    <div class="ordm-tile"><span class="t-l">الكمية</span><span class="t-v" id="exQuantity">1</span></div>
+                    <div class="ordm-tile"><span class="t-l">مصدر الطلب</span><span class="t-v" id="exOrderSource" style="direction:rtl; text-align:right;">الموقع</span></div>
+                </div>
+
+                <div class="ordm-grid">
+                    <div class="ordm-panel">
+                        <div class="ordm-ptitle"><svg class="ic"><use href="#i-receipt"/></svg><span>تفاصيل الطلب</span></div>
+                        <div class="ordm-row"><span class="lbl">رقم الطلب</span><span class="val"><span id="exOrderId">-</span><span class="ordm-copy" onclick="ordCopyText('exOrderId')" title="نسخ"><svg class="ic"><use href="#i-copy"/></svg></span></span></div>
+                        <div class="ordm-row"><span class="lbl">العميل</span><span class="val"><span id="exEmail">-</span><span class="ordm-copy" onclick="ordCopyText('exEmail')" title="نسخ"><svg class="ic"><use href="#i-copy"/></svg></span></span></div>
+                        <div class="ordm-row"><span class="lbl">المزوّد</span><span class="val" id="exProvider">-</span></div>
+                        <div class="ordm-row"><span class="lbl">التاريخ والوقت</span><span class="val" id="exDate">-</span></div>
+                    </div>
+
+                    <div class="ordm-panel">
+                        <div class="ordm-ptitle"><svg class="ic"><use href="#i-code"/></svg><span>المدخلات ورد النظام</span></div>
+                        <div class="ordm-input">
+                            <span class="ordm-copy" onclick="copyExactInput()" title="نسخ المدخلات"><svg class="ic"><use href="#i-copy"/></svg></span>
+                            <span class="in-v" id="exUserInput">-</span>
+                        </div>
+                        <div class="ordm-term">
+                            <div class="ordm-term-bar">
+                                <div class="ordm-dots"><i></i><i></i><i></i></div>
+                                <div class="ordm-term-name"><svg class="ic"><use href="#i-terminal"/></svg><span>response.log</span></div>
+                                <span class="ordm-copy" onclick="ordCopyText('exBotResponse')" title="نسخ الرد"><svg class="ic"><use href="#i-copy"/></svg></span>
+                            </div>
+                            <pre id="exBotResponse">-</pre>
                         </div>
                     </div>
                 </div>
 
-                <button class="exact-close-btn" onclick="closeExactOrderDetailModal()">إغلاق</button>
+                <div class="ordm-foot"><button class="ord-btn" onclick="closeExactOrderDetailModal()">إغلاق</button></div>
             </div>
         </div>
+
 
         <div class="ims-screen" id="importedSectionsScreen">
             <div class="ims-wrap">
                 <div class="ims-topbar">
-                    <span class="ims-title"><span>🗂️</span><span>تعديل قسم مسحوب</span></span>
+                    <span class="ims-title"><span><svg class="ic"><use href="#i-layers"/></svg></span><span>تعديل قسم مسحوب</span></span>
                     <button class="btn-secondary" onclick="closeImportedSectionsScreen()">رجوع</button>
                 </div>
-                <div class="ims-hint">هاد الأقسام يلي سحبتها من الـ API. اكبس على القسم لتشوف أقسامه الفرعية، واكبس على ✏️ لتعدّل الاسم والصورة (ونسبة الربح للقسم الرئيسي).</div>
+                <div class="ims-hint">هاد الأقسام يلي سحبتها من الـ API. اكبس على القسم لتشوف أقسامه الفرعية، واكبس على <svg class="ic"><use href="#i-pencil"/></svg> لتعدّل الاسم والصورة (ونسبة الربح للقسم الرئيسي).</div>
                 <div id="imsList" style="display:flex; flex-direction:column; gap:12px;"></div>
             </div>
 
             <div class="ims-modal-overlay" id="imsMainModal">
                 <div class="ims-modal-box">
-                    <div class="ims-modal-head"><span>✏️</span><span>تعديل القسم الرئيسي</span></div>
+                    <div class="ims-modal-head"><span><svg class="ic"><use href="#i-pencil"/></svg></span><span>تعديل القسم الرئيسي</span></div>
                     <div class="ims-field">
                         <label>1. اسم القسم الجديد</label>
                         <input type="text" id="imsMainName" placeholder="اسم القسم الجديد...">
@@ -7554,7 +10278,7 @@ Code   : -
                     <div class="ims-field">
                         <label>2. صورة القسم الجديدة</label>
                         <div class="ims-img-pick">
-                            <div class="ims-img-prev" id="imsMainPrev">🖼️</div>
+                            <div class="ims-img-prev" id="imsMainPrev"><svg class="ic"><use href="#i-image"/></svg></div>
                             <input type="file" id="imsMainFile" accept="image/*" onchange="imsPickImage('main', this)">
                         </div>
                     </div>
@@ -7573,7 +10297,7 @@ Code   : -
 
             <div class="ims-modal-overlay" id="imsSubModal">
                 <div class="ims-modal-box">
-                    <div class="ims-modal-head"><span>✏️</span><span>تعديل القسم الفرعي</span></div>
+                    <div class="ims-modal-head"><span><svg class="ic"><use href="#i-pencil"/></svg></span><span>تعديل القسم الفرعي</span></div>
                     <div class="ims-field">
                         <label>1. اسم القسم الفرعي الجديد</label>
                         <input type="text" id="imsSubName" placeholder="اسم القسم الفرعي الجديد...">
@@ -7581,7 +10305,7 @@ Code   : -
                     <div class="ims-field">
                         <label>2. صورة القسم الجديدة</label>
                         <div class="ims-img-pick">
-                            <div class="ims-img-prev" id="imsSubPrev">🖼️</div>
+                            <div class="ims-img-prev" id="imsSubPrev"><svg class="ic"><use href="#i-image"/></svg></div>
                             <input type="file" id="imsSubFile" accept="image/*" onchange="imsPickImage('sub', this)">
                         </div>
                     </div>
@@ -7916,7 +10640,7 @@ Code   : -
         <div class="modal-overlay" id="profitSuccessModalOverlay">
             <div class="modal-box">
                 <div class="success-circle-box">
-                    <div class="success-circle">✓</div>
+                    <div class="success-circle"><svg class="ic"><use href="#i-check"/></svg></div>
                     <div class="success-text-sub">
                         تم تطبيق نسبة الربح على : <br>
                         <span id="appliedProductsCount" style="color:#4ade80; font-size:1.1rem; font-weight:800;">0</span> منتج
@@ -8088,11 +10812,11 @@ Code   : -
                     <input type="file" id="subCatImageInput" accept="image/*">
                 </div>
                 <div class="group-selector-box">
-                    <div class="group-selector-label">📁 إضافة إلى مجموعة فرعية (اختياري):</div>
+                    <div class="group-selector-label"><svg class="ic"><use href="#i-folder"/></svg> إضافة إلى مجموعة فرعية (اختياري):</div>
                     <select id="subCatGroupSelect">
                         <option value="">بدون مجموعة (تظهر مباشرة)</option>
                     </select>
-                    <button class="add-group-btn" onclick="openAddGroupFromSubcat()">➕ إضافة مجموعة جديدة</button>
+                    <button class="add-group-btn" onclick="openAddGroupFromSubcat()"><svg class="ic"><use href="#i-plus"/></svg> إضافة مجموعة جديدة</button>
                 </div>
                 <button class="save-btn" onclick="saveSubCategory()">حفظ الفئة</button>
                 <button class="btn-secondary" onclick="closeModal('addSubCategoryModalOverlay')">إلغاء</button>
@@ -8208,16 +10932,43 @@ Code   : -
         </div>
 
         <div id="checkOrdersPage">
-            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #27272a; padding-bottom:8px; margin-bottom:5px;">
-                <span style="font-size:0.95rem; font-weight:800; color:#38bdf8;">طلبات الشراء قيد الانتظار</span>
-                <button class="btn-secondary" onclick="closeCheckOrdersPage()">رجوع</button>
+            <div class="ck-head">
+                <div class="ck-head-title">
+                    <div class="ck-ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg></div>
+                    <div><b>تشييك الطلبات</b><small id="ckOrdersSub">جاري التحميل...</small></div>
+                </div>
+                <div class="ck-head-actions">
+                    <button class="ck-icon-btn" id="ckOrdersRefreshBtn" onclick="ckOrdersLoad()" title="تحديث"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/></svg></button>
+                    <button class="btn-secondary" onclick="closeCheckOrdersPage()">رجوع</button>
+                </div>
             </div>
-            <div id="productOrdersList" style="display:flex; flex-direction:column; gap:10px;"></div>
+            <div class="ck-stats" id="ckOrdersStats"></div>
+            <div class="ck-toolbar">
+                <input type="text" class="ck-search" id="ckOrdersSearch" placeholder="بحث: إيميل، رقم الطلب، فئة، مدخلات..." oninput="ckOrdersLimit = 40; ckOrdersRender()">
+                <select class="ck-select" id="ckOrdersSort" onchange="ckOrdersRender()">
+                    <option value="new">الأحدث أولاً</option>
+                    <option value="old">الأقدم أولاً</option>
+                    <option value="high">الأعلى سعراً</option>
+                </select>
+            </div>
+            <div class="ck-chips" id="ckOrdersChips">
+                <button class="ck-chip active" data-f="open" onclick="ckOrdersSetFilter('open')">المعلّقة <b>0</b></button>
+                <button class="ck-chip" data-f="wait" onclick="ckOrdersSetFilter('wait')">قيد الانتظار <b>0</b></button>
+                <button class="ck-chip" data-f="check" onclick="ckOrdersSetFilter('check')">للتشيك <b>0</b></button>
+                <button class="ck-chip" data-f="done" onclick="ckOrdersSetFilter('done')">مكتملة <b>0</b></button>
+                <button class="ck-chip" data-f="rejected" onclick="ckOrdersSetFilter('rejected')">مرفوضة <b>0</b></button>
+                <button class="ck-chip" data-f="all" onclick="ckOrdersSetFilter('all')">الكل <b>0</b></button>
+            </div>
+            <div id="productOrdersList" class="ck-list"></div>
         </div>
 
         <div class="modal-overlay" id="reviewOrderModal">
             <div class="modal-box">
                 <div class="modal-title">تفاصيل طلب الشراء</div>
+                <div class="form-group">
+                    <label>رقم الطلب / الحالة / الوقت:</label>
+                    <div class="admin-field-box" id="revOrdMeta">-</div>
+                </div>
                 <div class="form-group">
                     <label>1. اسم المنتج:</label>
                     <div class="admin-field-box" id="revOrdProduct">-</div>
@@ -8250,17 +11001,61 @@ Code   : -
             </div>
         </div>
 
-        <div id="checkDepositsPage">
-            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #27272a; padding-bottom:8px; margin-bottom:5px;">
-                <span style="font-size:0.95rem; font-weight:800; color:#38bdf8;">طلبات الإيداع المقدمة</span>
-                <button class="btn-secondary" onclick="closeCheckDepositsPage()">رجوع</button>
+        <div class="modal-overlay" id="decideOrderModal" style="z-index:2100;">
+            <div class="modal-box">
+                <div class="modal-title" id="decOrdTitle">-</div>
+                <div class="admin-field-box" id="decOrdSummary">-</div>
+                <div id="decOrdNote" style="display:none; color:#f87171; font-size:0.78rem; font-weight:700;"></div>
+                <div class="form-group">
+                    <label id="decOrdLabel">رد النظام (يظهر للعميل):</label>
+                    <textarea id="decOrdReply" rows="5" placeholder="اكتب الرد اللي بدك يظهر للعميل (اختياري)..." style="width:100%; box-sizing:border-box; padding:10px; background:#000; color:#fff; border:1px solid #27272a; border-radius:10px; font-size:0.85rem; resize:vertical; outline:none; font-family:inherit;"></textarea>
+                    <div class="admin-field-box" id="decOrdApiReply" style="display:none; white-space:pre-wrap; max-height:160px; overflow-y:auto;">-</div>
+                </div>
+                <div class="action-btns-row">
+                    <button class="btn-accept" id="decOrdConfirm" onclick="ckOrderConfirmDecision()">تأكيد</button>
+                    <button class="btn-secondary" style="flex:1;" onclick="closeModal('decideOrderModal')">إلغاء</button>
+                </div>
             </div>
-            <div id="depositRequestsList" style="display:flex; flex-direction:column; gap:10px;"></div>
+        </div>
+
+        <div id="checkDepositsPage">
+            <div class="ck-head">
+                <div class="ck-head-title">
+                    <div class="ck-ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="3"/><path d="M2 10h20"/><path d="M6 15h4"/></svg></div>
+                    <div><b>تشييك الإيداعات</b><small id="ckDepSub">جاري التحميل...</small></div>
+                </div>
+                <div class="ck-head-actions">
+                    <button class="ck-icon-btn" id="ckDepRefreshBtn" onclick="ckDepLoad(false)" title="تحديث"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/></svg></button>
+                    <button class="btn-secondary" onclick="closeCheckDepositsPage()">رجوع</button>
+                </div>
+            </div>
+            <div class="ck-stats" id="ckDepStats"></div>
+            <div class="ck-toolbar">
+                <input type="text" class="ck-search" id="ckDepSearch" placeholder="بحث: إيميل، رقم عملية، طريقة، مبلغ..." oninput="ckDepLimit = 40; ckDepRender()">
+                <select class="ck-select" id="ckDepSort" onchange="ckDepRender()">
+                    <option value="new">الأحدث أولاً</option>
+                    <option value="old">الأقدم أولاً</option>
+                    <option value="high">الأعلى مبلغاً</option>
+                </select>
+                <label class="ck-auto"><input type="checkbox" id="ckDepAuto" checked> تحديث تلقائي</label>
+            </div>
+            <div class="ck-chips" id="ckDepChips">
+                <button class="ck-chip active" data-f="pending" onclick="ckDepSetFilter('pending')">قيد التدقيق <b>0</b></button>
+                <button class="ck-chip" data-f="accepted" onclick="ckDepSetFilter('accepted')">مقبولة <b>0</b></button>
+                <button class="ck-chip" data-f="rejected" onclick="ckDepSetFilter('rejected')">مرفوضة <b>0</b></button>
+                <button class="ck-chip" data-f="all" onclick="ckDepSetFilter('all')">الكل <b>0</b></button>
+            </div>
+            <div id="depositRequestsList" class="ck-list"></div>
+            <div id="ckLightbox" onclick="this.classList.remove('active')"><img id="ckLightboxImg" alt=""></div>
         </div>
 
         <div class="modal-overlay" id="reviewDepositModal">
             <div class="modal-box">
                 <div class="modal-title">تفاصيل طلب الإيداع</div>
+                <div class="form-group">
+                    <label>الطريقة / الحالة / الوقت:</label>
+                    <div class="admin-field-box" id="revDepMeta">-</div>
+                </div>
                 <div class="form-group">
                     <label>1. المبلغ المحول:</label>
                     <div class="admin-field-box" id="revAmount" style="color:#4ade80; font-size:0.9rem; font-weight:800;">-</div>
@@ -8341,7 +11136,7 @@ Code   : -
         <div id="appearanceFullScreen" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:#0a0a12; z-index:99999; overflow-y:auto; flex-direction:column;">
             <div style="position:sticky; top:0; background:linear-gradient(135deg, #1e1b4b 0%, #312e81 100%); padding:16px 20px; display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #4ade80; z-index:10;">
                 <div style="font-size:1.1rem; font-weight:800; color:#fff;">المظهر وضبط</div>
-                <button onclick="closeAppearanceSettings()" style="background:rgba(255,255,255,0.15); border:none; color:#fff; width:36px; height:36px; border-radius:50%; font-size:1.2rem; cursor:pointer;">✕</button>
+                <button onclick="closeAppearanceSettings()" style="background:rgba(255,255,255,0.15); border:none; color:#fff; width:36px; height:36px; border-radius:50%; font-size:1.2rem; cursor:pointer;"><svg class="ic"><use href="#i-x"/></svg></button>
             </div>
 
             <div style="padding:20px; display:flex; flex-direction:column; gap:20px; max-width:600px; margin: 0 auto; width:100%;">
@@ -8406,6 +11201,41 @@ Code   : -
                         </div>
                     </div>
                     <div id="bottomNavPreview" style="margin-top:12px; height:50px; border-radius:10px; background:linear-gradient(135deg, #022c22 0%, #059669 50%, #0d9488 100%); display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; font-size:0.85rem;">معاينة الهيدر السفلي</div>
+                </div>
+
+                <div style="background:#12121a; border:1px solid #2a2a3a; border-radius:16px; padding:18px;">
+                    <div style="font-size:0.95rem; font-weight:700; color:#f472b6; margin-bottom:6px;">سماكة الخط (عريض / رفيع)</div>
+                    <div style="font-size:0.72rem; color:#a1a1aa; margin-bottom:14px; line-height:1.7;">من 300 (رفيع) لـ 900 (عريض جداً). السماكة العامة بتخلي كل نصوص الموقع بنفس السماكة، لهيك خليها "تلقائي" إذا بدك الموقع يضل متل ما هو.</div>
+
+                    <div style="margin-bottom:16px;">
+                        <label style="font-size:0.8rem; color:#a1a1aa; display:flex; justify-content:space-between; align-items:center;">
+                            <span>سماكة الخط العام</span>
+                            <span id="generalFontWeightValue" style="color:#4ade80; font-weight:700;">تلقائي</span>
+                        </label>
+                        <label style="display:flex; align-items:center; gap:8px; font-size:0.78rem; color:#e4e4e7; margin-top:8px; cursor:pointer;">
+                            <input type="checkbox" id="generalFontWeightAuto" checked onchange="previewFontWeights()" style="width:auto; accent-color:#f472b6;"> تلقائي (متل ما هو الآن)
+                        </label>
+                        <input type="range" id="generalFontWeightRange" min="300" max="900" value="400" step="100" oninput="previewFontWeights()" style="width:100%; margin-top:8px; accent-color:#f472b6;">
+                        <div id="generalFontWeightPreview" style="margin-top:8px; text-align:center; color:#e4e4e7; font-size:0.9rem;">معاينة: مرحباً بكم في SYRIA CARD ONE</div>
+                    </div>
+
+                    <div style="margin-bottom:16px;">
+                        <label style="font-size:0.8rem; color:#a1a1aa; display:flex; justify-content:space-between;">
+                            <span>سماكة خط القائمة الجانبية</span>
+                            <span id="sidebarFontWeightValue" style="color:#4ade80; font-weight:700;">700</span>
+                        </label>
+                        <input type="range" id="sidebarFontWeightRange" min="300" max="900" value="700" step="100" oninput="previewFontWeights()" style="width:100%; margin-top:8px; accent-color:#f472b6;">
+                        <div id="sidebarFontWeightPreview" style="margin-top:8px; text-align:center; color:#e4e4e7; font-size:0.9rem;">القائمة الجانبية</div>
+                    </div>
+
+                    <div>
+                        <label style="font-size:0.8rem; color:#a1a1aa; display:flex; justify-content:space-between;">
+                            <span>سماكة خط سعر المنتج</span>
+                            <span id="priceFontWeightValue" style="color:#4ade80; font-weight:700;">800</span>
+                        </label>
+                        <input type="range" id="priceFontWeightRange" min="300" max="900" value="800" step="100" oninput="previewFontWeights()" style="width:100%; margin-top:8px; accent-color:#f472b6;">
+                        <div id="priceFontWeightPreview" style="margin-top:8px; text-align:center; direction:ltr; color:#4ade80; font-size:14px;">$ 12.50</div>
+                    </div>
                 </div>
 
                 <div style="background:#12121a; border:1px solid #2a2a3a; border-radius:16px; padding:18px;">
@@ -8477,10 +11307,18 @@ Code   : -
                         </label>
                         <input type="range" id="depositCardSizeRange" min="50" max="150" value="100" step="5" oninput="previewAppearance()" style="width:100%; margin-top:8px; accent-color:#a855f7;">
                     </div>
+
+                    <div>
+                        <label style="font-size:0.8rem; color:#a1a1aa; display:flex; justify-content:space-between;">
+                            <span>حجم كروت الطلبات</span>
+                            <span id="orderCardSizeValue" style="color:#4ade80; font-weight:700;">100%</span>
+                        </label>
+                        <input type="range" id="orderCardSizeRange" min="60" max="150" value="100" step="5" oninput="previewAppearance()" style="width:100%; margin-top:8px; accent-color:#a855f7;">
+                    </div>
                 </div>
 
                 <div style="background:#12121a; border:1px solid #2a2a3a; border-radius:16px; padding:18px;">
-                    <div style="font-size:0.95rem; font-weight:700; color:#a1a1aa; margin-bottom:14px;">🌙 ألوان الوضع الداكن</div>
+                    <div style="font-size:0.95rem; font-weight:700; color:#a1a1aa; margin-bottom:14px;"><svg class="ic"><use href="#i-moon"/></svg> ألوان الوضع الداكن</div>
                     
                     <div style="display:grid; grid-template-columns:repeat(2, 1fr); gap:12px;">
                         <div>
@@ -8511,7 +11349,7 @@ Code   : -
                 </div>
 
                 <div style="background:#12121a; border:1px solid #2a2a3a; border-radius:16px; padding:18px;">
-                    <div style="font-size:0.95rem; font-weight:700; color:#facc15; margin-bottom:14px;">☀️ ألوان الوضع الفاتح</div>
+                    <div style="font-size:0.95rem; font-weight:700; color:#facc15; margin-bottom:14px;"><svg class="ic"><use href="#i-sun"/></svg> ألوان الوضع الفاتح</div>
                     
                     <div style="display:grid; grid-template-columns:repeat(2, 1fr); gap:12px;">
                         <div>
@@ -8546,7 +11384,7 @@ Code   : -
                 </div>
 
                 <div style="background:#12121a; border:1px solid #2a2a3a; border-radius:16px; padding:18px;">
-                    <div style="font-size:0.95rem; font-weight:700; color:#4ade80; margin-bottom:14px;">📱 إعدادات التطبيق (PWA)</div>
+                    <div style="font-size:0.95rem; font-weight:700; color:#4ade80; margin-bottom:14px;"><svg class="ic"><use href="#i-smartphone"/></svg> إعدادات التطبيق (PWA)</div>
                     
                     <div style="margin-bottom:12px;">
                         <label style="font-size:0.75rem; color:#a1a1aa;">اسم التطبيق:</label>
@@ -8583,27 +11421,383 @@ Code   : -
         let allOrdersAdminCache = [];
         let maintenanceActive = false;
 
-        function handleAdminLogin() {
+        // ---------- جلسة الأدمن + الصلاحيات (التحقق الحقيقي بيصير على السيرفر) ----------
+        (function () {
+            var _f = window.fetch;
+            window.fetch = function (input, init) {
+                var url = (typeof input === 'string') ? input : ((input && input.url) || '');
+                var isApi = url.indexOf('/api/') === 0;
+                if (isApi && window.__adminToken) {
+                    init = init || {};
+                    var h = init.headers;
+                    if (h && typeof h.set === 'function') { h.set('X-Admin-Token', window.__adminToken); }
+                    else { h = Object.assign({}, h || {}); h['X-Admin-Token'] = window.__adminToken; }
+                    init.headers = h;
+                }
+                var p = _f.call(this, input, init);
+                if (isApi) {
+                    p = p.then(function (r) {
+                        if (r && r.status === 401 && window.__adminToken) { adminClearSession(); location.reload(); }
+                        return r;
+                    });
+                }
+                return p;
+            };
+        })();
+
+        window.__adminToken = null;
+        window.__adminRole = null;
+        window.__adminPerms = [];
+        window.__adminName = '';
+
+        var ADMIN_FN_PERM = {
+            openAllOrdersScreen: 'orders', openCheckOrdersPage: 'orders',
+            openCheckDepositsPage: 'deposits', openAddDepositMethodModal: 'deposits', openDeleteDepositMethodModal: 'deposits',
+            openViewDepositMethodsModal: 'deposits', openAutoDepositAdmin: 'deposits', openAddCurrencyModal: 'deposits',
+            openBalanceModal: 'balance',
+            openClientInspectPrompt: 'clients', openClientsListScreen: 'clients',
+            openAddCategoryModal: 'products', openDeleteCategoryModal: 'products', openAddProductModal: 'products',
+            openAddSubCategoryModal: 'products', openAddCounterCategoryModal: 'products', openAddGroupModal: 'products',
+            openManageGroupsModal: 'products', openDeleteSubCategoryPage: 'products', openDeleteProductPage: 'products',
+            openImportedSectionsScreen: 'products', openInventoryScreen: 'products', openApiClientsInventory: 'api',
+            openAddApiModal: 'api', openProfitMarginModal: 'api', openViewProvidersPage: 'api', openApiImportScreen: 'api',
+            openCategoryModal: 'design', openBannerModal: 'design', openDeleteBannerModal: 'design',
+            openCategoryBannerModal: 'design', openSplashModal: 'design', openSplashVideoModal: 'design',
+            openLogoManageModal: 'design', openBannerShineModal: 'design', openAppearanceSettings: 'design', openTickerSettingsModal: 'design',
+            openAboutUsSettingsModal: 'settings', openSupportSettingsModal: 'settings', openGoogleSettingsModal: 'settings',
+            openMaintenanceModal: 'settings', openAnnouncementModal: 'settings',
+            openAdminAccountsScreen: 'owner'
+        };
+
+        function adminHasPerm(p) {
+            if (window.__adminRole === 'owner') return true;
+            if (p === 'owner') return false;
+            return (window.__adminPerms || []).indexOf(p) !== -1;
+        }
+
+        function adminClearSession() {
+            window.__adminToken = null;
+            try { sessionStorage.removeItem('adminSess'); } catch (e) {}
+        }
+
+        function applyAdminPermissions() {
+            if (window.__adminRole === 'owner') return;
+            var hn = document.querySelector('.hero-name span');
+            if (hn && window.__adminName) hn.textContent = 'أهلاً ' + window.__adminName;
+            var els = document.querySelectorAll('#adminMainApp [onclick]');
+            var kill = [];
+            for (var i = 0; i < els.length; i++) {
+                var oc = (els[i].getAttribute('onclick') || '').replace(/^ +/, '');
+                if (oc.indexOf("qaRun('") === 0) oc = oc.substring(7);
+                var end = 0;
+                while (end < oc.length && /[A-Za-z0-9_]/.test(oc.charAt(end))) end++;
+                var perm = ADMIN_FN_PERM[oc.substring(0, end)];
+                if (perm && !adminHasPerm(perm)) kill.push(els[i]);
+            }
+            for (var k = 0; k < kill.length; k++) { if (kill[k].parentNode) kill[k].parentNode.removeChild(kill[k]); }
+            var heads = document.querySelectorAll('.sidebar > .admin-menu-btn');
+            for (var j = 0; j < heads.length; j++) {
+                var menu = heads[j].nextElementSibling;
+                if (menu && menu.classList.contains('sub-menu') && menu.querySelectorAll('.sub-menu-btn').length === 0) {
+                    menu.parentNode.removeChild(menu);
+                    heads[j].parentNode.removeChild(heads[j]);
+                }
+            }
+            if (!adminHasPerm('stats')) {
+                window.fetchStatsAndRender = function () {};
+                var sc = document.getElementById('dashboardStatsContainer');
+                if (sc) sc.style.display = 'none';
+            }
+        }
+
+        function adminSessionStart(d) {
+            window.__adminToken = d.token;
+            window.__adminRole = d.role;
+            window.__adminPerms = d.perms || [];
+            window.__adminName = d.name || '';
+            try { sessionStorage.setItem('adminSess', JSON.stringify({ token: d.token })); } catch (e) {}
+            document.getElementById('adminLoginScreen').style.display = 'none';
+            document.getElementById('adminMainApp').style.display = 'block';
+            applyAdminPermissions();
+            initAdminApp();
+        }
+
+        var _adminLoginBusy = false;
+        async function handleAdminLogin(auto) {
+            auto = (auto === true);
+            if (_adminLoginBusy) return;
             var email = document.getElementById('adminEmailInput').value.trim();
             var password = document.getElementById('adminPasswordInput').value.trim();
             var errorEl = document.getElementById('adminLoginError');
-            var expectedEmail = "adminsyriacardone@gmail.com";
-            var expectedPassword = "Ss517!&7ia";
-            if (email === expectedEmail && password === expectedPassword) {
-                document.getElementById('adminLoginScreen').style.display = 'none';
-                document.getElementById('adminMainApp').style.display = 'block';
-                initAdminApp();
-            } else {
+            var errTxt = document.getElementById('adminLoginErrText');
+            var btn = document.getElementById('adminLoginBtn');
+            function showErr(msg) {
+                if (auto) return; // الدخول التلقائي صامت: لا يظهر خطأ أثناء الكتابة
+                errTxt.textContent = msg;
                 errorEl.style.display = 'block';
-                setTimeout(function() { errorEl.style.display = 'none'; }, 3000);
+                setTimeout(function () { errorEl.style.display = 'none'; }, 3500);
             }
+            if (!email || !password) { showErr('اكتب الإيميل وكلمة السر'); return; }
+            _adminLoginBusy = true;
+            if (btn) btn.disabled = true;
+            try {
+                var res = await fetch('/api/admin_login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: email, password: password, auto: auto })
+                });
+                var d = await res.json();
+                if (d && d.status === 'success') { adminSessionStart(d); }
+                else { showErr((d && d.message) || 'البريد الإلكتروني أو كلمة السر غير صحيحة!'); }
+            } catch (e) { showErr('تعذر الاتصال بالسيرفر'); }
+            _adminLoginBusy = false;
+            if (btn) btn.disabled = false;
+        }
+
+        // دخول تلقائي: أول ما تتوقف عن الكتابة والبيانات صحيحة يدخل بدون ضغط الزر
+        (function () {
+            var timer = null, lastKey = '';
+            function schedule() {
+                clearTimeout(timer);
+                timer = setTimeout(function () {
+                    var e = document.getElementById('adminEmailInput');
+                    var p = document.getElementById('adminPasswordInput');
+                    if (!e || !p) return;
+                    var em = e.value.trim(), pw = p.value.trim();
+                    if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]{2,}$/.test(em) || pw.length < 4) return;
+                    var key = em + '|' + pw;
+                    if (key === lastKey) return; // نفس البيانات جرّبناها قبل
+                    lastKey = key;
+                    handleAdminLogin(true);
+                }, 500);
+            }
+            ['adminEmailInput', 'adminPasswordInput'].forEach(function (id) {
+                var el = document.getElementById(id);
+                if (el) { el.addEventListener('input', schedule); el.addEventListener('change', schedule); }
+            });
+        })();
+
+        window.adminExportXlsx = async function (filename, sheets) {
+            try {
+                var res = await fetch('/api/export_xlsx', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filename: filename, sheets: sheets }) });
+                if (!res.ok) {
+                    var j = null;
+                    try { j = await res.json(); } catch (e) {}
+                    alert((j && j.message) || 'تعذر تصدير الملف');
+                    return;
+                }
+                var blob = await res.blob();
+                var a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = filename + '.xlsx';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                setTimeout(function () { URL.revokeObjectURL(a.href); }, 1500);
+                if (window.showPremiumToast) window.showPremiumToast('تم تصدير ملف Excel', 'download');
+            } catch (e) { alert('تعذر الاتصال بالسيرفر'); }
+        };
+
+        async function adminLogout() {
+            try { await fetch('/api/admin_logout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }); } catch (e) {}
+            adminClearSession();
+            location.reload();
+        }
+
+        // رجوع تلقائي للجلسة بعد تحديث الصفحة
+        (function () {
+            var t = null;
+            try { var o = JSON.parse(sessionStorage.getItem('adminSess') || 'null'); t = o && o.token; } catch (e) {}
+            if (!t) return;
+            window.__adminToken = t;
+            fetch('/api/admin_me').then(function (r) { return r.json(); }).then(function (d) {
+                if (d && d.status === 'success') { d.token = t; adminSessionStart(d); }
+                else { adminClearSession(); }
+            }).catch(function () { window.__adminToken = null; });
+        })();
+
+        // ---------- شاشة إدارة الأدمنية ----------
+        var adminAccountsCache = [];
+        var adminPermCatalog = [];
+        var adminEditId = '';
+
+        function aaEsc(v) {
+            return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        function aaFmtTime(ts) {
+            if (!ts) return '';
+            try { return new Date(ts * 1000).toLocaleString('ar'); } catch (e) { return String(ts); }
+        }
+
+        async function openAdminAccountsScreen() {
+            toggleSidebar();
+            var ids = ['adminMainSection', 'checkOrdersPage', 'checkDepositsPage', 'viewProvidersPage', 'deleteCategoryPage', 'deleteProductPage'];
+            for (var i = 0; i < ids.length; i++) { var e = document.getElementById(ids[i]); if (e) e.style.display = 'none'; }
+            document.getElementById('adminAccountsScreen').classList.add('active');
+            await loadAdminAccounts();
+        }
+
+        function closeAdminAccountsScreen() {
+            document.getElementById('adminAccountsScreen').classList.remove('active');
+            document.getElementById('adminMainSection').style.display = 'block';
+        }
+
+        async function loadAdminAccounts() {
+            var box = document.getElementById('adminAccountsList');
+            box.innerHTML = '<div class="aa-empty">جاري التحميل...</div>';
+            try {
+                var res = await fetch('/api/admin_accounts');
+                var d = await res.json();
+                if (d.status !== 'success') { box.innerHTML = '<div class="aa-empty">' + aaEsc(d.message || 'حدث خطأ') + '</div>'; return; }
+                adminAccountsCache = d.admins || [];
+                adminPermCatalog = d.perms || [];
+                renderAdminAccounts();
+                renderAdminLog(d.log || []);
+            } catch (e) { box.innerHTML = '<div class="aa-empty">تعذر الاتصال بالسيرفر</div>'; }
+        }
+
+        function aaPermLabel(key) {
+            for (var i = 0; i < adminPermCatalog.length; i++) { if (adminPermCatalog[i].key === key) return adminPermCatalog[i].label; }
+            return key;
+        }
+
+        function renderAdminAccounts() {
+            var box = document.getElementById('adminAccountsList');
+            if (!adminAccountsCache.length) {
+                box.innerHTML = '<div class="aa-empty">ما في أدمنية مضافين لسا. اضغط "إضافة أدمن" لتضيف أول واحد.</div>';
+                return;
+            }
+            var html = '';
+            adminAccountsCache.forEach(function (a) {
+                var tags = (a.perms || []).map(function (p) { return '<span class="aa-perm-tag">' + aaEsc(aaPermLabel(p)) + '</span>'; }).join('');
+                var last = a.last_login ? ('آخر دخول: ' + aaEsc(aaFmtTime(a.last_login))) : 'ما دخل لسا';
+                html += '<div class="aa-card' + (a.active ? '' : ' off') + '">'
+                    + '<div class="aa-av">' + aaEsc((a.name || '?').charAt(0)) + '</div>'
+                    + '<div class="aa-info">'
+                    + '<div class="aa-name">' + aaEsc(a.name) + ' <span class="aa-chip ' + (a.active ? 'on' : 'offc') + '">' + (a.active ? 'فعّال' : 'موقوف') + '</span></div>'
+                    + '<div class="aa-mail">' + aaEsc(a.email) + '</div>'
+                    + '<div class="aa-perms">' + tags + '</div>'
+                    + '<div class="aa-meta">' + last + '</div>'
+                    + '</div>'
+                    + '<div class="aa-actions">'
+                    + '<button onclick="openAdminAccountModal(\\'' + a.id + '\\')">تعديل</button>'
+                    + '<button onclick="adminToggleActive(\\'' + a.id + '\\')">' + (a.active ? 'إيقاف' : 'تفعيل') + '</button>'
+                    + '<button class="danger" onclick="adminDeleteAccount(\\'' + a.id + '\\')">حذف</button>'
+                    + '</div></div>';
+            });
+            box.innerHTML = html;
+        }
+
+        function renderAdminLog(log) {
+            var box = document.getElementById('adminAccountsLog');
+            if (!log.length) { box.innerHTML = '<div class="aa-empty">ما في عمليات مسجّلة لسا.</div>'; return; }
+            box.innerHTML = log.slice(0, 60).map(function (r) {
+                return '<div class="aa-log-row"><div><b>' + aaEsc(r.who) + '</b> - ' + aaEsc(r.act) + (r.d ? ' <span>(' + aaEsc(r.d) + ')</span>' : '') + '</div><span class="aa-t">' + aaEsc(aaFmtTime(r.t)) + '</span></div>';
+            }).join('');
+        }
+
+        function aaBuildPermGrid(selected) {
+            var grid = document.getElementById('aaPermGrid');
+            grid.innerHTML = adminPermCatalog.map(function (p) {
+                var on = selected.indexOf(p.key) !== -1;
+                return '<label class="aa-perm"><input type="checkbox" class="aa-pcb" value="' + p.key + '"' + (on ? ' checked' : '') + '><span class="aa-pbox"></span><span class="aa-ptxt"><b>' + aaEsc(p.label) + '</b><small>' + aaEsc(p.desc) + '</small></span></label>';
+            }).join('');
+        }
+
+        function aaPreset(kind) {
+            var sets = { all: null, ops: ['orders', 'deposits', 'clients'], content: ['products', 'design'], none: [] };
+            var want = sets[kind];
+            var cbs = document.querySelectorAll('#aaPermGrid .aa-pcb');
+            for (var i = 0; i < cbs.length; i++) { cbs[i].checked = (want === null) ? true : (want.indexOf(cbs[i].value) !== -1); }
+        }
+
+        function aaTogglePass() {
+            var el = document.getElementById('aaPass');
+            el.type = (el.type === 'password') ? 'text' : 'password';
+        }
+
+        function aaGenPass() {
+            var chars = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+            var out = '';
+            for (var i = 0; i < 10; i++) { out += chars.charAt(Math.floor(Math.random() * chars.length)); }
+            var el = document.getElementById('aaPass');
+            el.value = out;
+            el.type = 'text';
+        }
+
+        async function openAdminAccountModal(id) {
+            if (!adminPermCatalog.length) { await loadAdminAccounts(); }
+            adminEditId = id || '';
+            var acc = null;
+            for (var i = 0; i < adminAccountsCache.length; i++) { if (adminAccountsCache[i].id === id) acc = adminAccountsCache[i]; }
+            document.getElementById('aaModalTitle').textContent = acc ? 'تعديل الأدمن' : 'إضافة أدمن';
+            document.getElementById('aaName').value = acc ? acc.name : '';
+            document.getElementById('aaEmail').value = acc ? acc.email : '';
+            var pass = document.getElementById('aaPass');
+            pass.value = '';
+            pass.type = 'password';
+            pass.placeholder = acc ? 'اتركها فاضية إذا ما بدك تغيّرها' : '6 أحرف على الأقل';
+            document.getElementById('aaPassLabel').textContent = acc ? 'كلمة سر جديدة (اختياري):' : 'كلمة السر:';
+            document.getElementById('aaActive').checked = acc ? !!acc.active : true;
+            document.getElementById('aaError').textContent = '';
+            aaBuildPermGrid(acc ? (acc.perms || []) : ['orders', 'deposits']);
+            openModal('adminAccountModalOverlay');
+        }
+
+        async function saveAdminAccount() {
+            var errEl = document.getElementById('aaError');
+            errEl.textContent = '';
+            var perms = [];
+            var cbs = document.querySelectorAll('#aaPermGrid .aa-pcb');
+            for (var i = 0; i < cbs.length; i++) { if (cbs[i].checked) perms.push(cbs[i].value); }
+            var body = {
+                id: adminEditId,
+                name: document.getElementById('aaName').value.trim(),
+                email: document.getElementById('aaEmail').value.trim(),
+                perms: perms,
+                active: document.getElementById('aaActive').checked
+            };
+            var pw = document.getElementById('aaPass').value.trim();
+            if (pw) body.password = pw;
+            var btn = document.getElementById('aaSaveBtn');
+            btn.disabled = true;
+            try {
+                var res = await fetch('/api/admin_account_save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+                var d = await res.json();
+                if (d.status === 'success') { closeModal('adminAccountModalOverlay'); await loadAdminAccounts(); }
+                else { errEl.textContent = d.message || 'حدث خطأ'; }
+            } catch (e) { errEl.textContent = 'تعذر الاتصال بالسيرفر'; }
+            btn.disabled = false;
+        }
+
+        async function adminToggleActive(id) {
+            var acc = null;
+            for (var i = 0; i < adminAccountsCache.length; i++) { if (adminAccountsCache[i].id === id) acc = adminAccountsCache[i]; }
+            if (!acc) return;
+            try {
+                var res = await fetch('/api/admin_account_save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: id, active: !acc.active }) });
+                var d = await res.json();
+                if (d.status !== 'success') alert(d.message || 'حدث خطأ');
+            } catch (e) { alert('تعذر الاتصال بالسيرفر'); }
+            await loadAdminAccounts();
+        }
+
+        async function adminDeleteAccount(id) {
+            if (!confirm('متأكد بدك تحذف هالأدمن نهائياً؟')) return;
+            try {
+                var res = await fetch('/api/admin_account_delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: id }) });
+                var d = await res.json();
+                if (d.status !== 'success') alert(d.message || 'حدث خطأ');
+            } catch (e) { alert('تعذر الاتصال بالسيرفر'); }
+            await loadAdminAccounts();
         }
 
         function toggleAdminDarkMode() {
             const body = document.body;
             body.classList.toggle('light-mode-admin');
             const isLight = body.classList.contains('light-mode-admin');
-            document.getElementById('adminDarkModeBtn').textContent = isLight ? '☀️' : '🌙';
+            document.getElementById('adminDarkModeBtn').innerHTML = isLight ? '<svg class="ic"><use href="#i-sun"/></svg>' : '<svg class="ic"><use href="#i-moon"/></svg>';
             localStorage.setItem('adminTheme', isLight ? 'light' : 'dark');
         }
 
@@ -8611,10 +11805,10 @@ Code   : -
             const savedTheme = localStorage.getItem('adminTheme');
             if (savedTheme === 'light') {
                 document.body.classList.add('light-mode-admin');
-                document.getElementById('adminDarkModeBtn').textContent = '☀️';
+                document.getElementById('adminDarkModeBtn').innerHTML = '<svg class="ic"><use href="#i-sun"/></svg>';
             } else {
                 document.body.classList.remove('light-mode-admin');
-                document.getElementById('adminDarkModeBtn').textContent = '🌙';
+                document.getElementById('adminDarkModeBtn').innerHTML = '<svg class="ic"><use href="#i-moon"/></svg>';
             }
             loadCategories();
             fetchStatsAndRender();
@@ -8704,11 +11898,11 @@ Code   : -
             if (data.is_active) {
                 banner.style.display = 'flex';
                 btn.className = 'maint-toggle-btn restart';
-                btn.innerHTML = '▶️ إعادة تشغيل';
+                btn.innerHTML = '<svg class="ic"><use href="#i-play"/></svg> إعادة تشغيل';
             } else {
                 banner.style.display = 'none';
                 btn.className = 'maint-toggle-btn shutdown';
-                btn.innerHTML = '⏹️ إيقاف التشغيل';
+                btn.innerHTML = '<svg class="ic"><use href="#i-stop"/></svg> إيقاف التشغيل';
             }
         }
 
@@ -8738,9 +11932,9 @@ Code   : -
                     updateMaintenanceUI({ is_active: newState, message: msgInput });
                     
                     if (newState) {
-                        alert('✅ تم إيقاف الموقع بنجاح! سيظهر للمستخدمين واجهة الصيانة.');
+                        alert('تم إيقاف الموقع بنجاح! سيظهر للمستخدمين واجهة الصيانة.');
                     } else {
-                        alert('✅ تم إعادة تشغيل الموقع بنجاح!');
+                        alert('تم إعادة تشغيل الموقع بنجاح!');
                     }
                 } else {
                     alert('حدث خطأ أثناء تغيير حالة الموقع!');
@@ -8906,6 +12100,86 @@ Code   : -
             } catch (e) { alert('فشل الاتصال بالخادم!'); }
         }
 
+        // ===== لمعان البنر =====
+        async function openBannerShineModal() {
+            toggleSidebar();
+            try {
+                const a = await fetch('/api/get_appearance_settings').then(r => r.json());
+                document.getElementById('bannerShineToggle').checked = !!a.banner_shine_enabled;
+                document.getElementById('bannerShineIntensity').value = a.banner_shine_intensity || 6;
+                document.getElementById('bannerShineSpeed').value = a.banner_shine_speed || 5;
+            } catch (e) { console.error(e); }
+            previewBannerShine();
+            openModal('bannerShineModalOverlay');
+        }
+
+        function previewBannerShine() {
+            const on = document.getElementById('bannerShineToggle').checked;
+            const it = parseInt(document.getElementById('bannerShineIntensity').value) || 6;
+            const sp = parseInt(document.getElementById('bannerShineSpeed').value) || 5;
+            document.getElementById('bannerShineIntVal').textContent = it;
+            document.getElementById('bannerShineSpeedVal').textContent = sp;
+            ['bannerShineIntensity', 'bannerShineSpeed'].forEach(function (id) {
+                const el = document.getElementById(id);
+                el.disabled = !on;
+                el.style.opacity = on ? '1' : '0.4';
+            });
+            const p = document.getElementById('bannerShinePreview');
+            p.style.setProperty('--shine-dur', (1.2 + (10 - sp) * 0.8).toFixed(1) + 's');
+            p.style.setProperty('--shine-op', (0.12 + it * 0.07).toFixed(2));
+            p.style.setProperty('--shine-glow', (4 + it * 2) + 'px');
+            p.style.setProperty('--shine-glow-op', (0.05 + it * 0.04).toFixed(2));
+            p.classList.toggle('on', on);
+        }
+
+        async function saveBannerShine() {
+            try {
+                const res = await fetch('/api/update_banner_shine', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        enabled: document.getElementById('bannerShineToggle').checked,
+                        intensity: parseInt(document.getElementById('bannerShineIntensity').value) || 6,
+                        speed: parseInt(document.getElementById('bannerShineSpeed').value) || 5
+                    })
+                });
+                const r = await res.json();
+                if (r.status === 'success') {
+                    alert('تم حفظ إعدادات لمعان البنر!');
+                    closeModal('bannerShineModalOverlay');
+                } else { alert(r.message || 'صار خطأ'); }
+            } catch (e) { alert('فشل الاتصال بالخادم!'); }
+        }
+
+        // ===== ربط تسجيل جوجل =====
+        async function openGoogleSettingsModal() {
+            toggleSidebar();
+            try {
+                const c = await fetch('/api/google_config').then(r => r.json());
+                const inp = document.getElementById('googleClientIdInput');
+                inp.value = c.client_id || '';
+                inp.disabled = !!c.from_env;
+                document.getElementById('googleClientIdNote').style.color = c.from_env ? '#facc15' : '#a1a1aa';
+                if (c.from_env) document.getElementById('googleClientIdNote').textContent = 'الـ Client ID مضبوط من متغير البيئة GOOGLE_CLIENT_ID على السيرفر، وبيتقدّم على أي قيمة هنا.';
+            } catch (e) { console.error(e); }
+            openModal('googleSettingsModalOverlay');
+        }
+
+        async function saveGoogleSettings() {
+            try {
+                const res = await fetch('/api/update_google_settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ client_id: document.getElementById('googleClientIdInput').value.trim() })
+                });
+                const r = await res.json();
+                if (r.status === 'success') {
+                    alert('تم حفظ إعدادات جوجل!');
+                    closeModal('googleSettingsModalOverlay');
+                } else { alert(r.message || 'صار خطأ'); }
+            } catch (e) { alert('فشل الاتصال بالخادم!'); }
+        }
+
         async function openTickerSettingsModal() {
             toggleSidebar();
             try {
@@ -8963,7 +12237,6 @@ Code   : -
             try {
                 const res = await fetch('/api/get_all_clients');
                 const clients = await res.json();
-                clientsListCache = clients;
                 renderClientsList(clients);
             } catch (e) {
                 container.innerHTML = '<div style="text-align:center; color:#f87171; font-size:0.85rem; padding:20px;">فشل تحميل البيانات!</div>';
@@ -8971,25 +12244,102 @@ Code   : -
         }
 
         function renderClientsList(clients) {
-            const container = document.getElementById('clientsListContainer');
-            container.innerHTML = '';
+            clientsListCache = clients || [];
+            clientsApplyFilters();
+        }
 
-            if (!clients || clients.length === 0) {
-                container.innerHTML = '<div style="text-align:center; color:#a1a1aa; font-size:0.85rem; padding:20px;">لا يوجد عملاء مسجلين حالياً</div>';
+        function clFiltered() {
+            var q = (document.getElementById('clSearch').value || '').trim().toLowerCase();
+            var bal = document.getElementById('clBal').value;
+            var disc = document.getElementById('clDisc').value;
+            var act = document.getElementById('clAct').value;
+            var sort = document.getElementById('clSort').value;
+            var jf = document.getElementById('clJoinFrom').value;
+            var jt = document.getElementById('clJoinTo').value;
+            var lim = new Date();
+            lim.setDate(lim.getDate() - 30);
+            var lim30 = lim.toISOString().slice(0, 10);
+            var out = (clientsListCache || []).filter(function (c) {
+                if (q) {
+                    var hay = [c.email, c.name, c.id, c.phone].join(' ').toLowerCase();
+                    if (hay.indexOf(q) === -1) return false;
+                }
+                var b = parseFloat(c.balance) || 0;
+                if (bal === 'has' && !(b > 0)) return false;
+                if (bal === 'zero' && b > 0) return false;
+                var dp = parseFloat(c.discount_percentage) || 0;
+                if (disc === 'has' && !(dp > 0)) return false;
+                if (disc === 'none' && dp > 0) return false;
+                var n = c.orders_count || 0, last = c.last_order || '';
+                if (act === 'bought' && !n) return false;
+                if (act === 'never' && n) return false;
+                if (act === 'active30' && !(last && last >= lim30)) return false;
+                if (act === 'inactive30' && (last && last >= lim30)) return false;
+                var j = String(c.join_date || '').substring(0, 10);
+                if ((jf || jt) && j.charAt(4) !== '-') return false;
+                if (jf && j < jf) return false;
+                if (jt && j > jt) return false;
+                return true;
+            });
+            out.sort(function (a, b) {
+                if (sort === 'bal_hi') return (parseFloat(b.balance) || 0) - (parseFloat(a.balance) || 0);
+                if (sort === 'bal_lo') return (parseFloat(a.balance) || 0) - (parseFloat(b.balance) || 0);
+                if (sort === 'spent') return (b.spent || 0) - (a.spent || 0);
+                if (sort === 'orders') return (b.orders_count || 0) - (a.orders_count || 0);
+                if (sort === 'name') return String(a.email).localeCompare(String(b.email));
+                return (parseInt(b.id) || 0) - (parseInt(a.id) || 0);
+            });
+            return out;
+        }
+
+        function clientsApplyFilters() {
+            var container = document.getElementById('clientsListContainer');
+            var list = clFiltered();
+            var totBal = 0, totSpent = 0;
+            list.forEach(function (c) { totBal += parseFloat(c.balance) || 0; totSpent += c.spent || 0; });
+            document.getElementById('clSummary').innerHTML = 'عرض <b>' + list.length + '</b> من <b>' + (clientsListCache || []).length + '</b> عميل &nbsp;|&nbsp; مجموع الأرصدة: <b>$' + formatBalance(totBal) + '</b> &nbsp;|&nbsp; مجموع المشتريات المكتملة: <b>$' + formatBalance(totSpent) + '</b>';
+            container.innerHTML = '';
+            if (!list.length) {
+                container.innerHTML = '<div style="text-align:center; color:#a1a1aa; font-size:0.85rem; padding:20px;">لا يوجد عملاء مطابقون</div>';
                 return;
             }
-
-            clients.forEach(c => {
-                const card = document.createElement('div');
+            var shown = list.slice(0, 300);
+            shown.forEach(function (c) {
+                var card = document.createElement('div');
                 card.className = 'client-card';
-                card.onclick = () => openClientDetail(c.email);
-                card.innerHTML = `
-                    <div class="cc-email">${c.email}</div>
-                    <div class="cc-id">ID: ${c.id}</div>
-                    <div class="cc-balance">$${formatBalance(c.balance)}</div>
-                `;
+                card.onclick = function () { openClientDetail(c.email); };
+                var meta = 'طلبات: ' + (c.orders_count || 0) + ' &nbsp;|&nbsp; مشتريات: $' + formatBalance(c.spent || 0)
+                    + ' &nbsp;|&nbsp; إيداعات: $' + formatBalance(c.deposits_total || 0)
+                    + (c.last_order ? ' &nbsp;|&nbsp; آخر طلب: ' + aaEsc(c.last_order) : '')
+                    + (c.discount_percentage ? ' &nbsp;|&nbsp; خصم: ' + aaEsc(c.discount_percentage) + '%' : '');
+                card.innerHTML = '<div class="cc-email">' + aaEsc(c.email) + '</div>'
+                    + '<div class="cc-id">ID: ' + aaEsc(c.id) + (c.name ? ' - ' + aaEsc(c.name) : '') + (c.phone ? ' - ' + aaEsc(c.phone) : '') + '</div>'
+                    + '<div class="cc-balance">$' + formatBalance(c.balance) + '</div>'
+                    + '<div class="cl-meta">' + meta + '</div>';
                 container.appendChild(card);
             });
+            if (list.length > shown.length) {
+                var more = document.createElement('div');
+                more.style.cssText = 'text-align:center; color:#a1a1aa; font-size:0.78rem; padding:10px;';
+                more.textContent = 'تم عرض أول 300 عميل. استخدم البحث أو الفلاتر لتضييق النتائج (التصدير بيشمل كل النتائج).';
+                container.appendChild(more);
+            }
+        }
+
+        function clientsClearFilters() {
+            ['clSearch', 'clBal', 'clDisc', 'clAct', 'clJoinFrom', 'clJoinTo'].forEach(function (id) { document.getElementById(id).value = ''; });
+            document.getElementById('clSort').value = 'new';
+            clientsApplyFilters();
+        }
+
+        function clientsExportXlsx() {
+            var list = clFiltered();
+            if (!list.length) { alert('لا توجد بيانات للتصدير'); return; }
+            var head = ['ID', 'الاسم', 'الإيميل', 'الهاتف', 'الرصيد', 'نسبة الخصم %', 'عدد الطلبات', 'مجموع المشتريات', 'مجموع الإيداعات', 'آخر طلب', 'تاريخ الانضمام'];
+            var rows = list.map(function (c) {
+                return [c.id, c.name || '', c.email, c.phone || '', parseFloat(c.balance) || 0, parseFloat(c.discount_percentage) || 0, c.orders_count || 0, c.spent || 0, c.deposits_total || 0, c.last_order || '', c.join_date || ''];
+            });
+            window.adminExportXlsx('clients_' + new Date().toISOString().slice(0, 10), [{ name: 'العملاء', headers: head, rows: rows }]);
         }
 
         async function openClientDetail(email) {
@@ -9166,7 +12516,7 @@ Code   : -
 
         function imsSetPrev(kind, src) {
             const el = document.getElementById(kind === 'main' ? 'imsMainPrev' : 'imsSubPrev');
-            el.innerHTML = src ? '<img alt="" src="' + imsEsc(src) + '">' : '🖼️';
+            el.innerHTML = src ? '<img alt="" src="' + imsEsc(src) + '">' : '<svg class="ic"><use href="#i-image"/></svg>';
         }
 
         function imsSetToggle(kind, on) {
@@ -9265,7 +12615,7 @@ Code   : -
                         '</div>' +
                         '<div class="ims-row-left" onclick="event.stopPropagation()">' +
                             '<input type="number" min="1" class="ims-ord" title="ترتيب القسم (1 = أول قسم)" value="' + imsEsc(s.order) + '" onclick="event.stopPropagation()" onkeydown="if(event.keyCode===13){this.blur();}" onchange="imsSetOrder(0,' + i + ',-1,this.value)">' +
-                            '<button class="ims-pen" title="تعديل" onclick="event.stopPropagation(); imsOpenMainEdit(' + i + ')">✏️</button>' +
+                            '<button class="ims-pen" title="تعديل" onclick="event.stopPropagation(); imsOpenMainEdit(' + i + ')"><svg class="ic"><use href="#i-pencil"/></svg></button>' +
                         '</div>' +
                     '</div>' +
                     '<div class="ims-children" id="imsKids' + i + '"></div>' +
@@ -9333,7 +12683,7 @@ Code   : -
                     '</div>' +
                     '<div class="ims-row-left">' +
                         '<input type="number" min="1" class="ims-ord" title="ترتيب القسم الفرعي (1 = أول قسم)" value="' + imsEsc(p.order) + '" onkeydown="if(event.keyCode===13){this.blur();}" onchange="imsSetOrder(1,' + i + ',' + j + ',this.value)">' +
-                        '<button class="ims-pen" title="تعديل" onclick="imsOpenSubEdit(' + i + ',' + j + ')">✏️</button>' +
+                        '<button class="ims-pen" title="تعديل" onclick="imsOpenSubEdit(' + i + ',' + j + ')"><svg class="ic"><use href="#i-pencil"/></svg></button>' +
                     '</div>' +
                 '</div>';
             }).join('');
@@ -9566,7 +12916,7 @@ Code   : -
                     ${isLegacy ? '<div class="api-category-badge" style="background:linear-gradient(135deg,#ef4444,#b91c1c); color:#fff;">نسخة قديمة</div>' : ''}
                     ${cat.already_imported ? '<div class="price-monitor-badge">مراقب</div>' : ''}
                     ${imageUrl ? '<img class="api-category-img">' : ''}
-                    <div class="api-category-placeholder" style="${imageUrl ? 'display:none;' : ''}">📁</div>
+                    <div class="api-category-placeholder" style="${imageUrl ? 'display:none;' : ''}"><svg class="ic"><use href="#i-folder"/></svg></div>
                     <div class="api-category-label"></div>
                     <div class="api-category-actions">
                         <button class="api-action-btn import-btn" data-act="import">${btnText}</button>
@@ -9639,12 +12989,12 @@ Code   : -
             let extra = '';
             if (j.status === 'done') {
                 document.getElementById('importProgressFill').style.width = '100%';
-                document.getElementById('importProgressTitle').innerText = '✅ اكتمل الاستيراد';
+                document.getElementById('importProgressTitle').innerText = 'اكتمل الاستيراد';
                 extra = ' — جديد: ' + (s.added || 0) + ' | محدّث: ' + (s.updated || 0) + (s.errors ? ' | أخطاء: ' + s.errors : '');
             } else if (j.status === 'cancelled') {
-                document.getElementById('importProgressTitle').innerText = '⏹ تم إيقاف الاستيراد';
+                document.getElementById('importProgressTitle').innerText = 'تم إيقاف الاستيراد';
             } else {
-                document.getElementById('importProgressTitle').innerText = '❌ فشل الاستيراد';
+                document.getElementById('importProgressTitle').innerText = 'فشل الاستيراد';
             }
             document.getElementById('importProgressText').innerText = (j.message || '') + extra;
             localStorage.removeItem('apiImportJobId');
@@ -9892,8 +13242,15 @@ Code   : -
                 if (a.bottom_nav_height) document.getElementById('bottomNavSizeRange').value = a.bottom_nav_height;
                 if (a.deposit_card_size) document.getElementById('depositCardSizeRange').value = a.deposit_card_size;
                 if (a.category_card_size) document.getElementById('categoryCardSizeRange').value = a.category_card_size;
+                if (a.order_card_size) document.getElementById('orderCardSizeRange').value = a.order_card_size;
                 if (a.price_font_size) document.getElementById('priceFontSizeRange').value = a.price_font_size;
                 if (a.price_font_color) document.getElementById('priceFontColor').value = a.price_font_color;
+                var gw = a.general_font_weight || 0;
+                document.getElementById('generalFontWeightAuto').checked = !gw;
+                document.getElementById('generalFontWeightRange').value = gw || 400;
+                document.getElementById('sidebarFontWeightRange').value = a.sidebar_font_weight || 700;
+                document.getElementById('priceFontWeightRange').value = a.price_font_weight || 800;
+                previewFontWeights();
 
                 // ألوان الوضع الداكن
                 if (a.dark_bg_color) document.getElementById('darkBgColor').value = a.dark_bg_color;
@@ -9929,6 +13286,26 @@ Code   : -
             document.getElementById('appearanceFullScreen').style.display = 'none';
         }
 
+        function fwLabel(w) {
+            var n = { 300: 'رفيع', 400: 'عادي', 500: 'متوسط', 600: 'شبه عريض', 700: 'عريض', 800: 'عريض جداً', 900: 'أسود' };
+            return w + ' - ' + (n[w] || '');
+        }
+
+        function previewFontWeights() {
+            var auto = document.getElementById('generalFontWeightAuto').checked;
+            var g = parseInt(document.getElementById('generalFontWeightRange').value);
+            var s = parseInt(document.getElementById('sidebarFontWeightRange').value);
+            var p = parseInt(document.getElementById('priceFontWeightRange').value);
+            document.getElementById('generalFontWeightRange').disabled = auto;
+            document.getElementById('generalFontWeightRange').style.opacity = auto ? '0.4' : '1';
+            document.getElementById('generalFontWeightValue').innerText = auto ? 'تلقائي' : fwLabel(g);
+            document.getElementById('sidebarFontWeightValue').innerText = fwLabel(s);
+            document.getElementById('priceFontWeightValue').innerText = fwLabel(p);
+            document.getElementById('generalFontWeightPreview').style.fontWeight = auto ? '' : g;
+            document.getElementById('sidebarFontWeightPreview').style.fontWeight = s;
+            document.getElementById('priceFontWeightPreview').style.fontWeight = p;
+        }
+
         function previewFontFamily() {
             const font = document.getElementById('fontFamilySelect').value;
             const preview = document.getElementById('fontPreviewBox');
@@ -9949,6 +13326,7 @@ Code   : -
             const bh = document.getElementById('bottomNavSizeRange').value;
             const ccs = document.getElementById('categoryCardSizeRange').value;
             const dcs = document.getElementById('depositCardSizeRange').value;
+            const ocs = document.getElementById('orderCardSizeRange').value;
             const pfs = document.getElementById('priceFontSizeRange').value;
             const pfc = document.getElementById('priceFontColor').value;
 
@@ -9961,6 +13339,7 @@ Code   : -
             document.getElementById('bottomNavSizeValue').innerText = bh + 'px';
             document.getElementById('categoryCardSizeValue').innerText = ccs + '%';
             document.getElementById('depositCardSizeValue').innerText = dcs + '%';
+            document.getElementById('orderCardSizeValue').innerText = ocs + '%';
             document.getElementById('priceFontSizeValue').innerText = pfs + 'px';
             const pfp = document.getElementById('priceFontPreview');
             pfp.style.fontSize = pfs + 'px';
@@ -10028,8 +13407,12 @@ Code   : -
                 bottom_nav_height: parseInt(document.getElementById('bottomNavSizeRange').value),
                 deposit_card_size: parseInt(document.getElementById('depositCardSizeRange').value),
                 category_card_size: parseInt(document.getElementById('categoryCardSizeRange').value),
+                order_card_size: parseInt(document.getElementById('orderCardSizeRange').value),
                 price_font_size: parseInt(document.getElementById('priceFontSizeRange').value),
                 price_font_color: document.getElementById('priceFontColor').value,
+                general_font_weight: document.getElementById('generalFontWeightAuto').checked ? 0 : parseInt(document.getElementById('generalFontWeightRange').value),
+                sidebar_font_weight: parseInt(document.getElementById('sidebarFontWeightRange').value),
+                price_font_weight: parseInt(document.getElementById('priceFontWeightRange').value),
                 // الوضع الداكن
                 dark_bg_color: darkBgColor,
                 dark_card_bg: darkCardBg,
@@ -10159,7 +13542,7 @@ Code   : -
             step3.classList.add('disabled');
             document.getElementById('delCatSubcatSelect').innerHTML = '<option value="">-- اختر الفئة --</option>';
             document.getElementById('delCatCategoryValue').style.display = 'block';
-            document.getElementById('delCatCategoryValue').innerText = '✓ ' + cat;
+            document.getElementById('delCatCategoryValue').innerText = cat;
             document.getElementById('delCatStep1').classList.add('completed');
         }
 
@@ -10183,7 +13566,7 @@ Code   : -
 
             step3.classList.remove('disabled');
             document.getElementById('delCatProductValue').style.display = 'block';
-            document.getElementById('delCatProductValue').innerText = '✓ ' + prod;
+            document.getElementById('delCatProductValue').innerText = prod;
             document.getElementById('delCatStep2').classList.add('completed');
         }
 
@@ -11655,7 +15038,72 @@ Code   : -
         }
 
         let productOrdersData = [];
+        let ckOrdersFilter = 'open';
+        let ckOrdersLimit = 40;
+        let ckBusy = false;
 
+        // ---------- أدوات مشتركة لصفحات التشييك ----------
+        function ckEsc(v) {
+            return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) {
+                return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+            });
+        }
+        function ckToast(msg, type) {
+            let box = document.getElementById('ckToastBox');
+            if (!box) { box = document.createElement('div'); box.id = 'ckToastBox'; document.body.appendChild(box); }
+            const t = document.createElement('div');
+            t.className = 'ck-toast' + (type === 'err' ? ' err' : '');
+            t.textContent = msg;
+            box.appendChild(t);
+            setTimeout(function () { t.classList.add('out'); setTimeout(function () { t.remove(); }, 320); }, 2600);
+        }
+        function ckCopyFallback(txt, done) {
+            const ta = document.createElement('textarea');
+            ta.value = txt; ta.style.position = 'fixed'; ta.style.opacity = '0';
+            document.body.appendChild(ta); ta.select();
+            try { document.execCommand('copy'); } catch (e) { }
+            ta.remove(); done();
+        }
+        function ckCopy(txt) {
+            txt = String(txt == null ? '' : txt);
+            if (!txt) return;
+            const done = function () { ckToast('تم النسخ: ' + (txt.length > 28 ? txt.slice(0, 28) + '...' : txt)); };
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(txt).then(done).catch(function () { ckCopyFallback(txt, done); });
+            } else { ckCopyFallback(txt, done); }
+        }
+        function ckParseDate(d, t) {
+            if (!d) return 0;
+            const ds = String(d).trim().split(' ');
+            const dp = ds[0].split('-');
+            if (dp.length < 3) return 0;
+            const tp = String(ds[1] || t || '00:00:00').split(':');
+            const v = new Date(+dp[0], +dp[1] - 1, +dp[2], +(tp[0] || 0), +(tp[1] || 0), +(tp[2] || 0)).getTime();
+            return v || 0;
+        }
+        function ckSkeleton() { return '<div class="ck-skel"></div><div class="ck-skel"></div><div class="ck-skel"></div>'; }
+        function ckSpin(id, on) { const b = document.getElementById(id); if (b) b.classList.toggle('spin', !!on); }
+        function ckTile(val, label, color) {
+            return '<div class="ck-tile" style="--tc:' + color + ';"><b>' + val + '</b><span>' + label + '</span></div>';
+        }
+        function ckKv(label, valHtml, wide) {
+            return '<div class="ck-kv' + (wide ? ' wide' : '') + '"><span>' + label + '</span>' + valHtml + '</div>';
+        }
+        function ckCopyB(text) {
+            return '<b class="ck-copy" data-c="' + ckEsc(text) + '" onclick="ckCopy(this.getAttribute(' + "'data-c'" + '))">' + ckEsc(text) + '</b>';
+        }
+        function ckInspect(email) {
+            if (!email) return;
+            document.getElementById('inspectUserIdentifier').value = email;
+            executeClientInspection();
+        }
+        function ckLightbox(src) {
+            if (!src) return;
+            document.getElementById('ckLightboxImg').src = src;
+            document.getElementById('ckLightbox').classList.add('active');
+        }
+
+        // ---------- تشييك الطلبات ----------
         function openCheckOrdersPage() {
             toggleSidebar();
             document.getElementById('adminMainSection').style.display = 'none';
@@ -11666,13 +15114,9 @@ Code   : -
             document.getElementById('apiImportScreen').classList.remove('active');
             document.getElementById('clientsListScreen').classList.remove('active');
             document.getElementById('checkOrdersPage').style.display = 'flex';
-
-            fetch('/api/get_all_orders')
-                .then(r => r.json())
-                .then(orders => {
-                    productOrdersData = orders;
-                    renderProductOrdersList();
-                });
+            ckOrdersFilter = 'open'; ckOrdersLimit = 40;
+            document.getElementById('ckOrdersSearch').value = '';
+            ckOrdersLoad();
         }
 
         function closeCheckOrdersPage() {
@@ -11681,61 +15125,742 @@ Code   : -
             fetchStatsAndRender();
         }
 
-        function renderProductOrdersList() {
-            const container = document.getElementById('productOrdersList');
-            container.innerHTML = '';
-            const pending = productOrdersData.filter(o => o.status === 'قيد الانتظار' || o.status === 'تم الارسال للتشيك');
+        function ckOrdersLoad() {
+            const box = document.getElementById('productOrdersList');
+            box.innerHTML = ckSkeleton();
+            ckSpin('ckOrdersRefreshBtn', true);
+            return fetch('/api/get_all_orders')
+                .then(function (r) { return r.json(); })
+                .then(function (orders) {
+                    productOrdersData = Array.isArray(orders) ? orders : [];
+                    ckOrdersRender();
+                })
+                .catch(function () { box.innerHTML = '<div class="ck-empty">تعذر تحميل الطلبات، جرّب التحديث</div>'; })
+                .then(function () { ckSpin('ckOrdersRefreshBtn', false); });
+        }
 
-            if (pending.length === 0) {
-                container.innerHTML = `<div style="text-align:center; color:#a1a1aa; font-size:0.8rem; padding:20px;">لا توجد طلبات شراء قيد الانتظار أو للتشيك حالياً</div>`;
+        function ckOrderKind(st) {
+            st = String(st || '');
+            if (st === 'تم الارسال للتشيك') return 'check';
+            if (st.indexOf('مرفوض') > -1) return 'rejected';
+            if (st.indexOf('مكتمل') > -1) return 'done';
+            return 'wait';
+        }
+        const CK_ORDER_KIND = {
+            wait: 'قيد الانتظار', check: 'للتشيك (فشل API)', done: 'مكتمل', rejected: 'مرفوض'
+        };
+
+        function ckOrdersSetFilter(f) {
+            ckOrdersFilter = f; ckOrdersLimit = 40; ckOrdersRender();
+        }
+
+        function ckOrdersRender() {
+            const all = productOrdersData.map(function (o) { return { o: o, k: ckOrderKind(o.status) }; });
+            const cnt = { wait: 0, check: 0, done: 0, rejected: 0 };
+            let pendingSum = 0;
+            all.forEach(function (x) {
+                cnt[x.k]++;
+                if (x.k === 'wait' || x.k === 'check') pendingSum += parseFloat(x.o.price) || 0;
+            });
+            const open = cnt.wait + cnt.check;
+
+            document.querySelectorAll('#ckOrdersChips .ck-chip').forEach(function (ch) {
+                const f = ch.getAttribute('data-f');
+                const n = f === 'open' ? open : (f === 'all' ? all.length : cnt[f]);
+                ch.querySelector('b').textContent = n;
+                ch.classList.toggle('active', f === ckOrdersFilter);
+            });
+            document.getElementById('ckOrdersSub').textContent = open ? ('يوجد ' + open + ' طلب بانتظار قرارك') : 'ما في طلبات معلّقة حالياً';
+            document.getElementById('ckOrdersStats').innerHTML =
+                ckTile(open, 'طلبات معلّقة', '#fbbf24') +
+                ckTile(formatBalance(pendingSum) + ' $', 'قيمة المعلّق', '#4ade80') +
+                ckTile(cnt.check, 'للتشيك (فشل API)', '#f87171') +
+                ckTile(all.length, 'إجمالي الطلبات', '#38bdf8');
+
+            let list = all.filter(function (x) {
+                if (ckOrdersFilter === 'open') return x.k === 'wait' || x.k === 'check';
+                if (ckOrdersFilter === 'all') return true;
+                return x.k === ckOrdersFilter;
+            });
+            const q = document.getElementById('ckOrdersSearch').value.trim().toLowerCase();
+            if (q) {
+                list = list.filter(function (x) {
+                    const o = x.o;
+                    return [o.id, o.email, o.product, o.subcategory, o.input, o.status, o.order_source, o.provider_name, o.order_uuid]
+                        .join(' ').toLowerCase().indexOf(q) > -1;
+                });
+            }
+            const sort = document.getElementById('ckOrdersSort').value;
+            list.sort(function (a, b) {
+                if (sort === 'high') return (parseFloat(b.o.price) || 0) - (parseFloat(a.o.price) || 0);
+                const da = ckParseDate(a.o.date, a.o.time), db = ckParseDate(b.o.date, b.o.time);
+                const d = (db - da) || ((b.o.id || 0) - (a.o.id || 0));
+                return sort === 'old' ? -d : d;
+            });
+
+            const box = document.getElementById('productOrdersList');
+            if (!list.length) {
+                box.innerHTML = '<div class="ck-empty">' + (q ? 'ما في نتائج لهذا البحث' : (ckOrdersFilter === 'open' ? 'لا توجد طلبات شراء معلّقة حالياً' : 'لا توجد طلبات ضمن هذا التصنيف')) + '</div>';
                 return;
             }
+            let html = list.slice(0, ckOrdersLimit).map(ckOrderCardHtml).join('');
+            if (list.length > ckOrdersLimit) {
+                html += '<div class="ck-more" onclick="ckOrdersLimit += 40; ckOrdersRender()">عرض المزيد (' + (list.length - ckOrdersLimit) + ' متبقي)</div>';
+            }
+            box.innerHTML = html;
+        }
 
-            pending.forEach(o => {
-                const card = document.createElement('div');
-                card.className = 'request-card-item';
-                card.onclick = () => openReviewOrderModal(o);
-                let badgeCol = (o.status === 'تم الارسال للتشيك') ? '#f87171' : '#4ade80';
-                card.innerHTML = `
-                    <div class="card-val-right">${o.subcategory} <span style="font-size:0.65rem; color:${badgeCol};">(${o.status})</span></div>
-                    <div class="card-title-left">${formatBalance(o.price)} $</div>
-                `;
-                container.appendChild(card);
-            });
+        function ckOrderCardHtml(x) {
+            const o = x.o;
+            const isOpen = x.k === 'wait' || x.k === 'check';
+            const when = (o.date || '') + (o.time ? ' ' + String(o.time).slice(0, 5) : '');
+            let h = '<div class="ck-card k-' + x.k + '">';
+            h += '<div class="ck-top"><span class="ck-badge">' + CK_ORDER_KIND[x.k] + '</span>';
+            if (o.provider_name) h += '<span class="ck-pill">API: ' + ckEsc(o.provider_name) + '</span>';
+            if (o.is_counter) h += '<span class="ck-pill">عدّاد</span>';
+            h += '<span class="ck-id" onclick="ckCopy(' + o.id + ')">#' + ckEsc(o.id) + '</span></div>';
+            h += '<div class="ck-title">' + ckEsc(o.subcategory || 'بدون فئة') + '</div>';
+            h += '<div class="ck-sub">' + ckEsc(o.product || '') + '</div>';
+            h += '<div class="ck-meta">';
+            h += ckKv('العميل', ckCopyB(o.email || '-'), true);
+            h += ckKv('المدخلات', ckCopyB(o.input || '-'), true);
+            h += ckKv('الكمية', '<b>' + ckEsc(o.quantity || 1) + '</b>');
+            h += ckKv('المصدر', '<b>' + ckEsc(o.order_source || 'الموقع') + '</b>');
+            h += ckKv('الوقت', '<b style="direction:ltr; text-align:right; display:block;">' + ckEsc(when || '-') + '</b>', true);
+            h += '</div>';
+            h += '<div class="ck-foot"><div class="ck-price">' + formatBalance(o.price) + ' $</div><div class="ck-actions">';
+            h += '<button class="ck-btn" onclick="ckInspect(' + "'" + ckEsc(o.email) + "'" + ')">كشف العميل</button>';
+            h += '<button class="ck-btn" onclick="ckOrderAct(' + o.id + ',' + "'view'" + ')">تفاصيل</button>';
+            if (isOpen) {
+                h += '<button class="ck-btn no" onclick="ckOrderAct(' + o.id + ',' + "'reject'" + ')">رفض</button>';
+                h += '<button class="ck-btn ok" onclick="ckOrderAct(' + o.id + ',' + "'accept'" + ')">قبول</button>';
+            }
+            h += '</div></div></div>';
+            return h;
+        }
+
+        function ckOrderAct(id, act) {
+            const o = productOrdersData.find(function (x) { return x.id === id; });
+            if (!o) return;
+            if (act === 'view') { openReviewOrderModal(o); return; }
+            ckOrderDecide(o, act);
+        }
+
+        let ckDecision = null;
+
+        function ckFormatReply(v) {
+            if (v === null || v === undefined || v === '') return '';
+            if (typeof v === 'string') return v;
+            if (Array.isArray(v)) return v.map(ckFormatReply).filter(Boolean).join(String.fromCharCode(10));
+            if (typeof v === 'object') {
+                if ('replay' in v) return ckFormatReply(v.replay);
+                try { return JSON.stringify(v); } catch (e) { return String(v); }
+            }
+            return String(v);
+        }
+
+        function ckOrderDecide(o, action) {
+            if (ckBusy) return;
+            ckDecision = { o: o, action: action };
+            const isApi = !!o.api_product_id;
+            const acc = action === 'accept';
+            document.getElementById('decOrdTitle').textContent = (acc ? 'قبول الطلب #' : 'رفض الطلب #') + o.id;
+            document.getElementById('decOrdSummary').textContent = (o.subcategory || '') + '  |  ' + formatBalance(o.price) + ' $';
+            const note = document.getElementById('decOrdNote');
+            note.textContent = acc ? '' : 'رح يتم إرجاع ' + formatBalance(o.price) + ' $ لرصيد العميل.';
+            note.style.display = acc ? 'none' : '';
+            const ta = document.getElementById('decOrdReply');
+            const apiBox = document.getElementById('decOrdApiReply');
+            if (isApi) {
+                ta.style.display = 'none';
+                apiBox.style.display = '';
+                apiBox.textContent = ckFormatReply(o.replay_api) || 'رد المزوّد (API) رح ينجاب تلقائياً ويظهر للعميل';
+                document.getElementById('decOrdLabel').textContent = 'رد النظام (من المزوّد API):';
+            } else {
+                apiBox.style.display = 'none';
+                ta.style.display = '';
+                ta.value = o.admin_reply || '';
+                document.getElementById('decOrdLabel').textContent = 'رد النظام (يظهر للعميل):';
+            }
+            const btn = document.getElementById('decOrdConfirm');
+            btn.textContent = acc ? 'تأكيد القبول' : 'تأكيد الرفض';
+            btn.className = acc ? 'btn-accept' : 'btn-reject';
+            openModal('decideOrderModal');
+        }
+
+        async function ckOrderConfirmDecision() {
+            if (ckBusy || !ckDecision) return;
+            const o = ckDecision.o, action = ckDecision.action;
+            const reply = o.api_product_id ? '' : document.getElementById('decOrdReply').value.trim();
+            const btn = document.getElementById('decOrdConfirm');
+            ckBusy = true;
+            btn.disabled = true;
+            try {
+                const res = await fetch('/api/process_product_order', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: o.id, action: action, admin_reply: reply })
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    ckToast(action === 'accept' ? 'تم قبول الطلب #' + o.id : 'تم رفض الطلب #' + o.id + ' وإعادة المبلغ');
+                    closeModal('decideOrderModal');
+                    closeModal('reviewOrderModal');
+                    ckDecision = null;
+                    await ckOrdersLoad();
+                    fetchStatsAndRender();
+                } else {
+                    ckToast(data.message || 'حدث خطأ في معالجة العملية!', 'err');
+                }
+            } catch (e) { ckToast('تعذر الاتصال بالسيرفر', 'err'); }
+            btn.disabled = false;
+            ckBusy = false;
         }
 
         let activeReviewOrder = null;
 
         function openReviewOrderModal(order) {
             activeReviewOrder = order;
+            const k = ckOrderKind(order.status);
+            document.getElementById('revOrdMeta').innerText = '#' + order.id + '  |  ' + CK_ORDER_KIND[k] + '  |  ' + (order.date || '') + ' ' + (order.time || '');
             document.getElementById('revOrdProduct').innerText = order.product || 'غير معروف';
             document.getElementById('revOrdSubcatPrice').innerText = order.subcategory + " (" + formatBalance(order.price) + " $)";
             document.getElementById('revOrdEmail').innerText = order.email || 'غير معروف';
             document.getElementById('revOrdInput').innerText = order.input || 'لا يوجد';
             document.getElementById('revOrdQuantity').innerText = order.quantity || '1';
             document.getElementById('revOrdSource').innerText = order.order_source || 'الموقع';
+            const row = document.querySelector('#reviewOrderModal .action-btns-row');
+            if (row) row.style.display = (k === 'wait' || k === 'check') ? '' : 'none';
             openModal('reviewOrderModal');
         }
 
-        async function processOrderDecision(action) {
+        function processOrderDecision(action) {
             if (!activeReviewOrder) return;
-            const res = await fetch('/api/process_product_order', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id: activeReviewOrder.id, action: action })
-            });
-            const data = await res.json();
-            if (data.status === "success") {
-                alert(action === 'accept' ? 'تم قبول طلب الشراء بنجاح!' : 'تم رفض طلب الشراء وإعادة المبلغ لحساب المستخدم!');
-                closeModal('reviewOrderModal');
-                openCheckOrdersPage();
-                fetchStatsAndRender();
-            } else {
-                alert(data.message || 'حدث خطأ في معالجة العملية!');
-            }
+            ckOrderDecide(activeReviewOrder, action);
         }
 
         let depositRequestsData = [];
+
+
+        let autoDepAdminData = [];
+        let autoDepEditKind = null;
+
+        async function autoDepPost(path, body) {
+            const c = window.__adminCred || {};
+            const res = await fetch(path, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(Object.assign({ admin_email: c.email, admin_password: c.password }, body || {}))
+            });
+            return res.json();
+        }
+
+        async function openAutoDepositAdmin() {
+            toggleSidebar();
+            document.getElementById('autoDepositAdminScreen').classList.add('active');
+            await loadAutoDepAdmin();
+        }
+
+        function closeAutoDepositAdmin() {
+            document.getElementById('autoDepositAdminScreen').classList.remove('active');
+        }
+
+        async function loadAutoDepAdmin() {
+            try {
+                const r = await autoDepPost('/api/auto_deposit_admin_list');
+                if (r.status === 'success') { autoDepAdminData = r.methods; renderAutoDepAdmin(); }
+                else alert(r.message || 'حدث خطأ');
+            } catch (e) { alert('تعذر الاتصال بالسيرفر'); }
+        }
+
+        function renderAutoDepAdmin() {
+            const box = document.getElementById('autoDepCards');
+            box.innerHTML = '';
+            autoDepAdminData.forEach(m => {
+                const card = document.createElement('div');
+                card.className = 'auto-dep-card';
+
+                const name = document.createElement('span');
+                name.className = 'auto-dep-name';
+                name.textContent = m.name;
+
+                const actions = document.createElement('div');
+                actions.className = 'auto-dep-actions';
+
+                const edit = document.createElement('button');
+                edit.className = 'auto-dep-edit';
+                edit.title = 'تعديل';
+                edit.innerHTML = '<svg viewBox="0 0 24 24"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>';
+                edit.onclick = () => openAutoDepEdit(m.kind);
+
+                const lab = document.createElement('label');
+                lab.className = 'auto-dep-check';
+                lab.title = 'تفعيل / إيقاف الطريقة';
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.checked = !!m.enabled;
+                cb.onchange = () => toggleAutoDep(m.kind, cb);
+                const bx = document.createElement('span');
+                bx.className = 'box';
+                bx.innerHTML = '<svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>';
+                lab.appendChild(cb);
+                lab.appendChild(bx);
+
+                actions.appendChild(edit);
+                actions.appendChild(lab);
+                card.appendChild(name);
+                card.appendChild(actions);
+                box.appendChild(card);
+            });
+        }
+
+        async function toggleAutoDep(kind, cb) {
+            const want = cb.checked;
+            try {
+                const r = await autoDepPost('/api/auto_deposit_toggle', { kind: kind, enabled: want });
+                if (r.status !== 'success') { cb.checked = !want; alert(r.message || 'حدث خطأ'); }
+                else { const m = autoDepAdminData.find(x => x.kind === kind); if (m) m.enabled = want; }
+            } catch (e) { cb.checked = !want; alert('تعذر الاتصال بالسيرفر'); }
+        }
+
+        function openAutoDepEdit(kind) {
+            const m = autoDepAdminData.find(x => x.kind === kind);
+            if (!m) return;
+            autoDepEditKind = kind;
+            document.getElementById('autoDepEditTitle').textContent = 'تعديل: ' + m.name;
+            document.getElementById('autoDepToken').value = '';
+            document.getElementById('autoDepTokenHint').textContent = m.has_token
+                ? ('التوكن محفوظ' + (m.token_hint ? ' (ينتهي بـ ' + m.token_hint + ')' : '') + ' - اتركه فارغاً للإبقاء عليه')
+                : 'لم يتم حفظ توكن بعد';
+            document.getElementById('autoDepName').value = m.custom_name || '';
+            document.getElementById('autoDepName').placeholder = m.name;
+            document.getElementById('autoDepRate').value = m.exchange_rate;
+            document.getElementById('autoDepAddress').value = m.address || '';
+            document.getElementById('autoDepDescription').value = m.description || '';
+            document.getElementById('autoDepImage').value = '';
+            const pv = document.getElementById('autoDepImgPreview');
+            if (m.image) { pv.src = m.image; pv.style.display = 'block'; } else { pv.style.display = 'none'; }
+            openModal('autoDepEditModal');
+        }
+
+        async function saveAutoDep() {
+            const rate = parseFloat(document.getElementById('autoDepRate').value);
+            if (isNaN(rate) || rate <= 0) { alert('يرجى إدخال سعر صرف صحيح (أكبر من 0)!'); return; }
+            const body = {
+                kind: autoDepEditKind,
+                api_token: document.getElementById('autoDepToken').value.trim(),
+                name: document.getElementById('autoDepName').value.trim(),
+                exchange_rate: rate,
+                address: document.getElementById('autoDepAddress').value.trim(),
+                description: document.getElementById('autoDepDescription').value.trim()
+            };
+            const btn = document.getElementById('autoDepSaveBtn');
+            btn.disabled = true;
+            btn.textContent = 'جاري الحفظ...';
+            try {
+                const f = document.getElementById('autoDepImage');
+                if (f.files && f.files[0]) {
+                    body.image = await new Promise((resolve) => {
+                        const rd = new FileReader();
+                        rd.onload = (e) => resolve(e.target.result);
+                        rd.readAsDataURL(f.files[0]);
+                    });
+                }
+                const r = await autoDepPost('/api/auto_deposit_save', body);
+                if (r.status === 'success') {
+                    closeModal('autoDepEditModal');
+                    autoDepAdminData = r.methods;
+                    renderAutoDepAdmin();
+                    alert('تم الحفظ وتحديث البيانات' + (r.token_check ? (String.fromCharCode(10) + r.token_check.message) : ''));
+                } else {
+                    alert(r.message || 'حدث خطأ');
+                }
+            } catch (e) {
+                alert('حدث خطأ في الاتصال بالسيرفر');
+            }
+            btn.disabled = false;
+            btn.textContent = 'حفظ وتحديث البيانات';
+        }
+
+        let tgnData = [];
+        let tgnDirty = false;
+        let tgnStatusTimer = null;
+        const TGN_ICONS = { cart: '#i-cart', wallet: '#i-wallet', zap: '#i-zap', user: '#i-user-plus', trend: '#i-trending', alert: '#i-x-circle' };
+
+        function tgnEsc(s) {
+            return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        }
+        function tgnSvg(id) { return '<svg viewBox="0 0 24 24"><use href="' + id + '"/></svg>'; }
+
+        function tgnSetStatus(msg, isErr) {
+            const el = document.getElementById('tgnStatus');
+            if (!el) return;
+            el.textContent = msg || '';
+            el.className = 'tgn-status' + (isErr ? ' err' : '');
+            if (tgnStatusTimer) clearTimeout(tgnStatusTimer);
+            if (msg && !isErr) tgnStatusTimer = setTimeout(function () { el.textContent = ''; }, 3000);
+        }
+
+        async function openTgNotifyScreen() {
+            toggleSidebar();
+            tgnDirty = false;
+            tgnSetStatus('');
+            document.getElementById('tgNotifyScreen').classList.add('active');
+            document.getElementById('tgnList').innerHTML = '<div class="tgr-load">جاري التحميل...</div>';
+            try {
+                const r = await autoDepPost('/api/tg_notify_get');
+                if (r.status === 'success') { tgnData = r.channels || []; tgnRender(); }
+                else { document.getElementById('tgnList').innerHTML = '<div class="tgr-load">' + tgnEsc(r.message || 'حدث خطأ') + '</div>'; }
+            } catch (e) {
+                document.getElementById('tgnList').innerHTML = '<div class="tgr-load">تعذر الاتصال بالسيرفر</div>';
+            }
+        }
+
+        function closeTgNotifyScreen() {
+            if (tgnDirty && !confirm('في تغييرات ما انحفظت، بدك تطلع بدون حفظ؟')) return;
+            tgnDirty = false;
+            document.getElementById('tgNotifyScreen').classList.remove('active');
+        }
+
+        function tgnBadge(c) {
+            if (!c.uses_default) return '<span class="tgn-badge on">بوت مخصص</span>';
+            if (c.inherits) {
+                const p = tgnData.find(function (x) { return x.kind === c.inherits; });
+                return '<span class="tgn-badge inh">يتبع ' + tgnEsc(p ? p.title : 'قناة أخرى') + '</span>';
+            }
+            return '<span class="tgn-badge">البوت الافتراضي</span>';
+        }
+
+        function tgnRender() {
+            const box = document.getElementById('tgnList');
+            box.innerHTML = '';
+            tgnData.forEach(function (c, i) {
+                const card = document.createElement('div');
+                card.className = 'tgn-card' + (c.enabled ? '' : ' off');
+                card.setAttribute('data-k', c.kind);
+                card.style.animationDelay = (i * 0.05) + 's';
+                const hint = c.has_token
+                    ? ('التوكن محفوظ' + (c.token_hint ? ' (ينتهي بـ ' + tgnEsc(c.token_hint) + ')' : '') + ' - اتركه فارغاً للإبقاء عليه')
+                    : 'ما في توكن مخصص بعد';
+                card.innerHTML =
+                    '<div class="tgn-head">' +
+                        '<div class="tgn-who"><span class="tgn-ic">' + tgnSvg(TGN_ICONS[c.icon] || '#i-send') + '</span>' +
+                            '<div><div class="tgn-name">' + tgnEsc(c.title) + '</div><div class="tgn-desc">' + tgnEsc(c.desc) + '</div></div></div>' +
+                        '<label class="tgn-switch" title="تفعيل / إيقاف القناة"><input type="checkbox" data-f="en"' + (c.enabled ? ' checked' : '') + '><span></span></label>' +
+                    '</div>' +
+                    tgnBadge(c) +
+                    '<div class="tgn-field"><label>توكن البوت</label>' +
+                        '<div class="tgn-inrow"><input type="password" class="tgn-input" data-f="token" placeholder="123456789:AAxxxxxxxxxxxxxxxx" autocomplete="off">' +
+                        '<button type="button" class="tgn-mini ghost" onclick="tgnToggleEye(this)">إظهار</button></div>' +
+                        '<div class="tgn-sub" data-f="hint">' + hint + '</div></div>' +
+                    '<div class="tgn-field"><label>Chat ID (رقم المحادثة أو @اسم_القناة)</label>' +
+                        '<input type="text" class="tgn-input" data-f="chat" placeholder="مثال: 8694276183" value="' + tgnEsc(c.chat_id) + '" autocomplete="off"></div>' +
+                    '<div class="tgn-actions">' +
+                        '<button type="button" class="tgn-mini" data-k="' + tgnEsc(c.kind) + '" onclick="tgnTestOne(this.getAttribute(&quot;data-k&quot;))">تجربة</button>' +
+                        '<button type="button" class="tgn-mini ghost" data-k="' + tgnEsc(c.kind) + '" onclick="tgnReset(this.getAttribute(&quot;data-k&quot;))">استعادة الافتراضي</button>' +
+                    '</div>';
+                card.addEventListener('input', function () { tgnDirty = true; });
+                card.querySelector('[data-f="en"]').addEventListener('change', function (e) {
+                    card.classList.toggle('off', !e.target.checked);
+                    tgnDirty = true;
+                });
+                box.appendChild(card);
+            });
+        }
+
+        function tgnToggleEye(btn) {
+            const inp = btn.parentNode.querySelector('input');
+            const show = inp.type === 'password';
+            inp.type = show ? 'text' : 'password';
+            btn.textContent = show ? 'إخفاء' : 'إظهار';
+        }
+
+        function tgnCard(kind) {
+            return document.querySelector('#tgnList .tgn-card[data-k="' + kind + '"]');
+        }
+
+        function tgnReset(kind) {
+            const card = tgnCard(kind);
+            if (!card) return;
+            card.setAttribute('data-reset', '1');
+            card.querySelector('[data-f="token"]').value = '';
+            card.querySelector('[data-f="chat"]').value = '';
+            card.querySelector('[data-f="en"]').checked = true;
+            card.classList.remove('off');
+            card.querySelector('[data-f="hint"]').textContent = 'سيرجع للبوت الافتراضي بعد الضغط على حفظ التغييرات';
+            tgnDirty = true;
+        }
+
+        async function tgnSave(silent) {
+            const channels = {};
+            document.querySelectorAll('#tgnList .tgn-card').forEach(function (card) {
+                const k = card.getAttribute('data-k');
+                channels[k] = {
+                    token: card.querySelector('[data-f="token"]').value.trim(),
+                    chat_id: card.querySelector('[data-f="chat"]').value.trim(),
+                    enabled: card.querySelector('[data-f="en"]').checked,
+                    reset: card.getAttribute('data-reset') === '1'
+                };
+            });
+            const btn = document.getElementById('tgnSaveBtn');
+            btn.disabled = true;
+            btn.textContent = 'جاري الحفظ...';
+            let ok = false;
+            try {
+                const r = await autoDepPost('/api/tg_notify_save', { channels: channels });
+                if (r.status === 'success') {
+                    tgnData = r.channels || [];
+                    tgnDirty = false;
+                    tgnRender();
+                    tgnSetStatus('تم حفظ الإعدادات ✓', false);
+                    ok = true;
+                } else {
+                    tgnSetStatus(r.message || 'حدث خطأ', true);
+                    if (!silent) alert(r.message || 'حدث خطأ');
+                }
+            } catch (e) {
+                tgnSetStatus('تعذر الاتصال بالسيرفر', true);
+            }
+            btn.disabled = false;
+            btn.textContent = 'حفظ التغييرات';
+            return ok;
+        }
+
+        function tgNotifyTestFromMenu() {
+            toggleSidebar();
+            tgNotifyTest(null);
+        }
+
+        async function tgnTestOne(kind) {
+            await tgNotifyTest(kind);
+        }
+
+        async function tgNotifyTest(kind) {
+            const screenOpen = document.getElementById('tgNotifyScreen').classList.contains('active');
+            if (screenOpen && tgnDirty) {
+                const saved = await tgnSave(true);
+                if (!saved) return;
+            }
+            const body = document.getElementById('tgnTestBody');
+            body.innerHTML = '<div class="tgr-load">جاري إرسال الرسالة التجريبية...</div>';
+            openModal('tgnTestModal');
+            try {
+                const r = await autoDepPost('/api/tg_notify_test', kind ? { kind: kind } : {});
+                if (r.status !== 'success') {
+                    body.innerHTML = '<div class="tgr-load">' + tgnEsc(r.message || 'حدث خطأ') + '</div>';
+                    return;
+                }
+                const rows = r.results || [];
+                const okN = rows.filter(function (x) { return x.state === 'ok'; }).length;
+                let h = '<div class="tgr-sum">وصلت ' + okN + ' من ' + rows.length + '</div>';
+                rows.forEach(function (x) {
+                    const cls = x.state === 'ok' ? 'ok' : (x.state === 'disabled' ? 'off' : (x.state === 'missing' ? 'missing' : 'fail'));
+                    const ic = cls === 'ok' ? '#i-check' : (cls === 'off' ? '#i-clock' : '#i-x');
+                    h += '<div class="tgr-row"><span class="tgr-ic ' + cls + '">' + tgnSvg(ic) + '</span><div>' +
+                        '<div class="tgr-t">' + tgnEsc(x.title) + '</div>' +
+                        (x.bot ? '<div class="tgr-b">' + tgnEsc(x.bot) + '</div>' : '') +
+                        '<div class="tgr-m">' + tgnEsc(x.message) + '</div></div></div>';
+                });
+                body.innerHTML = h;
+            } catch (e) {
+                body.innerHTML = '<div class="tgr-load">تعذر الاتصال بالسيرفر</div>';
+            }
+        }
+
+        let adhData = [];
+        let adhStats = {};
+        let adhFilter = 'all';
+        let adhLimit = 100;
+        let adhTimer = null;
+        const ADH_STATUS = {
+            'مقبول': { label: 'مكتمل', cls: 'ok', icon: '#i-check-circle' },
+            'قيد التدقيق': { label: 'قيد المراجعة', cls: 'wait', icon: '#i-clock' },
+            'مرفوض': { label: 'مرفوض', cls: 'bad', icon: '#i-x-circle' }
+        };
+
+        function adhEsc(s) {
+            return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        }
+        function adhNum(n, d) {
+            const v = parseFloat(n);
+            if (isNaN(v)) return '0';
+            return v.toLocaleString('en-US', { maximumFractionDigits: (d == null ? 4 : d) });
+        }
+        function adhStatus(st) {
+            return ADH_STATUS[st] || { label: st || 'غير معروف', cls: 'wait', icon: '#i-clock' };
+        }
+        function adhIcon(id) {
+            return '<svg viewBox="0 0 24 24"><use href="' + id + '"/></svg>';
+        }
+
+        async function openAutoDepositHistory() {
+            toggleSidebar();
+            adhLimit = 100;
+            document.getElementById('autoDepositHistoryScreen').classList.add('active');
+            document.getElementById('adhList').innerHTML = '<div class="adh-empty">جاري التحميل...</div>';
+            await loadAutoDepHistory();
+            if (adhTimer) clearInterval(adhTimer);
+            adhTimer = setInterval(function () {
+                if (document.getElementById('autoDepositHistoryScreen').classList.contains('active')) loadAutoDepHistory(true);
+            }, 30000);
+        }
+
+        function closeAutoDepositHistory() {
+            document.getElementById('autoDepositHistoryScreen').classList.remove('active');
+            if (adhTimer) { clearInterval(adhTimer); adhTimer = null; }
+        }
+
+        async function loadAutoDepHistory(silent) {
+            const btn = document.getElementById('adhRefreshBtn');
+            if (btn) btn.classList.add('spin');
+            try {
+                const r = await autoDepPost('/api/auto_deposit_history');
+                if (r.status === 'success') {
+                    adhData = r.rows || [];
+                    adhStats = r.stats || {};
+                    adhRenderStats();
+                    adhApplyFilters();
+                } else if (!silent) {
+                    alert(r.message || 'حدث خطأ');
+                }
+            } catch (e) {
+                if (!silent) alert('تعذر الاتصال بالسيرفر');
+            }
+            if (btn) btn.classList.remove('spin');
+        }
+
+        function adhRenderStats() {
+            const s = adhStats || {};
+            const last = adhData.length ? adhData[0] : null;
+            const cards = [
+                { l: 'الإيداعات المكتملة', v: adhNum(s.completed || 0, 0), sub: 'من أصل ' + adhNum(s.count || 0, 0) + ' طلب', c: 'rgba(34,197,94,.25)' },
+                { l: 'إجمالي الرصيد المضاف', v: adhNum(s.total_credited || 0, 3) + ' $', sub: adhNum(s.users || 0, 0) + ' عميل', c: 'rgba(232,194,106,.28)' },
+                { l: 'إيداعات اليوم', v: adhNum(s.today_count || 0, 0), sub: adhNum(s.today_credited || 0, 3) + ' $', c: 'rgba(56,189,248,.25)' },
+                { l: 'آخر إيداع', v: last ? adhNum(last.amount, 3) + ' $' : '-', sub: last ? adhEsc(last.date) : '', c: 'rgba(167,139,250,.25)' }
+            ];
+            document.getElementById('adhStats').innerHTML = cards.map(function (c) {
+                return '<div class="adh-stat" style="--adh-c:' + c.c + ';"><span class="adh-stat-lbl">' + c.l + '</span><span class="adh-stat-val">' + c.v + '</span><span class="adh-stat-sub">' + c.sub + '</span></div>';
+            }).join('');
+            const bk = s.by_kind || [];
+            document.getElementById('adhStrip').innerHTML = bk.map(function (k) {
+                return '<div class="adh-cur"><span>' + adhEsc(k.title) + ' · ' + adhNum(k.count, 0) + ' عملية</span><b>' + adhNum(k.local, 2) + ' ' + adhEsc(k.currency) + '</b></div>';
+            }).join('');
+        }
+
+        function adhSetFilter(f) {
+            adhFilter = f;
+            adhLimit = 100;
+            document.querySelectorAll('#adhChips .adh-chip').forEach(function (b) {
+                b.classList.toggle('on', b.getAttribute('data-f') === f);
+            });
+            adhApplyFilters();
+        }
+
+        function adhApplyFilters() {
+            const q = (document.getElementById('adhSearch').value || '').trim().toLowerCase();
+            const today = adhStats.today || '';
+            const rows = adhData.filter(function (r) {
+                if (adhFilter === 'usd' || adhFilter === 'syp') { if (r.kind !== adhFilter) return false; }
+                else if (adhFilter === 'today') { if (!today || String(r.date || '').indexOf(today) !== 0) return false; }
+                if (q) {
+                    const hay = ((r.email || '') + ' ' + (r.tx_id || '') + ' ' + (r.method_name || '') + ' ' + (r.id == null ? '' : r.id)).toLowerCase();
+                    if (hay.indexOf(q) === -1) return false;
+                }
+                return true;
+            });
+            adhRenderList(rows);
+        }
+
+        function adhRenderList(rows) {
+            const box = document.getElementById('adhList');
+            box.innerHTML = '';
+            document.getElementById('adhCount').textContent = 'عرض ' + adhNum(Math.min(rows.length, adhLimit), 0) + ' من ' + adhNum(rows.length, 0) + ' إيداع';
+            if (!rows.length) {
+                box.innerHTML = '<div class="adh-empty">لا توجد إيداعات تلقائية مطابقة</div>';
+                return;
+            }
+            rows.slice(0, adhLimit).forEach(function (r, i) {
+                const st = adhStatus(r.status);
+                const cur = r.currency ? (' ' + adhEsc(r.currency)) : '';
+                const card = document.createElement('div');
+                card.className = 'adh-card ' + st.cls;
+                card.style.animationDelay = Math.min(i, 12) * 0.03 + 's';
+                card.innerHTML =
+                    '<div class="adh-row1">' +
+                        '<div class="adh-method"><span class="adh-ico">' + adhIcon('#i-zap') + '</span>' +
+                            '<div style="min-width:0;"><div class="adh-mname">' + adhEsc(r.method_name || 'إيداع تلقائي') + '</div>' +
+                            '<div class="adh-mdate">' + adhEsc(r.date || '') + '</div></div></div>' +
+                        '<div class="adh-amt">+' + adhNum(r.amount, 3) + ' $</div>' +
+                    '</div>' +
+                    '<div class="adh-row2">' +
+                        '<span class="adh-mail">' + adhEsc(r.email || '-') + '</span>' +
+                        '<span class="adh-badge ' + st.cls + '">' + adhIcon(st.icon) + st.label + '</span>' +
+                    '</div>' +
+                    '<div class="adh-row2">' +
+                        '<span class="adh-tx-s">#' + adhEsc(r.tx_id || '-') + '</span>' +
+                        '<span class="adh-tx-s">' + adhNum(r.local_amount, 2) + cur + '</span>' +
+                    '</div>';
+                card.onclick = function () { adhOpenDetail(r); };
+                box.appendChild(card);
+            });
+            if (rows.length > adhLimit) {
+                const more = document.createElement('button');
+                more.className = 'btn-secondary adh-more';
+                more.textContent = 'عرض المزيد (' + adhNum(rows.length - adhLimit, 0) + ')';
+                more.onclick = function () { adhLimit += 100; adhRenderList(rows); };
+                box.appendChild(more);
+            }
+        }
+
+        function adhOpenDetail(r) {
+            const st = adhStatus(r.status);
+            const cur = r.currency ? (' ' + r.currency) : '';
+            const line = function (k, v) { return '<div class="adh-drow"><span>' + k + '</span><b>' + adhEsc(v) + '</b></div>'; };
+            let h = '<div class="adh-dhead"><div class="adh-damt">+' + adhNum(r.amount, 4) + ' $</div>' +
+                '<div class="adh-dmeth">' + adhEsc(r.method_name || 'إيداع تلقائي') + '</div>' +
+                '<span class="adh-badge ' + st.cls + '">' + adhIcon(st.icon) + st.label + '</span></div>';
+            h += line('رقم الطلب', r.id == null ? '-' : '#' + r.id);
+            h += line('العميل', r.email || '-');
+            h += '<div class="adh-drow"><span>رقم العملية (انقر للنسخ)</span><b class="adh-tx" data-v="' + adhEsc(r.tx_id || '') + '" onclick="adhCopy(this)">' + adhEsc(r.tx_id || '-') + '</b></div>';
+            h += line('المبلغ المحوّل', adhNum(r.local_amount, 4) + cur);
+            h += line('سعر الصرف', r.rate ? adhNum(r.rate, 6) : '-');
+            h += line('المبلغ المضاف للرصيد', adhNum(r.amount, 4) + ' $');
+            h += line('تاريخ العملية', r.date || '-');
+            const done = r.status === 'مقبول';
+            const bad = r.status === 'مرفوض';
+            const step = function (cls, title, sub) {
+                const ic = cls === 'pending' ? '#i-clock' : (cls === 'fail' ? '#i-x' : '#i-check');
+                return '<div class="adh-step ' + cls + '"><span class="adh-dot">' + adhIcon(ic) + '</span><div><div class="adh-stt">' + title + '</div><div class="adh-sts">' + sub + '</div></div></div>';
+            };
+            h += '<div class="adh-tl">' +
+                step('', 'تم استلام طلب الإيداع', adhEsc(r.date || '')) +
+                step('', 'تم التحقق من العملية عبر ShamCash', 'مطابقة رقم العملية والمبلغ والعملة') +
+                step(done ? '' : (bad ? 'fail' : 'pending'), done ? 'تمت إضافة الرصيد لحساب العميل' : (bad ? 'تم رفض الطلب' : 'بانتظار المراجعة'), done ? ('+' + adhNum(r.amount, 4) + ' $') : '') +
+                '</div>';
+            document.getElementById('adhDetailBody').innerHTML = h;
+            openModal('adhDetailModal');
+        }
+
+        function adhCopy(el) {
+            const v = el.getAttribute('data-v') || '';
+            const old = el.textContent;
+            const done = function () { el.textContent = 'تم النسخ ✓'; setTimeout(function () { el.textContent = old; }, 1200); };
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(v).then(done, function () {});
+            } else {
+                const t = document.createElement('textarea');
+                t.value = v;
+                document.body.appendChild(t);
+                t.select();
+                try { document.execCommand('copy'); done(); } catch (e) {}
+                document.body.removeChild(t);
+            }
+        }
+
+        let ckDepFilter = 'pending';
+        let ckDepLimit = 40;
+        let ckDepTimer = null;
+        let ckDepLastPending = -1;
 
         function openCheckDepositsPage() {
             toggleSidebar();
@@ -11747,76 +15872,210 @@ Code   : -
             document.getElementById('apiImportScreen').classList.remove('active');
             document.getElementById('clientsListScreen').classList.remove('active');
             document.getElementById('checkDepositsPage').style.display = 'flex';
-
-            fetch('/api/get_deposit_requests')
-                .then(r => r.json())
-                .then(requests => {
-                    depositRequestsData = requests;
-                    renderDepositRequestsList();
-                });
+            ckDepFilter = 'pending'; ckDepLimit = 40; ckDepLastPending = -1;
+            document.getElementById('ckDepSearch').value = '';
+            ckDepLoad(false);
+            ckDepStartTimer();
         }
 
         function closeCheckDepositsPage() {
+            if (ckDepTimer) { clearInterval(ckDepTimer); ckDepTimer = null; }
             document.getElementById('checkDepositsPage').style.display = 'none';
             document.getElementById('adminMainSection').style.display = 'block';
             fetchStatsAndRender();
         }
 
-        function renderDepositRequestsList() {
-            const container = document.getElementById('depositRequestsList');
-            container.innerHTML = '';
-            const pending = depositRequestsData.filter(r => r.status === 'قيد التدقيق');
+        function ckDepStartTimer() {
+            if (ckDepTimer) clearInterval(ckDepTimer);
+            ckDepTimer = setInterval(function () {
+                const pg = document.getElementById('checkDepositsPage');
+                if (!pg || pg.style.display !== 'flex') { clearInterval(ckDepTimer); ckDepTimer = null; return; }
+                const auto = document.getElementById('ckDepAuto');
+                const modalOpen = document.getElementById('reviewDepositModal').classList.contains('active');
+                if (auto && auto.checked && !ckBusy && !modalOpen) ckDepLoad(true);
+            }, 25000);
+        }
 
-            if (pending.length === 0) {
-                container.innerHTML = `<div style="text-align:center; color:#a1a1aa; font-size:0.8rem; padding:20px;">لا توجد طلبات إيداع قيد الانتظار حالياً</div>`;
+        function ckDepLoad(silent) {
+            const box = document.getElementById('depositRequestsList');
+            if (!silent) box.innerHTML = ckSkeleton();
+            ckSpin('ckDepRefreshBtn', true);
+            return fetch('/api/get_deposit_requests')
+                .then(function (r) { return r.json(); })
+                .then(function (requests) {
+                    depositRequestsData = Array.isArray(requests) ? requests : [];
+                    const pend = depositRequestsData.filter(function (r) { return ckDepKind(r.status) === 'pending'; }).length;
+                    if (silent && ckDepLastPending >= 0 && pend > ckDepLastPending) ckToast('وصل طلب إيداع جديد');
+                    ckDepLastPending = pend;
+                    ckDepRender();
+                })
+                .catch(function () { if (!silent) box.innerHTML = '<div class="ck-empty">تعذر تحميل الإيداعات، جرّب التحديث</div>'; })
+                .then(function () { ckSpin('ckDepRefreshBtn', false); });
+        }
+
+        function ckDepKind(st) {
+            st = String(st || '');
+            if (st === 'قيد التدقيق') return 'pending';
+            if (st === 'مقبول') return 'accepted';
+            if (st.indexOf('مرفوض') > -1) return 'rejected';
+            return 'other';
+        }
+        const CK_DEP_KIND = { pending: 'قيد التدقيق', accepted: 'مقبول', rejected: 'مرفوض', other: 'أخرى' };
+
+        function ckDepSetFilter(f) { ckDepFilter = f; ckDepLimit = 40; ckDepRender(); }
+
+        function ckDepRender() {
+            const all = depositRequestsData.map(function (r) { return { r: r, k: ckDepKind(r.status) }; });
+            const cnt = { pending: 0, accepted: 0, rejected: 0, other: 0 };
+            let pendSum = 0, accSum = 0;
+            const txCount = {};
+            all.forEach(function (x) {
+                cnt[x.k]++;
+                const amt = parseFloat(x.r.amount) || 0;
+                if (x.k === 'pending') pendSum += amt;
+                if (x.k === 'accepted') accSum += amt;
+                const t = String(x.r.tx_id || '').trim().toLowerCase();
+                if (t) txCount[t] = (txCount[t] || 0) + 1;
+            });
+
+            document.querySelectorAll('#ckDepChips .ck-chip').forEach(function (ch) {
+                const f = ch.getAttribute('data-f');
+                ch.querySelector('b').textContent = f === 'all' ? all.length : cnt[f];
+                ch.classList.toggle('active', f === ckDepFilter);
+            });
+            document.getElementById('ckDepSub').textContent = cnt.pending ? ('يوجد ' + cnt.pending + ' إيداع بانتظار التدقيق') : 'ما في إيداعات معلّقة حالياً';
+            document.getElementById('ckDepStats').innerHTML =
+                ckTile(cnt.pending, 'إيداعات معلّقة', '#fbbf24') +
+                ckTile(formatBalance(pendSum) + ' $', 'مبلغ المعلّق', '#4ade80') +
+                ckTile(formatBalance(accSum) + ' $', 'إجمالي المقبول', '#38bdf8') +
+                ckTile(cnt.rejected, 'مرفوضة', '#a1a1aa');
+
+            let list = all.filter(function (x) { return ckDepFilter === 'all' ? true : x.k === ckDepFilter; });
+            const q = document.getElementById('ckDepSearch').value.trim().toLowerCase();
+            if (q) {
+                list = list.filter(function (x) {
+                    const r = x.r;
+                    return [r.id, r.email, r.method_name, r.tx_id, r.amount, r.local_amount, r.status].join(' ').toLowerCase().indexOf(q) > -1;
+                });
+            }
+            const sort = document.getElementById('ckDepSort').value;
+            list.sort(function (a, b) {
+                if (sort === 'high') return (parseFloat(b.r.amount) || 0) - (parseFloat(a.r.amount) || 0);
+                const d = (ckParseDate(b.r.date) - ckParseDate(a.r.date)) || ((b.r.id || 0) - (a.r.id || 0));
+                return sort === 'old' ? -d : d;
+            });
+
+            const box = document.getElementById('depositRequestsList');
+            if (!list.length) {
+                box.innerHTML = '<div class="ck-empty">' + (q ? 'ما في نتائج لهذا البحث' : (ckDepFilter === 'pending' ? 'لا توجد طلبات إيداع قيد الانتظار حالياً' : 'لا توجد إيداعات ضمن هذا التصنيف')) + '</div>';
                 return;
             }
+            let html = list.slice(0, ckDepLimit).map(function (x) {
+                const t = String(x.r.tx_id || '').trim().toLowerCase();
+                return ckDepCardHtml(x, !!t && txCount[t] > 1);
+            }).join('');
+            if (list.length > ckDepLimit) {
+                html += '<div class="ck-more" onclick="ckDepLimit += 40; ckDepRender()">عرض المزيد (' + (list.length - ckDepLimit) + ' متبقي)</div>';
+            }
+            box.innerHTML = html;
+        }
 
-            pending.forEach(r => {
-                const card = document.createElement('div');
-                card.className = 'request-card-item';
-                card.onclick = () => openReviewDepositModal(r);
-                card.innerHTML = `
-                    <div class="card-val-right">${formatBalance(r.amount)} $</div>
-                    <div class="card-title-left">${r.method_name}</div>
-                `;
-                container.appendChild(card);
-            });
+        function ckDepCardHtml(x, dup) {
+            const r = x.r;
+            const isPending = x.k === 'pending';
+            let h = '<div class="ck-card k-' + x.k + '">';
+            h += '<div class="ck-top"><span class="ck-badge">' + CK_DEP_KIND[x.k] + '</span>';
+            if (r.auto) h += '<span class="ck-pill">تلقائي</span>';
+            if (dup) h += '<span class="ck-pill warn">رقم عملية مكرر!</span>';
+            h += '<span class="ck-id" onclick="ckCopy(' + r.id + ')">#' + ckEsc(r.id) + '</span></div>';
+            h += '<div class="ck-title">' + ckEsc(r.method_name || 'طريقة غير معروفة') + '</div>';
+            h += '<div class="ck-meta">';
+            h += ckKv('العميل', ckCopyB(r.email || '-'), true);
+            h += ckKv('رقم العملية', ckCopyB(r.tx_id || '-'), true);
+            const lc = parseFloat(r.local_amount) || 0;
+            if (lc > 0) h += ckKv('المبلغ المحوّل', '<b>' + ckEsc(lc) + '</b>');
+            const ex = parseFloat(r.exchange_rate) || 0;
+            if (ex > 0 && lc > 0) h += ckKv('سعر الصرف', '<b>' + ckEsc(ex) + '</b>');
+            h += ckKv('الوقت', '<b style="direction:ltr; text-align:right; display:block;">' + ckEsc(r.date || '-') + '</b>', true);
+            h += '</div>';
+            if (isPending && r.receipt_image) {
+                h += '<img class="ck-thumb" loading="lazy" src="' + ckEsc(r.receipt_image) + '" onclick="ckDepAct(' + r.id + ',' + "'img'" + ')" alt="">';
+            }
+            h += '<div class="ck-foot"><div class="ck-price">' + formatBalance(r.amount) + ' $</div><div class="ck-actions">';
+            h += '<button class="ck-btn" onclick="ckInspect(' + "'" + ckEsc(r.email) + "'" + ')">كشف العميل</button>';
+            if (!isPending && r.receipt_image) h += '<button class="ck-btn" onclick="ckDepAct(' + r.id + ',' + "'img'" + ')">الإشعار</button>';
+            h += '<button class="ck-btn" onclick="ckDepAct(' + r.id + ',' + "'view'" + ')">تفاصيل</button>';
+            if (isPending) {
+                h += '<button class="ck-btn no" onclick="ckDepAct(' + r.id + ',' + "'reject'" + ')">رفض</button>';
+                h += '<button class="ck-btn ok" onclick="ckDepAct(' + r.id + ',' + "'accept'" + ')">قبول</button>';
+            }
+            h += '</div></div></div>';
+            return h;
+        }
+
+        function ckDepAct(id, act) {
+            const r = depositRequestsData.find(function (x) { return x.id === id; });
+            if (!r) return;
+            if (act === 'view') { openReviewDepositModal(r); return; }
+            if (act === 'img') { ckLightbox(r.receipt_image); return; }
+            ckDepDecide(r, act);
+        }
+
+        async function ckDepDecide(r, action) {
+            if (ckBusy) return;
+            const msg = action === 'accept'
+                ? 'تأكيد قبول الإيداع #' + r.id + ' وإضافة ' + formatBalance(r.amount) + ' $ لرصيد ' + (r.email || 'العميل') + '؟'
+                : 'تأكيد رفض الإيداع #' + r.id + '؟';
+            if (!confirm(msg)) return;
+            ckBusy = true;
+            try {
+                const res = await fetch('/api/process_deposit_request', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: r.id, action: action })
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    ckToast(action === 'accept' ? 'تم قبول الإيداع وإضافة الرصيد' : 'تم رفض الإيداع');
+                    closeModal('reviewDepositModal');
+                    await ckDepLoad(true);
+                    fetchStatsAndRender();
+                } else {
+                    ckToast(data.message || 'حدث خطأ في معالجة العملية!', 'err');
+                }
+            } catch (e) { ckToast('تعذر الاتصال بالسيرفر', 'err'); }
+            ckBusy = false;
         }
 
         let activeReviewDeposit = null;
 
         function openReviewDepositModal(req) {
             activeReviewDeposit = req;
+            const k = ckDepKind(req.status);
+            document.getElementById('revDepMeta').innerText = (req.method_name || '-') + '  |  ' + CK_DEP_KIND[k] + '  |  ' + (req.date || '');
             document.getElementById('revAmount').innerText = formatBalance(req.amount) + " $";
             document.getElementById('revTxId').innerText = req.tx_id || 'لا يوجد';
             document.getElementById('revEmail').innerText = req.email || 'غير معروف';
 
             const imgContainer = document.getElementById('revReceiptContainer');
+            imgContainer.innerHTML = '';
             if (req.receipt_image) {
-                imgContainer.innerHTML = `<img src="${req.receipt_image}" style="max-width:100%; max-height:180px; border-radius:6px; border:1px solid #27272a;" />`;
+                const im = document.createElement('img');
+                im.src = req.receipt_image;
+                im.style.cssText = 'max-width:100%; max-height:180px; border-radius:6px; border:1px solid #27272a; cursor:zoom-in;';
+                im.onclick = function () { ckLightbox(req.receipt_image); };
+                imgContainer.appendChild(im);
             } else {
                 imgContainer.innerText = 'لا توجد صورة مرفقة';
             }
+            const row = document.querySelector('#reviewDepositModal .action-btns-row');
+            if (row) row.style.display = k === 'pending' ? '' : 'none';
             openModal('reviewDepositModal');
         }
 
-        async function processDepositDecision(action) {
+        function processDepositDecision(action) {
             if (!activeReviewDeposit) return;
-            const res = await fetch('/api/process_deposit_request', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id: activeReviewDeposit.id, action: action })
-            });
-            const data = await res.json();
-            if (data.status === "success") {
-                alert(action === 'accept' ? 'تم قبول الإيداع وإضافة الرصيد لحساب المستخدم!' : 'تم رفض الإيداع!');
-                closeModal('reviewDepositModal');
-                openCheckDepositsPage();
-                fetchStatsAndRender();
-            } else {
-                alert(data.message || 'حدث خطأ في معالجة العملية!');
-            }
+            ckDepDecide(activeReviewDeposit, action);
         }
 
         function openAddDepositMethodModal() {
@@ -11901,7 +16160,7 @@ Code   : -
 
         function openDeleteDepositMethodModal() {
             toggleSidebar();
-            fetch('/api/get_deposit_methods')
+            fetch('/api/get_deposit_methods?manual=1')
                 .then(r => r.json())
                 .then(methods => {
                     const select = document.getElementById('depMethodDeleteSelect');
@@ -11931,7 +16190,7 @@ Code   : -
 
         function openViewDepositMethodsModal() {
             toggleSidebar();
-            fetch('/api/get_deposit_methods')
+            fetch('/api/get_deposit_methods?manual=1')
                 .then(r => r.json())
                 .then(methods => {
                     const list = document.getElementById('depositMethodsList');
@@ -12115,12 +16374,12 @@ Code   : -
             statusEl.className = 'exact-status-badge';
 
             if (st === 'مكتملة') {
-                statusEl.innerText = '✓ تم بنجاح';
+                statusEl.innerText = 'تم بنجاح';
             } else if (st === 'مرفوضة') {
-                statusEl.innerText = '✕ تم الرفض';
+                statusEl.innerText = 'تم الرفض';
                 statusEl.classList.add('error');
             } else {
-                statusEl.innerText = '⏳ قيد الانتظار';
+                statusEl.innerText = 'قيد الانتظار';
                 statusEl.classList.add('wait');
             }
 
@@ -12166,6 +16425,1230 @@ Code   : -
         fetchStatsAndRender();
         setInterval(fetchStatsAndRender, 30000);
     </script>
+
+<script>
+/* ===== Premium Admin Extras V2 ===== */
+(function () {
+    function $(id) { return document.getElementById(id); }
+    function ico(n, cls) { return '<svg class="' + (cls || 'ic') + '"><use href="#i-' + n + '"/></svg>'; }
+    window.adminIco = ico;
+
+    window.showPremiumToast = function (msg, icon) {
+        var t = $('premiumToast');
+        if (!t) { t = document.createElement('div'); t.id = 'premiumToast'; document.body.appendChild(t); }
+        t.innerHTML = ico(icon || 'check-circle') + '<span></span>';
+        t.lastChild.textContent = msg;
+        t.classList.add('show');
+        clearTimeout(window.__ptT);
+        window.__ptT = setTimeout(function () { t.classList.remove('show'); }, 2200);
+    };
+
+    /* الدوال القديمة تبدأ بـ toggleSidebar() فنفتح القائمة قبلها حتى تنقفل وما تظهر */
+    window.qaRun = function (fn, arg) {
+        var sb = $('sidebar'), ov = $('sidebarOverlay');
+        if (sb && !sb.classList.contains('active')) { sb.classList.add('active'); if (ov) ov.classList.add('active'); }
+        try { if (typeof window[fn] === 'function') { arg === undefined ? window[fn]() : window[fn](arg); } } catch (e) { console.error(e); }
+        if (sb && sb.classList.contains('active')) { sb.classList.remove('active'); if (ov) ov.classList.remove('active'); }
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+    window.qaRefresh = function () {
+        if (typeof window.fetchStatsAndRender === 'function') { window.fetchStatsAndRender(); }
+        window.showPremiumToast('تم تحديث الإحصائيات', 'refresh');
+    };
+
+    /* تحية + ساعة */
+    function tick() {
+        var d = new Date(), h = d.getHours();
+        var g = h < 5 ? 'سهرة موفقة' : h < 12 ? 'صباح الخير' : h < 17 ? 'نهارك سعيد' : h < 21 ? 'مساء الخير' : 'ليلة سعيدة';
+        var night = (h < 5 || h >= 19);
+        var ge = $('heroGreeting');
+        if (ge && ge.getAttribute('data-g') !== g) { ge.setAttribute('data-g', g); ge.innerHTML = ico(night ? 'moon' : 'sun') + g; }
+        var te = $('heroTime'); if (te) te.textContent = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        var de = $('heroDate'); if (de && !de.textContent) { try { de.textContent = d.toLocaleDateString('ar', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }); } catch (e) {} }
+    }
+    tick(); setInterval(tick, 1000);
+
+    /* أيقونات القائمة الجانبية */
+    var ICONS = { 'إعدادات الموقع': 'settings', 'إدارة الشكل والصور': 'palette', 'إدارة المنتجات والخدمات': 'bag', 'إدارة API': 'plug', 'إدارة المستخدمين': 'user', 'إدارة الإيداعات': 'gem' };
+    function decorateMenu() {
+        var btns = document.querySelectorAll('.admin-menu-btn');
+        for (var i = 0; i < btns.length; i++) {
+            var s = btns[i].querySelector('span');
+            if (s && !s.getAttribute('data-ico-done')) {
+                var key = s.textContent.trim();
+                if (ICONS[key]) { s.innerHTML = ico(ICONS[key]) + '<span>' + key + '</span>'; }
+                s.setAttribute('data-ico-done', '1');
+            }
+        }
+        var head = document.querySelector('.sidebar-header > div');
+        if (head && !head.getAttribute('data-brand')) {
+            head.setAttribute('data-brand', '1');
+            head.removeAttribute('style');
+            head.innerHTML = '<div class="sidebar-brand"><div class="sb-logo">' + ico('crown') + '</div><div><div class="sb-t">لوحة القيادة</div><div class="sb-s">ADMIN CONSOLE</div></div></div>';
+        }
+    }
+
+    /* بحث بالقائمة الجانبية */
+    function wireSearch() {
+        var inp = $('sidebarSearchInput'); if (!inp) return;
+        inp.addEventListener('input', function () {
+            var q = inp.value.trim().toLowerCase();
+            var headers = document.querySelectorAll('.sidebar > .admin-menu-btn');
+            for (var i = 0; i < headers.length; i++) {
+                var menu = headers[i].nextElementSibling;
+                if (!menu || !menu.classList.contains('sub-menu')) continue;
+                var subs = menu.querySelectorAll('.sub-menu-btn'), hits = 0;
+                for (var j = 0; j < subs.length; j++) {
+                    var ok = !q || subs[j].textContent.toLowerCase().indexOf(q) !== -1;
+                    subs[j].style.display = ok ? '' : 'none';
+                    if (ok) hits++;
+                }
+                headers[i].style.display = (!q || hits > 0) ? '' : 'none';
+                menu.style.display = q ? (hits > 0 ? 'flex' : 'none') : 'none';
+            }
+        });
+    }
+
+    document.addEventListener('keydown', function (e) {
+        var sb = $('sidebar'); if (!sb) return;
+        if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
+            e.preventDefault();
+            if (!sb.classList.contains('active') && typeof window.toggleSidebar === 'function') { window.toggleSidebar(); }
+            var i = $('sidebarSearchInput'); if (i) { setTimeout(function () { i.focus(); }, 120); }
+        } else if (e.key === 'Escape') {
+            var m = $('exactOrderDetailModal');
+            if (m && m.classList.contains('active')) { window.closeExactOrderDetailModal(); }
+            else if (sb.classList.contains('active')) { window.toggleSidebar(); }
+        }
+    });
+
+    ['adminEmailInput', 'adminPasswordInput'].forEach(function (id) {
+        var el = $(id);
+        if (el) el.addEventListener('keydown', function (e) { if (e.key === 'Enter' && typeof window.handleAdminLogin === 'function') window.handleAdminLogin(); });
+    });
+
+    /* أيقونات البطاقات + أرقام متحركة */
+    var CARD_ICONS = { 'card-requests': 'receipt', 'card-pending': 'hourglass', 'card-users': 'users', 'card-products': 'package', 'card-balance': 'wallet', 'card-deposit-pending': 'credit-card' };
+    var lastVals = {};
+    function decorateCards() {
+        var cards = document.querySelectorAll('#dashboardStatsContainer .admin-card');
+        cards.forEach(function (card) {
+            var key = '';
+            for (var k in CARD_ICONS) { if (card.classList.contains(k)) { key = k; } }
+            if (key && !card.querySelector('.card-ico')) {
+                var chip = document.createElement('div');
+                chip.className = 'card-ico'; chip.innerHTML = ico(CARD_ICONS[key]);
+                card.insertBefore(chip, card.firstChild);
+            }
+            var v = card.querySelector('.card-value'); if (!v) return;
+            if (v.getAttribute('data-final')) return;
+            var txt = v.textContent.trim();
+            v.setAttribute('data-final', txt);
+            if (lastVals[key] === txt) return;
+            lastVals[key] = txt;
+            var prefix = txt.charAt(0) === '$' ? '$' : '';
+            var numStr = txt.replace(/[^0-9.]/g, '');
+            var target = parseFloat(numStr);
+            if (isNaN(target)) return;
+            var dec = numStr.indexOf('.') !== -1 ? numStr.split('.')[1].length : 0;
+            var start = performance.now(), dur = 900;
+            (function step(now) {
+                var p = Math.min(1, (now - start) / dur), eased = 1 - Math.pow(1 - p, 3);
+                v.textContent = prefix + (target * eased).toFixed(dec);
+                if (p < 1) { requestAnimationFrame(step); } else { v.textContent = txt; }
+            })(start);
+        });
+    }
+    var statsBox = $('dashboardStatsContainer');
+    if (statsBox && window.MutationObserver) {
+        new MutationObserver(function () { setTimeout(decorateCards, 30); }).observe(statsBox, { childList: true });
+    }
+
+    /* إخفاء الهيرو لما تنفتح صفحات فرعية */
+    var mainSec = $('adminMainSection'), hero = $('heroZone');
+    if (mainSec && hero && window.MutationObserver) {
+        new MutationObserver(function () { hero.style.display = (mainSec.style.display === 'none') ? 'none' : ''; })
+            .observe(mainSec, { attributes: true, attributeFilter: ['style'] });
+    }
+
+    decorateMenu(); wireSearch();
+})();
+</script>
+
+<script>
+/* ===== واجهة الطلبات V2: فلترة، ترتيب، تصدير، عرض احترافي ===== */
+(function () {
+    function $(id) { return document.getElementById(id); }
+    function ico(n) { return '<svg class="ic"><use href="#i-' + n + '"/></svg>'; }
+    function esc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+    function money(v) { var n = parseFloat(v || 0); if (isNaN(n)) n = 0; return typeof formatBalance === 'function' ? formatBalance(n) : n.toFixed(2); }
+    var NL = String.fromCharCode(10);
+
+    var ORD = { all: [], view: [], filter: 'all', limit: 50, step: 50 };
+
+    function norm(o) {
+        var s = o.status || 'قيد الانتظار';
+        if (s === 'مكتملة') return { k: 'done', t: 'تم بنجاح', i: 'check-circle' };
+        if (s === 'مرفوضة') return { k: 'rejected', t: 'مرفوض', i: 'x-circle' };
+        if (s === 'تم الارسال للتشيك') return { k: 'check', t: 'قيد التشيك', i: 'send' };
+        return { k: 'pending', t: s, i: 'clock' };
+    }
+    function stamp(o) { return (o.date || '') + ' ' + (o.time || ''); }
+    function codeOf(o) { return o.order_uuid ? String(o.order_uuid).substring(0, 16) : String(o.id || '-'); }
+    function badge(n) { return '<span class="ord-badge ' + n.k + '">' + ico(n.i) + esc(n.t) + '</span>'; }
+
+    function buildKpis() {
+        var a = ORD.all, done = 0, pend = 0, rej = 0, rev = 0, profit = 0;
+        a.forEach(function (o) {
+            var n = norm(o);
+            if (n.k === 'done') {
+                done++; rev += parseFloat(o.price || 0) || 0;
+                var b = parseFloat(o.base_price || 0), p = parseFloat(o.price || 0);
+                if (b > 0 && p > b) profit += (p - b);
+            } else if (n.k === 'rejected') { rej++; } else { pend++; }
+        });
+        var items = [
+            ['k-blue', 'receipt', a.length, 'إجمالي الطلبات'],
+            ['k-green', 'check-circle', done, 'طلبات ناجحة'],
+            ['k-amber', 'hourglass', pend, 'قيد الانتظار / التشيك'],
+            ['k-red', 'x-circle', rej, 'طلبات مرفوضة'],
+            ['k-gold', 'wallet', '$' + money(rev), 'إيرادات الطلبات الناجحة'],
+            ['k-violet', 'trending', '$' + money(profit), 'الربح التقديري']
+        ];
+        var box = $('ordKpis'); if (!box) return;
+        box.innerHTML = items.map(function (x) {
+            return '<div class="ord-kpi ' + x[0] + '"><div class="ord-kpi-ico">' + ico(x[1]) + '</div><div><div class="ord-kpi-v">' + esc(x[2]) + '</div><div class="ord-kpi-l">' + x[3] + '</div></div></div>';
+        }).join('');
+    }
+
+    function buildChipCounts() {
+        var c = { all: ORD.all.length, done: 0, pending: 0, check: 0, rejected: 0 };
+        ORD.all.forEach(function (o) { c[norm(o).k]++; });
+        var chips = document.querySelectorAll('#ordChips .ord-chip');
+        for (var i = 0; i < chips.length; i++) {
+            var f = chips[i].getAttribute('data-f'); var b = chips[i].querySelector('b');
+            if (b) b.textContent = c[f] || 0;
+            chips[i].classList.toggle('active', f === ORD.filter);
+        }
+    }
+
+    function buildSources() {
+        var sel = $('ordSource'); if (!sel) return;
+        var cur = sel.value, seen = {}, list = [];
+        ORD.all.forEach(function (o) { var s = o.order_source || 'الموقع'; if (!seen[s]) { seen[s] = 1; list.push(s); } });
+        sel.innerHTML = '<option value="">كل المصادر</option>' + list.map(function (s) { return '<option value="' + esc(s) + '">' + esc(s) + '</option>'; }).join('');
+        if (cur && seen[cur]) sel.value = cur;
+    }
+
+    function apply(resetLimit) {
+        if (resetLimit !== false) ORD.limit = ORD.step;
+        var q = ($('adminOrderSearchInput').value || '').trim().toLowerCase();
+        var src = $('ordSource') ? $('ordSource').value : '';
+        var sort = $('ordSort') ? $('ordSort').value : 'new';
+        var df = $('ordDateFrom') ? $('ordDateFrom').value : '';
+        var dt = $('ordDateTo') ? $('ordDateTo').value : '';
+        var pmin = ($('ordMinPrice') && $('ordMinPrice').value !== '') ? parseFloat($('ordMinPrice').value) : null;
+        var pmax = ($('ordMaxPrice') && $('ordMaxPrice').value !== '') ? parseFloat($('ordMaxPrice').value) : null;
+        var rows = [];
+        ORD.all.forEach(function (o, idx) {
+            var n = norm(o);
+            if (ORD.filter !== 'all' && n.k !== ORD.filter) return;
+            if (src && (o.order_source || 'الموقع') !== src) return;
+            var dd = String(o.date || '').substring(0, 10);
+            if (df && dd < df) return;
+            if (dt && dd > dt) return;
+            var pr = parseFloat(o.price) || 0;
+            if (pmin !== null && !isNaN(pmin) && pr < pmin) return;
+            if (pmax !== null && !isNaN(pmax) && pr > pmax) return;
+            if (q) {
+                var hay = [o.order_uuid, o.id, o.email, o.product, o.subcategory, o.input, o.order_source, o.provider_name].join(' ').toLowerCase();
+                if (hay.indexOf(q) === -1) return;
+            }
+            rows.push({ o: o, n: n, idx: idx });
+        });
+        rows.sort(function (a, b) {
+            if (sort === 'high') return (parseFloat(b.o.price) || 0) - (parseFloat(a.o.price) || 0);
+            if (sort === 'low') return (parseFloat(a.o.price) || 0) - (parseFloat(b.o.price) || 0);
+            var sa = stamp(a.o), sb = stamp(b.o);
+            var c = sa < sb ? -1 : (sa > sb ? 1 : a.idx - b.idx);
+            return sort === 'old' ? c : -c;
+        });
+        ORD.view = rows;
+        buildChipCounts();
+        paint();
+    }
+
+    function paint() {
+        var box = $('allOrdersListContainer'); if (!box) return;
+        var total = ORD.view.length;
+        var shown = ORD.view.slice(0, ORD.limit);
+        if (!total) {
+            box.innerHTML = '<div class="ord-empty">' + ico('inbox') + '<div>لا توجد طلبات مطابقة</div></div>';
+        } else {
+            box.innerHTML = shown.map(function (r, i) {
+                var o = r.o, n = r.n;
+                var col = n.k === 'done' ? '#34d399' : n.k === 'rejected' ? '#f87171' : n.k === 'check' ? '#60a5fa' : '#fbbf24';
+                return '<div class="ord-row ord-item" data-i="' + i + '" style="--sc:' + col + '">' +
+                    '<div class="ord-id">#' + esc(codeOf(o)) + '</div>' +
+                    '<div class="ord-prod"><span class="ord-prod-n">' + esc(o.product || '-') + '</span><span class="ord-prod-s">' + esc(o.subcategory || '-') + '</span></div>' +
+                    '<div class="ord-user">' + ico('mail') + '<span>' + esc(o.email || '-') + '</span></div>' +
+                    '<div class="ord-price">$' + money(o.price) + '</div>' +
+                    badge(n) +
+                    '<div class="ord-src">' + esc(o.order_source || 'الموقع') + '</div>' +
+                    '<div class="ord-date">' + esc(o.date || '') + '<br>' + esc(o.time || '') + '</div>' +
+                    '<div class="ord-go">' + ico('chevron-left') + '</div></div>';
+            }).join('');
+        }
+        var cnt = $('ordCount');
+        if (cnt) cnt.innerHTML = 'عرض <b>' + shown.length + '</b> من <b>' + total + '</b> طلب';
+        var note = $('ordTotalNote');
+        if (note) note.textContent = ORD.all.length === total ? '' : 'من أصل ' + ORD.all.length + ' طلب';
+        var more = $('ordMoreWrap'); if (more) more.style.display = total > shown.length ? 'flex' : 'none';
+    }
+
+    window.ordShowMore = function () { ORD.limit += ORD.step; paint(); };
+
+    window.renderAllOrdersList = function (orders) {
+        ORD.all = Array.isArray(orders) ? orders : [];
+        buildKpis(); buildSources(); apply(true);
+    };
+    window.filterAllOrdersList = function () { apply(true); };
+
+    window.ordReload = async function () {
+        var box = $('allOrdersListContainer');
+        if (box) box.innerHTML = '<div class="ord-skel"></div><div class="ord-skel"></div><div class="ord-skel"></div><div class="ord-skel"></div>';
+        try {
+            var res = await fetch('/api/get_all_orders');
+            var orders = await res.json();
+            allOrdersAdminCache = orders;
+            window.renderAllOrdersList(orders);
+        } catch (e) {
+            if (box) box.innerHTML = '<div class="ord-empty">' + ico('x-circle') + '<div>فشل جلب الطلبات من الخادم</div></div>';
+        }
+    };
+
+    window.openAllOrdersScreen = async function () {
+        toggleSidebar();
+        ['adminMainSection', 'checkOrdersPage', 'checkDepositsPage', 'viewProvidersPage', 'deleteCategoryPage', 'deleteProductPage'].forEach(function (id) {
+            var el = $(id); if (el) el.style.display = 'none';
+        });
+        var cl = $('clientsListScreen'); if (cl) cl.classList.remove('active');
+        var ai = $('apiImportScreen'); if (ai) ai.classList.remove('active');
+        $('allOrdersScreen').classList.add('active');
+        $('adminOrderSearchInput').value = '';
+        ORD.filter = 'all';
+        if ($('ordSort')) $('ordSort').value = 'new';
+        if ($('ordSource')) $('ordSource').value = '';
+        ['ordDateFrom', 'ordDateTo', 'ordMinPrice', 'ordMaxPrice'].forEach(function (id) { if ($(id)) $(id).value = ''; });
+        await window.ordReload();
+    };
+
+    var chips = $('ordChips');
+    if (chips) chips.addEventListener('click', function (e) {
+        var b = e.target.closest ? e.target.closest('.ord-chip') : null;
+        if (!b) return;
+        ORD.filter = b.getAttribute('data-f') || 'all';
+        apply(true);
+    });
+    var listBox = $('allOrdersListContainer');
+    if (listBox) listBox.addEventListener('click', function (e) {
+        var r = e.target.closest ? e.target.closest('.ord-item') : null;
+        if (!r) return;
+        var item = ORD.view[parseInt(r.getAttribute('data-i'), 10)];
+        if (item) window.openExactOrderDetailModal(item.o);
+    });
+
+    /* ---- نافذة التفاصيل ---- */
+    window.openExactOrderDetailModal = function (order) {
+        var n = norm(order);
+        $('exProduct').textContent = order.product || '-';
+        $('exSubcategory').textContent = order.subcategory || '-';
+        $('exQuantity').textContent = order.quantity || '1';
+        $('exEmail').textContent = order.email || '-';
+        var st = $('exStatus'); st.className = 'ord-badge ' + n.k; st.innerHTML = ico(n.i) + esc(n.t);
+        $('exOrderId').textContent = order.order_uuid || order.id || '-';
+        $('exPrice').textContent = '$' + (order.price ? money(order.price) : '0');
+        var baseP = parseFloat(order.base_price || 0), saleP = parseFloat(order.price || 0);
+        $('exProfit').textContent = (baseP > 0 && saleP > baseP) ? '$' + money(saleP - baseP) : '-';
+        $('exOrderSource').textContent = order.order_source || 'الموقع';
+        var pv = $('exProvider'); if (pv) pv.textContent = order.provider_name || '-';
+        $('exDate').textContent = (order.time || '12:00:00') + '  ' + (order.date || '');
+        $('exUserInput').textContent = order.input || '-';
+        var reply = order.replay_api || order.system_response || '';
+        if (reply && typeof reply !== 'string') { try { reply = JSON.stringify(reply, null, 2); } catch (e) { reply = String(reply); } }
+        if (!reply) {
+            reply = ['Activation Success :', 'Status : ' + n.t, 'ID     : ' + (order.order_uuid ? String(order.order_uuid).substring(0, 8) : '-'), 'Code   : ' + (order.input || '-')].join(NL);
+        }
+        $('exBotResponse').textContent = reply;
+        $('exactOrderDetailModal').classList.add('active');
+    };
+    window.closeExactOrderDetailModal = function () { $('exactOrderDetailModal').classList.remove('active'); };
+
+    function copyText(txt) {
+        if (!txt || txt === '-') return;
+        var done = function () { if (window.showPremiumToast) window.showPremiumToast('تم النسخ', 'copy'); };
+        if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(txt).then(done); }
+        else { var t = document.createElement('textarea'); t.value = txt; document.body.appendChild(t); t.select(); try { document.execCommand('copy'); done(); } catch (e) {} document.body.removeChild(t); }
+    }
+    window.ordCopyText = function (id) { var el = $(id); if (el) copyText(el.innerText || el.textContent); };
+    window.copyExactInput = function () { var el = $('exUserInput'); if (el) copyText(el.innerText); };
+
+    window.ordClearFilters = function () {
+        ['ordDateFrom', 'ordDateTo', 'ordMinPrice', 'ordMaxPrice', 'adminOrderSearchInput'].forEach(function (id) { if ($(id)) $(id).value = ''; });
+        if ($('ordSource')) $('ordSource').value = '';
+        ORD.filter = 'all';
+        apply(true);
+    };
+
+    window.ordExportXlsx = function () {
+        if (!ORD.view.length) { if (window.showPremiumToast) window.showPremiumToast('لا توجد بيانات للتصدير', 'x-circle'); return; }
+        var head = ['رقم الطلب', 'المنتج', 'الفئة', 'الإيميل', 'السعر', 'سعر الكلفة', 'الربح', 'الحالة', 'المصدر', 'المزود', 'الكمية', 'التاريخ', 'الوقت', 'المدخل'];
+        var rows = ORD.view.map(function (r) {
+            var o = r.o, p = parseFloat(o.price) || 0, b = parseFloat(o.base_price) || 0;
+            return [codeOf(o), o.product || '', o.subcategory || '', o.email || '', p, b > 0 ? b : '', (b > 0 && r.n.k === 'done') ? Math.round((p - b) * 1000000) / 1000000 : '', r.n.t, o.order_source || 'الموقع', o.provider_name || '', parseFloat(o.quantity) || 1, o.date || '', o.time || '', o.input || ''];
+        });
+        window.adminExportXlsx('orders_' + new Date().toISOString().slice(0, 10), [{ name: 'الطلبات', headers: head, rows: rows }]);
+    };
+
+    /* ---- تصدير CSV ---- */
+    window.ordExportCsv = function () {
+        if (!ORD.view.length) { if (window.showPremiumToast) window.showPremiumToast('لا توجد بيانات للتصدير', 'x-circle'); return; }
+        var head = ['ID', 'Order UUID', 'Product', 'Subcategory', 'Email', 'Price', 'Base Price', 'Status', 'Source', 'Date', 'Time', 'Input'];
+        var q = function (v) { return '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"'; };
+        var lines = [head.map(q).join(',')];
+        ORD.view.forEach(function (r) {
+            var o = r.o;
+            lines.push([o.id, o.order_uuid, o.product, o.subcategory, o.email, o.price, o.base_price, r.n.t, o.order_source || 'الموقع', o.date, o.time, o.input].map(q).join(','));
+        });
+        var blob = new Blob([String.fromCharCode(0xFEFF) + lines.join(NL)], { type: 'text/csv;charset=utf-8;' });
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob); a.download = 'orders_' + new Date().toISOString().slice(0, 10) + '.csv';
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        setTimeout(function () { URL.revokeObjectURL(a.href); }, 1500);
+        if (window.showPremiumToast) window.showPremiumToast('تم تصدير ' + ORD.view.length + ' طلب', 'download');
+    };
+})();
+</script>
+
+<script>
+/* ===== نظام الجرد (إدارة API > ادارة جرد) ===== */
+(function () {
+    function $(id) { return document.getElementById(id); }
+    function ico(n) { return '<svg class="ic"><use href="#i-' + n + '"/></svg>'; }
+    function esc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+    var NL = String.fromCharCode(10);
+    function fmt(v) {
+        var n = parseFloat(v || 0); if (isNaN(n)) n = 0;
+        if (Math.abs(n) >= 1) return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        if (n === 0) return '0.00';
+        var t = n.toFixed(4).replace(/0+$/, '');
+        if (t.charAt(t.length - 1) === '.') t += '00';
+        return t;
+    }
+    function usd(v) { var n = parseFloat(v || 0) || 0; return (n < 0 ? '-$' : '$') + fmt(Math.abs(n)); }
+    function pct(v) { return (parseFloat(v || 0) || 0).toFixed(1) + '%'; }
+    function cls(v) { return v > 0 ? 'inv-pos' : (v < 0 ? 'inv-neg' : 'inv-dim'); }
+
+    var INV = { range: 'month', data: null, chart: 'daily', busy: false };
+    var RANGE_NAMES = { today: 'اليوم', yesterday: 'أمس', week: 'آخر 7 أيام', month: 'هذا الشهر', prev_month: 'الشهر الماضي', last30: 'آخر 30 يوم', year: 'هذه السنة', all: 'كل الفترات', custom: 'فترة مخصصة' };
+    var WD_NAMES = ['الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت', 'الأحد'];
+    var WD_ORDER = [5, 6, 0, 1, 2, 3, 4];
+    var PERIOD_ICONS = { today: 'clock', yesterday: 'clock', week: 'calendar-days', prev_week: 'calendar-days', month: 'calendar', prev_month: 'calendar', last30: 'calendar-days', year: 'calendar', all: 'database' };
+
+    function setChips() {
+        var chips = document.querySelectorAll('#invChips .ord-chip');
+        for (var i = 0; i < chips.length; i++) { chips[i].classList.toggle('active', chips[i].getAttribute('data-r') === INV.range); }
+        var c = $('invCustom'); if (c) c.classList.toggle('show', INV.range === 'custom');
+    }
+
+    function skeleton() {
+        $('invBody').innerHTML = '<div class="ord-skel"></div><div class="ord-skel"></div><div class="ord-skel"></div><div class="ord-skel"></div>';
+    }
+
+    async function load() {
+        if (INV.busy) return;
+        INV.busy = true;
+        setChips(); skeleton();
+        var url = '/api/inventory_report?range=' + encodeURIComponent(INV.range);
+        if (INV.range === 'custom') {
+            var f = $('invFrom').value, t = $('invTo').value;
+            if (!f || !t) { INV.busy = false; $('invBody').innerHTML = '<div class="ord-empty">' + ico('calendar') + '<div>اختر تاريخ البداية والنهاية ثم اضغط تطبيق</div></div>'; return; }
+            url = '/api/inventory_report?from=' + encodeURIComponent(f) + '&to=' + encodeURIComponent(t);
+        }
+        try {
+            var res = await fetch(url, { cache: 'no-store' });
+            INV.data = await res.json();
+            render();
+        } catch (e) {
+            $('invBody').innerHTML = '<div class="ord-empty">' + ico('x-circle') + '<div>فشل جلب بيانات الجرد من الخادم</div></div>';
+        }
+        INV.busy = false;
+    }
+
+    function delta(cur, prev, invert) {
+        if (prev == null) return '';
+        cur = parseFloat(cur || 0); prev = parseFloat(prev || 0);
+        if (prev === 0 && cur === 0) return '<div class="inv-delta flat">' + ico('arrow-right') + 'بدون تغيير</div>';
+        if (prev === 0) return '<div class="inv-delta up">' + ico('arrow-up-right') + 'جديد</div>';
+        var p = (cur - prev) / Math.abs(prev) * 100;
+        var good = invert ? p < 0 : p > 0;
+        if (Math.abs(p) < 0.05) return '<div class="inv-delta flat">' + ico('arrow-right') + 'ثابت</div>';
+        return '<div class="inv-delta ' + (good ? 'up' : 'down') + '">' + ico(p > 0 ? 'arrow-up-right' : 'arrow-down-right') + Math.abs(p).toFixed(1) + '% عن الفترة السابقة</div>';
+    }
+
+    function kpis(d) {
+        var s = d.summary, p = d.prev;
+        var items = [
+            ['k-green', 'trending', usd(s.profit), 'صافي الربح', delta(s.profit, p && p.profit)],
+            ['k-gold', 'dollar', usd(s.revenue), 'إجمالي المبيعات', delta(s.revenue, p && p.revenue)],
+            ['k-red', 'server', usd(s.cost), 'كلفة المزودين', delta(s.cost, p && p.cost, true)],
+            ['k-violet', 'percent', pct(s.margin), 'هامش الربح', delta(s.margin, p && p.margin)],
+            ['k-blue', 'check-circle', s.done, 'الطلبات الناجحة', delta(s.done, p && p.done)],
+            ['k-amber', 'cart', usd(s.avg_order), 'متوسط قيمة الطلب', delta(s.avg_order, p && p.avg_order)],
+            ['k-teal', 'wallet', usd(s.dep_amount), 'الإيداعات المقبولة (' + s.dep_count + ')', delta(s.dep_amount, p && p.dep_amount)],
+            ['k-sky', 'users', s.new_users, 'عملاء جدد', delta(s.new_users, p && p.new_users)]
+        ];
+        return '<div class="inv-kpis">' + items.map(function (x) {
+            return '<div class="ord-kpi ' + x[0] + '"><div class="ord-kpi-ico">' + ico(x[1]) + '</div><div style="min-width:0;"><div class="ord-kpi-v">' + esc(x[2]) + '</div><div class="ord-kpi-l">' + x[3] + '</div>' + x[4] + '</div></div>';
+        }).join('') + '</div>';
+    }
+
+    function note(d) {
+        var s = d.summary, out = '';
+        if (s.unknown_orders > 0) {
+            out += '<div class="inv-note">' + ico('alert') + '<div>يوجد <b>' + s.unknown_orders + '</b> طلب ناجح (بقيمة <b>' + usd(s.unknown_rev) + '</b>) كلفته غير معروفة، لأن فئته يدوية وبدون سعر أصلي من مزود. هذه الطلبات تدخل في المبيعات ولا تدخل في حساب الربح والهامش.</div></div>';
+        }
+        return out;
+    }
+
+    function periodsTable(d) {
+        var rows = d.periods.map(function (p) {
+            var cl = p.key === 'all' ? ' total' : '';
+            return '<div class="inv-tr' + cl + '">' +
+                '<div class="lbl">' + ico(PERIOD_ICONS[p.key] || 'calendar') + esc(p.label) + '</div>' +
+                '<div class="num">' + p.done + '</div>' +
+                '<div class="num">' + usd(p.revenue) + '</div>' +
+                '<div class="num inv-dim">' + usd(p.cost) + '</div>' +
+                '<div class="num ' + cls(p.profit) + '">' + usd(p.profit) + '</div>' +
+                '<div class="num ' + cls(p.margin) + '">' + pct(p.margin) + '</div>' +
+                '<div class="num">' + usd(p.dep_amount) + '</div></div>';
+        }).join('');
+        return '<div class="inv-card"><div class="inv-card-t"><h3>' + ico('calendar-days') + 'الجرد الدوري: يومي / أسبوعي / شهري / سنوي</h3><small>ثابت ولا يتأثر باختيار الفترة بالأعلى</small></div>' +
+            '<div class="inv-scroll"><div class="inv-tbl"><div class="inv-tr head"><div>الفترة</div><div>الطلبات</div><div>المبيعات</div><div>الكلفة</div><div>الربح</div><div>الهامش</div><div>الإيداعات</div></div>' + rows + '</div></div></div>';
+    }
+
+    function niceMax(v) {
+        if (v <= 0) return 1;
+        var e = Math.pow(10, Math.floor(Math.log(v) / Math.LN10));
+        var f = v / e, m = f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10;
+        return m * e;
+    }
+
+    function chartSvg(points) {
+        var n = points.length, slot = n > 14 ? 34 : 70, left = 54, top = 14, bottom = 34, H = 250;
+        var W = left + n * slot + 10, ph = H - top - bottom;
+        var mx = 0; points.forEach(function (p) { mx = Math.max(mx, p.revenue, p.profit); });
+        mx = niceMax(mx);
+        var bw = n > 14 ? 11 : 22;
+        var g = '';
+        for (var i = 0; i <= 4; i++) {
+            var y = top + ph - (ph * i / 4);
+            g += '<line x1="' + left + '" x2="' + (W - 6) + '" y1="' + y + '" y2="' + y + '" style="stroke:var(--line-2)" stroke-dasharray="3 4"/>';
+            g += '<text x="' + (left - 8) + '" y="' + (y + 4) + '" text-anchor="end" font-size="10" style="fill:var(--muted)">' + fmt(mx * i / 4).replace('.00', '') + '</text>';
+        }
+        points.forEach(function (p, idx) {
+            var cx = left + idx * slot + slot / 2;
+            var hr = ph * (p.revenue / mx), hp = ph * (Math.max(p.profit, 0) / mx);
+            g += '<rect x="' + (cx - bw - 1) + '" y="' + (top + ph - hr) + '" width="' + bw + '" height="' + Math.max(hr, 0) + '" rx="3" fill="#e8c26a"><title>' + esc(p.label) + ' | مبيعات ' + usd(p.revenue) + ' | طلبات ' + p.orders + '</title></rect>';
+            g += '<rect x="' + (cx + 1) + '" y="' + (top + ph - hp) + '" width="' + bw + '" height="' + Math.max(hp, 0) + '" rx="3" fill="#34d399"><title>' + esc(p.label) + ' | ربح ' + usd(p.profit) + '</title></rect>';
+            if (n <= 14 || idx % 3 === 0 || idx === n - 1) {
+                g += '<text x="' + cx + '" y="' + (H - 12) + '" text-anchor="middle" font-size="10" style="fill:var(--muted)">' + esc(p.label) + '</text>';
+            }
+        });
+        return '<svg viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '" xmlns="http://www.w3.org/2000/svg" role="img">' + g + '</svg>';
+    }
+
+    function chartCard(d) {
+        var tabs = [['daily', 'آخر 30 يوم'], ['weekly', 'آخر 12 أسبوع'], ['monthly', 'آخر 12 شهر']].map(function (t) {
+            return '<button class="ord-chip' + (INV.chart === t[0] ? ' active' : '') + '" data-c="' + t[0] + '">' + t[1] + '</button>';
+        }).join('');
+        return '<div class="inv-card"><div class="inv-card-t"><h3>' + ico('bar-chart') + 'منحنى المبيعات والأرباح</h3><div class="inv-tabs" id="invChartTabs">' + tabs + '</div></div>' +
+            '<div class="inv-legend"><span><i style="background:#e8c26a"></i>المبيعات</span><span><i style="background:#34d399"></i>الربح</span></div>' +
+            '<div class="inv-chart" id="invChartBox">' + chartSvg(d.series[INV.chart]) + '</div></div>';
+    }
+
+    function listPanel(title, icon, items, nameFn, subFn, emptyMsg) {
+        var mx = 0; items.forEach(function (x) { mx = Math.max(mx, x.revenue != null ? x.revenue : x.spent); });
+        var body = items.length ? '<div class="inv-list">' + items.map(function (x) {
+            var v = x.revenue != null ? x.revenue : x.spent;
+            var w = mx > 0 ? Math.max(3, v / mx * 100) : 0;
+            return '<div class="inv-li"><div class="inv-li-top"><div class="inv-li-n">' + nameFn(x) + '</div><div class="inv-li-v">' + usd(v) + '</div></div>' +
+                '<div class="inv-bar"><i style="width:' + w + '%"></i></div><div class="inv-li-s">' + subFn(x) + '</div></div>';
+        }).join('') + '</div>' : '<div class="ord-empty" style="padding:24px 10px;">' + ico('inbox') + '<div>' + emptyMsg + '</div></div>';
+        return '<div class="inv-card"><div class="inv-card-t"><h3>' + ico(icon) + title + '</h3></div>' + body + '</div>';
+    }
+
+    function mini(items, labelFn, valFn, color) {
+        var n = items.length, bw = 100 / n, mx = 0;
+        items.forEach(function (x) { mx = Math.max(mx, valFn(x)); });
+        var H = 90, g = '';
+        items.forEach(function (x, i) {
+            var h = mx > 0 ? (H - 6) * valFn(x) / mx : 0;
+            var peak = mx > 0 && valFn(x) === mx;
+            g += '<rect x="' + (i * bw + bw * 0.15) + '%" y="' + (H - h) + '" width="' + (bw * 0.7) + '%" height="' + h + '" rx="2" fill="' + (peak ? '#34d399' : color) + '" opacity="' + (peak ? 1 : 0.75) + '"><title>' + esc(labelFn(x)) + ': ' + usd(x.revenue) + ' (' + x.orders + ' طلب)</title></rect>';
+        });
+        return '<svg viewBox="0 0 400 ' + H + '" preserveAspectRatio="none" width="100%" height="' + H + '" xmlns="http://www.w3.org/2000/svg">' + g + '</svg>';
+    }
+
+    function timePanel(d) {
+        var hours = d.by_hour, peakH = 0, pv = -1;
+        hours.forEach(function (x) { if (x.revenue > pv) { pv = x.revenue; peakH = x.h; } });
+        var wd = WD_ORDER.map(function (i) { var x = d.by_weekday[i]; return { name: WD_NAMES[i], orders: x.orders, revenue: x.revenue }; });
+        var peakD = null, pd = -1; wd.forEach(function (x) { if (x.revenue > pd) { pd = x.revenue; peakD = x; } });
+        var hasData = pv > 0;
+        var wdLabels = '<div style="display:flex; justify-content:space-between; font-size:.64rem; color:var(--muted); font-weight:700; margin-top:4px;">' + wd.map(function (x) { return '<span>' + x.name + '</span>'; }).join('') + '</div>';
+        return '<div class="inv-card"><div class="inv-card-t"><h3>' + ico('clock') + 'أوقات الذروة</h3>' + (hasData ? '<small>أعلى مبيعات الساعة ' + String(peakH).padStart(2, '0') + ':00 ويوم ' + esc(peakD.name) + '</small>' : '') + '</div>' +
+            '<div class="inv-sub-h">' + ico('zap') + 'حسب ساعات اليوم (0 - 23)</div><div dir="ltr">' + mini(hours, function (x) { return String(x.h).padStart(2, '0') + ':00'; }, function (x) { return x.revenue; }, '#e8c26a') + '</div>' +
+            '<div class="inv-sub-h">' + ico('calendar-days') + 'حسب أيام الأسبوع</div><div dir="rtl">' + mini(wd.slice().reverse(), function (x) { return x.name; }, function (x) { return x.revenue; }, '#60a5fa') + wdLabels + '</div>' +
+            '</div>';
+    }
+
+    function statusPanel(d) {
+        var s = d.summary;
+        return '<div class="inv-card"><div class="inv-card-t"><h3>' + ico('receipt') + 'جرد حالات الطلبات</h3><small>' + s.orders + ' طلب بالفترة</small></div>' +
+            '<div class="inv-tiles">' +
+            '<div class="inv-tile"><b class="inv-pos">' + s.done + '</b><span>ناجحة</span></div>' +
+            '<div class="inv-tile"><b style="color:#fbbf24;">' + s.pending + '</b><span>قيد الانتظار / التشيك</span></div>' +
+            '<div class="inv-tile"><b class="inv-neg">' + s.rejected + '</b><span>مرفوضة (ترجع للعميل)</span></div>' +
+            '<div class="inv-tile"><b>' + usd(s.pending_amount) + '</b><span>مبالغ معلّقة</span></div>' +
+            '<div class="inv-tile"><b>' + fmt(s.qty).replace('.00', '') + '</b><span>إجمالي الكميات المباعة</span></div>' +
+            '<div class="inv-tile"><b>' + (s.orders ? pct(s.done / s.orders * 100) : '0.0%') + '</b><span>نسبة نجاح الطلبات</span></div>' +
+            '</div></div>';
+    }
+
+    function depositsPanel(d) {
+        var st = d.deposits.status, ms = d.deposits.methods;
+        var mx = 0; ms.forEach(function (m) { mx = Math.max(mx, m.amount); });
+        var list = ms.length ? '<div class="inv-sub-h">' + ico('credit-card') + 'المقبول حسب طريقة الدفع</div><div class="inv-list">' + ms.map(function (m) {
+            return '<div class="inv-li"><div class="inv-li-top"><div class="inv-li-n">' + esc(m.name) + '</div><div class="inv-li-v">' + usd(m.amount) + '</div></div><div class="inv-bar"><i style="width:' + (mx > 0 ? Math.max(3, m.amount / mx * 100) : 0) + '%"></i></div><div class="inv-li-s"><span>' + m.count + ' إيداع</span></div></div>';
+        }).join('') + '</div>' : '';
+        return '<div class="inv-card"><div class="inv-card-t"><h3>' + ico('wallet') + 'جرد الإيداعات</h3></div>' +
+            '<div class="inv-tiles">' +
+            '<div class="inv-tile"><b class="inv-pos">' + usd(st.accepted.amount) + '</b><span>مقبولة (' + st.accepted.count + ')</span></div>' +
+            '<div class="inv-tile"><b style="color:#fbbf24;">' + usd(st.pending.amount) + '</b><span>قيد التدقيق (' + st.pending.count + ')</span></div>' +
+            '<div class="inv-tile"><b class="inv-neg">' + usd(st.rejected.amount) + '</b><span>مرفوضة (' + st.rejected.count + ')</span></div>' +
+            '</div>' + list + '</div>';
+    }
+
+    function usersPanel(d) {
+        var u = d.users;
+        var tb = u.top_balances.length ? '<div class="inv-sub-h">' + ico('award') + 'أعلى الأرصدة عند العملاء</div><div class="inv-list">' + u.top_balances.map(function (x) {
+            return '<div class="inv-li-top"><div class="inv-li-n" style="direction:ltr; text-align:right;">' + esc(x.email) + '</div><div class="inv-li-v">' + usd(x.balance) + '</div></div>';
+        }).join('') + '</div>' : '';
+        return '<div class="inv-card"><div class="inv-card-t"><h3>' + ico('users') + 'جرد العملاء والأرصدة</h3></div>' +
+            '<div class="inv-tiles">' +
+            '<div class="inv-tile"><b>' + u.total + '</b><span>إجمالي العملاء</span></div>' +
+            '<div class="inv-tile"><b>' + u.active + '</b><span>عملاء اشتروا بالفترة</span></div>' +
+            '<div class="inv-tile"><b style="color:var(--gold);">' + usd(u.total_balance) + '</b><span>مجموع أرصدة العملاء</span></div>' +
+            '</div>' + tb + '</div>';
+    }
+
+    function catalogPanel(d) {
+        var c = d.catalog;
+        var low = c.low_margin.length ? '<div class="inv-sub-h">' + ico('alert') + 'فئات سعر بيعها أقل أو يساوي كلفتها (' + c.low_margin_count + ')</div><div class="inv-chips">' + c.low_margin.map(function (x) {
+            return '<span class="inv-pill red" title="بيع ' + usd(x.sell) + ' / كلفة ' + usd(x.cost) + '">' + esc(x.product) + ' - ' + esc(x.name) + '</span>';
+        }).join('') + '</div>' : '';
+        var st = c.stagnant.length ? '<div class="inv-sub-h">' + ico('hourglass') + 'فئات بدون أي مبيعات بالفترة (' + c.stagnant_count + ')</div><div class="inv-chips">' + c.stagnant.map(function (x) {
+            return '<span class="inv-pill">' + esc(x.product) + ' - ' + esc(x.name) + '</span>';
+        }).join('') + (c.stagnant_count > c.stagnant.length ? '<span class="inv-pill">+' + (c.stagnant_count - c.stagnant.length) + ' أخرى</span>' : '') + '</div>' : '';
+        return '<div class="inv-card"><div class="inv-card-t"><h3>' + ico('package') + 'جرد المنتجات والكتالوج</h3></div>' +
+            '<div class="inv-tiles">' +
+            '<div class="inv-tile"><b>' + c.products + '</b><span>منتجات</span></div>' +
+            '<div class="inv-tile"><b>' + c.subcategories + '</b><span>فئات</span></div>' +
+            '<div class="inv-tile"><b>' + c.providers + '</b><span>مزودون</span></div>' +
+            '<div class="inv-tile"><b>' + c.api_linked + '</b><span>مربوطة بـ API</span></div>' +
+            '<div class="inv-tile"><b>' + c.manual + '</b><span>يدوية</span></div>' +
+            '<div class="inv-tile"><b>' + c.counters + '</b><span>فئات عداد</span></div>' +
+            '</div>' + low + st + '</div>';
+    }
+
+    function render() {
+        var d = INV.data; if (!d) return;
+        var rg = d.range;
+        $('invRangeLabel').innerHTML = ico('calendar') + ' ' + esc(INV.range === 'custom' ? (rg.from + '  ←  ' + rg.to) : RANGE_NAMES[INV.range] + (rg.from ? ' (' + rg.from + ' ← ' + rg.to + ')' : ''));
+        $('invGenerated').textContent = 'آخر تحديث: ' + d.generated;
+
+        var html = kpis(d) + note(d) + periodsTable(d) + chartCard(d) +
+            '<div class="inv-grid">' +
+            listPanel('أفضل المنتجات مبيعاً', 'trophy', d.by_product,
+                function (x) { return esc(x.name); },
+                function (x) { return '<span>' + x.orders + ' طلب / ' + fmt(x.qty).replace('.00', '') + ' كمية</span><span class="' + cls(x.profit) + '">ربح ' + usd(x.profit) + '</span>'; }, 'لا توجد مبيعات بهذه الفترة') +
+            listPanel('أفضل الفئات مبيعاً', 'tag', d.by_sub,
+                function (x) { return esc(x.name) + '<em>' + esc(x.product) + '</em>'; },
+                function (x) { return '<span>' + x.orders + ' طلب / ' + fmt(x.qty).replace('.00', '') + ' كمية</span><span class="' + cls(x.profit) + '">ربح ' + usd(x.profit) + '</span>'; }, 'لا توجد مبيعات بهذه الفترة') +
+            listPanel('جرد المزودين', 'server', d.by_provider,
+                function (x) { return esc(x.name); },
+                function (x) { return '<span>' + x.orders + ' طلب</span><span class="' + cls(x.profit) + '">ربح ' + usd(x.profit) + '</span>'; }, 'لا توجد بيانات') +
+            listPanel('مصادر الطلبات', 'globe', d.by_source,
+                function (x) { return esc(x.name); },
+                function (x) { return '<span>' + x.orders + ' طلب</span><span class="' + cls(x.profit) + '">ربح ' + usd(x.profit) + '</span>'; }, 'لا توجد بيانات') +
+            listPanel('أفضل العملاء', 'award', d.top_customers,
+                function (x) { return '<span style="direction:ltr; display:inline-block;">' + esc(x.email) + '</span>'; },
+                function (x) { return '<span>' + x.orders + ' طلب</span>'; }, 'لا توجد بيانات') +
+            timePanel(d) + statusPanel(d) + depositsPanel(d) + usersPanel(d) + catalogPanel(d) +
+            '</div>' +
+            '<div class="inv-foot">الربح = سعر البيع - كلفة المزود. الطلبات الجديدة تحفظ كلفتها لحظة الشراء، والطلبات القديمة تحسب بكلفة الفئة الحالية. الطلبات المرفوضة لا تدخل بالمبيعات لأن مبلغها يرجع للعميل.</div>';
+        $('invBody').innerHTML = html;
+    }
+
+    window.invReload = function () { load(); };
+    window.invApplyCustom = function () { INV.range = 'custom'; load(); };
+
+    window.openInventoryScreen = function () {
+        if (typeof window.toggleSidebar === 'function') window.toggleSidebar();
+        ['adminMainSection', 'checkOrdersPage', 'checkDepositsPage', 'viewProvidersPage', 'deleteCategoryPage', 'deleteProductPage'].forEach(function (id) {
+            var el = $(id); if (el) el.style.display = 'none';
+        });
+        ['clientsListScreen', 'apiImportScreen', 'allOrdersScreen', 'apiClientsScreen'].forEach(function (id) {
+            var el = $(id); if (el) el.classList.remove('active');
+        });
+        $('inventoryScreen').classList.add('active');
+        $('inventoryScreen').scrollTop = 0;
+        INV.busy = false;
+        load();
+    };
+    window.closeInventoryScreen = function () {
+        $('inventoryScreen').classList.remove('active');
+        var m = $('adminMainSection'); if (m) m.style.display = 'block';
+    };
+
+    var chips = $('invChips');
+    if (chips) chips.addEventListener('click', function (e) {
+        var b = e.target.closest ? e.target.closest('.ord-chip') : null;
+        if (!b) return;
+        var r = b.getAttribute('data-r');
+        INV.range = r;
+        if (r === 'custom') {
+            setChips();
+            var t = new Date(), f = new Date(t.getTime() - 29 * 86400000);
+            function ymd(x) { return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0'); }
+            if (!$('invFrom').value) $('invFrom').value = ymd(f);
+            if (!$('invTo').value) $('invTo').value = ymd(t);
+            return;
+        }
+        INV.busy = false;
+        load();
+    });
+    $('invBody').addEventListener('click', function (e) {
+        var b = e.target.closest ? e.target.closest('#invChartTabs .ord-chip') : null;
+        if (!b || !INV.data) return;
+        INV.chart = b.getAttribute('data-c');
+        var tabs = document.querySelectorAll('#invChartTabs .ord-chip');
+        for (var i = 0; i < tabs.length; i++) { tabs[i].classList.toggle('active', tabs[i] === b); }
+        $('invChartBox').innerHTML = chartSvg(INV.data.series[INV.chart]);
+    });
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && $('inventoryScreen').classList.contains('active')) window.closeInventoryScreen();
+    });
+
+    window.invExportCsv = function () {
+        var d = INV.data; if (!d) return;
+        var q = function (v) { return '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"'; };
+        var L = [];
+        L.push(['الجرد الدوري'].map(q).join(','));
+        L.push(['الفترة', 'الطلبات الناجحة', 'المبيعات', 'الكلفة', 'الربح', 'الهامش %', 'الإيداعات'].map(q).join(','));
+        d.periods.forEach(function (p) { L.push([p.label, p.done, p.revenue, p.cost, p.profit, p.margin, p.dep_amount].map(q).join(',')); });
+        L.push('');
+        L.push(['أفضل المنتجات (الفترة المختارة)'].map(q).join(','));
+        L.push(['المنتج', 'الطلبات', 'الكمية', 'المبيعات', 'الربح'].map(q).join(','));
+        d.by_product.forEach(function (x) { L.push([x.name, x.orders, x.qty, x.revenue, x.profit].map(q).join(',')); });
+        L.push('');
+        L.push(['أفضل الفئات (الفترة المختارة)'].map(q).join(','));
+        L.push(['المنتج', 'الفئة', 'الطلبات', 'الكمية', 'المبيعات', 'الربح'].map(q).join(','));
+        d.by_sub.forEach(function (x) { L.push([x.product, x.name, x.orders, x.qty, x.revenue, x.profit].map(q).join(',')); });
+        L.push('');
+        L.push(['السلسلة اليومية'].map(q).join(','));
+        L.push(['اليوم', 'المبيعات', 'الربح', 'الطلبات'].map(q).join(','));
+        d.series.daily.forEach(function (x) { L.push([x.label, x.revenue, x.profit, x.orders].map(q).join(',')); });
+        var blob = new Blob([String.fromCharCode(0xFEFF) + L.join(NL)], { type: 'text/csv;charset=utf-8;' });
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob); a.download = 'inventory_' + new Date().toISOString().slice(0, 10) + '.csv';
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        setTimeout(function () { URL.revokeObjectURL(a.href); }, 1500);
+        if (window.showPremiumToast) window.showPremiumToast('تم تصدير تقرير الجرد', 'download');
+    };
+
+    window.invExportXlsx = function () {
+        var d = INV.data; if (!d) return;
+        var ser = function (arr) { return arr.map(function (x) { return [x.label, x.revenue, x.profit, x.orders, x.dep]; }); };
+        var sheets = [
+            { name: 'الجرد الدوري', headers: ['الفترة', 'الطلبات الناجحة', 'المبيعات', 'الكلفة', 'الربح', 'الهامش %', 'الإيداعات'], rows: d.periods.map(function (p) { return [p.label, p.done, p.revenue, p.cost, p.profit, p.margin, p.dep_amount]; }) },
+            { name: 'أفضل المنتجات', headers: ['المنتج', 'الطلبات', 'الكمية', 'المبيعات', 'الربح'], rows: d.by_product.map(function (x) { return [x.name, x.orders, x.qty, x.revenue, x.profit]; }) },
+            { name: 'أفضل الفئات', headers: ['المنتج', 'الفئة', 'الطلبات', 'الكمية', 'المبيعات', 'الربح'], rows: d.by_sub.map(function (x) { return [x.product, x.name, x.orders, x.qty, x.revenue, x.profit]; }) },
+            { name: 'المزودون', headers: ['المزود', 'الطلبات', 'الكمية', 'المبيعات', 'الربح'], rows: d.by_provider.map(function (x) { return [x.name, x.orders, x.qty, x.revenue, x.profit]; }) },
+            { name: 'أفضل العملاء', headers: ['الإيميل', 'الطلبات', 'المشتريات'], rows: d.top_customers.map(function (x) { return [x.email, x.orders, x.spent]; }) },
+            { name: 'يومي', headers: ['اليوم', 'المبيعات', 'الربح', 'الطلبات', 'الإيداعات'], rows: ser(d.series.daily) },
+            { name: 'أسبوعي', headers: ['الأسبوع', 'المبيعات', 'الربح', 'الطلبات', 'الإيداعات'], rows: ser(d.series.weekly) },
+            { name: 'شهري', headers: ['الشهر', 'المبيعات', 'الربح', 'الطلبات', 'الإيداعات'], rows: ser(d.series.monthly) }
+        ];
+        window.adminExportXlsx('inventory_' + new Date().toISOString().slice(0, 10), sheets);
+    };
+})();
+/* ===== جرد عملائي Api ===== */
+(function () {
+    function $(id) { return document.getElementById(id); }
+    function ico(n) { return '<svg class="ic"><use href="#i-' + n + '"/></svg>'; }
+    function esc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+    var NL = String.fromCharCode(10);
+    function fmt(v) {
+        var n = parseFloat(v || 0); if (isNaN(n)) n = 0;
+        if (Math.abs(n) >= 1) return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        if (n === 0) return '0.00';
+        var t = n.toFixed(4).replace(/0+$/, '');
+        if (t.charAt(t.length - 1) === '.') t += '00';
+        return t;
+    }
+    function usd(v) { var n = parseFloat(v || 0) || 0; return (n < 0 ? '-$' : '$') + fmt(Math.abs(n)); }
+    function pct(v) { return (parseFloat(v || 0) || 0).toFixed(1) + '%'; }
+    function cls(v) { return v > 0 ? 'inv-pos' : (v < 0 ? 'inv-neg' : 'inv-dim'); }
+    function toast(m, i) { if (window.showPremiumToast) window.showPremiumToast(m, i || 'check'); else alert(m); }
+
+    var ACV = { range: 'month', data: null, chart: 'daily', busy: false, sort: 'revenue', q: '', st: 'all', ost: 'all', open: {}, urlInit: false };
+    var RANGE_NAMES = { today: 'اليوم', yesterday: 'أمس', week: 'آخر 7 أيام', month: 'هذا الشهر', prev_month: 'الشهر الماضي', last30: 'آخر 30 يوم', year: 'هذه السنة', all: 'كل الفترات', custom: 'فترة مخصصة' };
+    var WD_NAMES = ['الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت', 'الأحد'];
+    var STATES = { active: ['نشط', 'green'], idle: ['خامل', 'amber'], dormant: ['متوقف', 'red'], never: ['بدون طلبات', 'grey'] };
+    var ORD_ST = { done: ['مكتملة', 'green'], pending: ['قيد الانتظار', 'amber'], rejected: ['مرفوضة', 'red'] };
+    var PERIOD_ICONS = { today: 'clock', yesterday: 'clock', week: 'calendar-days', prev_week: 'calendar-days', month: 'calendar', prev_month: 'calendar', last30: 'calendar-days', year: 'calendar', all: 'database' };
+
+    function setChips() {
+        var chips = document.querySelectorAll('#acvChips .ord-chip');
+        for (var i = 0; i < chips.length; i++) { chips[i].classList.toggle('active', chips[i].getAttribute('data-r') === ACV.range); }
+        var c = $('acvCustom'); if (c) c.classList.toggle('show', ACV.range === 'custom');
+    }
+
+    function copyText(t) {
+        try {
+            if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(t); toast('تم النسخ', 'copy'); return; }
+        } catch (e) {}
+        var ta = document.createElement('textarea'); ta.value = t; document.body.appendChild(ta); ta.select();
+        try { document.execCommand('copy'); toast('تم النسخ', 'copy'); } catch (e2) {}
+        document.body.removeChild(ta);
+    }
+
+    /* ---------- رابط الـ API ---------- */
+    function renderLink(d) {
+        var l = d.link; if (!l) return;
+        $('acvCurUrl').textContent = l.api_url;
+        $('acvLinkState').innerHTML = l.custom ? '<span class="acv-badge blue">رابط مخصص</span>' : '<span class="acv-badge grey">الرابط الافتراضي</span>';
+        if (!ACV.urlInit) { $('acvUrlInput').value = l.base_url; ACV.urlInit = true; }
+        $('acvEndpoints').innerHTML = l.endpoints.map(function (e) {
+            var full = l.base_url + e.path;
+            return '<div class="acv-ep" data-url="' + esc(full) + '"><b>' + esc(e.m) + '</b><span>' + esc(e.name) + '</span><code>' + esc(full) + '</code></div>';
+        }).join('');
+    }
+    window.acvCopy = function () { if (ACV.data) copyText(ACV.data.link.api_url); };
+    window.acvSaveUrl = async function () {
+        var v = $('acvUrlInput').value.trim();
+        if (!v) { alert('اكتب الرابط أولاً'); return; }
+        try {
+            var res = await fetch('/api/api_clients_save_url', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: v }) });
+            var j = await res.json();
+            if (j.status === 'success') { toast('تم حفظ رابط الـ API', 'check'); ACV.urlInit = false; ACV.busy = false; load(); }
+            else alert(j.message || 'تعذر حفظ الرابط');
+        } catch (e) { alert('فشل الاتصال بالسيرفر'); }
+    };
+    window.acvResetUrl = async function () {
+        try {
+            var res = await fetch('/api/api_clients_save_url', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: '' }) });
+            var j = await res.json();
+            if (j.status === 'success') { toast('رجع الرابط للافتراضي', 'check'); ACV.urlInit = false; ACV.busy = false; load(); }
+            else alert(j.message || 'تعذر الإرجاع');
+        } catch (e) { alert('فشل الاتصال بالسيرفر'); }
+    };
+
+    /* ---------- تحميل ---------- */
+    async function load() {
+        if (ACV.busy) return;
+        ACV.busy = true;
+        setChips();
+        $('acvBody').innerHTML = '<div class="ord-skel"></div><div class="ord-skel"></div><div class="ord-skel"></div><div class="ord-skel"></div>';
+        var url = '/api/api_clients_inventory?range=' + encodeURIComponent(ACV.range);
+        if (ACV.range === 'custom') {
+            var f = $('acvFrom').value, t = $('acvTo').value;
+            if (!f || !t) { ACV.busy = false; $('acvBody').innerHTML = '<div class="ord-empty">' + ico('calendar') + '<div>اختر تاريخ البداية والنهاية ثم اضغط تطبيق</div></div>'; return; }
+            url = '/api/api_clients_inventory?from=' + encodeURIComponent(f) + '&to=' + encodeURIComponent(t);
+        }
+        try {
+            var res = await fetch(url, { cache: 'no-store' });
+            ACV.data = await res.json();
+            if (ACV.data.status === 'error') throw new Error(ACV.data.message || 'error');
+            render();
+        } catch (e) {
+            $('acvBody').innerHTML = '<div class="ord-empty">' + ico('x-circle') + '<div>فشل جلب بيانات جرد الـ API من الخادم</div></div>';
+        }
+        ACV.busy = false;
+    }
+
+    function delta(cur, prev, invert) {
+        if (prev == null) return '';
+        cur = parseFloat(cur || 0); prev = parseFloat(prev || 0);
+        if (prev === 0 && cur === 0) return '<div class="inv-delta flat">' + ico('arrow-right') + 'بدون تغيير</div>';
+        if (prev === 0) return '<div class="inv-delta up">' + ico('arrow-up-right') + 'جديد</div>';
+        var p = (cur - prev) / Math.abs(prev) * 100;
+        var good = invert ? p < 0 : p > 0;
+        if (Math.abs(p) < 0.05) return '<div class="inv-delta flat">' + ico('arrow-right') + 'ثابت</div>';
+        return '<div class="inv-delta ' + (good ? 'up' : 'down') + '">' + ico(p > 0 ? 'arrow-up-right' : 'arrow-down-right') + Math.abs(p).toFixed(1) + '% عن الفترة السابقة</div>';
+    }
+
+    function kpis(d) {
+        var s = d.summary, p = d.prev, o = d.overview, a = d.alerts;
+        var items = [
+            ['k-green', 'trending', usd(s.profit), 'صافي ربح الـ API', delta(s.profit, p && p.profit)],
+            ['k-gold', 'dollar', usd(s.revenue), 'مبيعات الـ API', delta(s.revenue, p && p.revenue)],
+            ['k-red', 'server', usd(s.cost), 'كلفة المزودين', delta(s.cost, p && p.cost, true)],
+            ['k-violet', 'percent', pct(s.margin), 'هامش الربح', delta(s.margin, p && p.margin)],
+            ['k-blue', 'check-circle', s.done + ' / ' + s.orders, 'ناجحة / كل الطلبات', delta(s.done, p && p.done)],
+            ['k-teal', 'target', pct(s.success_rate), 'نسبة نجاح الطلبات', delta(s.success_rate, p && p.success_rate)],
+            ['k-amber', 'cart', usd(s.avg_order), 'متوسط قيمة الطلب', delta(s.avg_order, p && p.avg_order)],
+            ['k-sky', 'globe', pct(s.share_pct), 'حصة الـ API من مبيعات الموقع', ''],
+            ['k-sky', 'users', o.active + ' / ' + o.total, 'عملاء نشطون (7 أيام) / الكل', ''],
+            ['k-amber', 'wallet', usd(o.total_balance), 'أرصدة عملاء الـ API', ''],
+            ['k-red', 'tag', usd(s.discount_given), 'خصومات ممنوحة (تقدير)', ''],
+            ['k-gold', 'hourglass', a.pending_count + ' (' + usd(a.pending_amount) + ')', 'طلبات معلقة (كل الأوقات)', '']
+        ];
+        return '<div class="inv-kpis">' + items.map(function (x) {
+            return '<div class="ord-kpi ' + x[0] + '"><div class="ord-kpi-ico">' + ico(x[1]) + '</div><div style="min-width:0;"><div class="ord-kpi-v">' + esc(x[2]) + '</div><div class="ord-kpi-l">' + x[3] + '</div>' + x[4] + '</div></div>';
+        }).join('') + '</div>';
+    }
+
+    function notes(d) {
+        var s = d.summary, a = d.alerts, o = d.overview, out = '';
+        if (o.orders_all === 0) {
+            return '<div class="inv-note">' + ico('alert') + '<div>ما في أي طلب انعمل عن طريق الـ API لهلأ. أول ما يبدأ عملاؤك يستخدموه رح تظهر كل الأرقام هون.</div></div>';
+        }
+        if (a.loss_count > 0) out += '<div class="inv-note acv-note-red">' + ico('alert') + '<div>يوجد <b>' + a.loss_count + '</b> طلب API انباع بسعر أقل من كلفته، بخسارة إجمالية <b>' + usd(a.loss_total) + '</b> (غالباً بسبب خصم العميل أو تغيّر سعر المزود). راجع نسبة الخصم أو نسبة الربح.</div></div>';
+        if (a.pending_count > 0) out += '<div class="inv-note">' + ico('hourglass') + '<div>يوجد <b>' + a.pending_count + '</b> طلب API معلّق بقيمة <b>' + usd(a.pending_amount) + '</b>، شيّكهم من (تشييك طلبات).</div></div>';
+        if (a.high_reject.length) out += '<div class="inv-note acv-note-red">' + ico('x-circle') + '<div>عملاء نسبة رفض طلباتهم عالية (30% أو أكثر): ' + a.high_reject.map(function (x) { return '<b style="direction:ltr; display:inline-block;">' + esc(x.email) + '</b> (' + x.rate + '%)'; }).join('، ') + '</div></div>';
+        if (s.unknown_orders > 0) out += '<div class="inv-note">' + ico('alert') + '<div><b>' + s.unknown_orders + '</b> طلب ناجح (بقيمة <b>' + usd(s.unknown_rev) + '</b>) كلفته غير معروفة لأن فئته يدوية، فما دخل بحساب الربح.</div></div>';
+        if (o.dormant > 0) out += '<div class="inv-note">' + ico('users') + '<div><b>' + o.dormant + '</b> عميل API متوقف (ما طلب من أكثر من 30 يوم)، و<b>' + o.never + '</b> عميل عنده API وما طلب أبداً.</div></div>';
+        return out;
+    }
+
+    function overviewCard(d) {
+        var o = d.overview;
+        var t = [
+            [o.total, 'عملاء الـ API'], [o.enabled, 'API مفعّل'], [o.disabled, 'API غير مفعّل'], [o.active, 'نشط (7 أيام)'],
+            [o.idle, 'خامل (8-30 يوم)'], [o.dormant, 'متوقف (+30 يوم)'], [o.never, 'بدون طلبات'], [o.with_discount + ' (' + o.avg_discount + '%)', 'عندهم خصم (متوسطه)'],
+            [o.orders_all, 'كل طلبات الـ API'], [o.orders_done_all, 'الطلبات الناجحة'], [usd(o.total_balance), 'مجموع الأرصدة'], [d.alerts.pending_count, 'طلبات معلقة']
+        ];
+        return '<div class="inv-card"><div class="inv-card-t"><h3>' + ico('users') + 'جرد عملاء الـ API</h3><small>ثابت ولا يتأثر باختيار الفترة</small></div><div class="acv-tiles4">' +
+            t.map(function (x) { return '<div class="inv-tile"><b>' + esc(x[0]) + '</b><span>' + x[1] + '</span></div>'; }).join('') + '</div></div>';
+    }
+
+    function periodsTable(d) {
+        var rows = d.periods.map(function (p) {
+            var cl = p.key === 'all' ? ' total' : '';
+            return '<div class="inv-tr' + cl + '"><div class="lbl">' + ico(PERIOD_ICONS[p.key] || 'calendar') + esc(p.label) + '</div>' +
+                '<div class="num">' + p.done + ' / ' + p.orders + '</div><div class="num">' + usd(p.revenue) + '</div><div class="num inv-dim">' + usd(p.cost) + '</div>' +
+                '<div class="num ' + cls(p.profit) + '">' + usd(p.profit) + '</div><div class="num ' + cls(p.margin) + '">' + pct(p.margin) + '</div><div class="num">' + pct(p.success_rate) + '</div></div>';
+        }).join('');
+        return '<div class="inv-card"><div class="inv-card-t"><h3>' + ico('calendar-days') + 'الجرد الدوري للـ API: يومي / أسبوعي / شهري / سنوي</h3><small>ثابت ولا يتأثر باختيار الفترة</small></div>' +
+            '<div class="inv-scroll"><div class="inv-tbl"><div class="inv-tr head"><div>الفترة</div><div>ناجحة / كلها</div><div>المبيعات</div><div>الكلفة</div><div>الربح</div><div>الهامش</div><div>نسبة النجاح</div></div>' + rows + '</div></div></div>';
+    }
+
+    /* ---------- رسم بياني ---------- */
+    function niceMax(v) {
+        if (v <= 0) return 1;
+        var e = Math.pow(10, Math.floor(Math.log(v) / Math.LN10)), f = v / e;
+        return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * e;
+    }
+    function chartSvg(arr) {
+        if (!arr || !arr.length) return '<div class="acv-empty">لا توجد بيانات</div>';
+        var n = arr.length, bw = 14, gap = 10, left = 46, top = 14, ph = 170, w = left + n * (bw * 2 + gap) + 10, h = top + ph + 30;
+        var mx = 0; arr.forEach(function (x) { mx = Math.max(mx, x.revenue, x.profit); });
+        mx = niceMax(mx);
+        var g = '';
+        for (var i = 0; i <= 4; i++) {
+            var y = top + ph - ph * i / 4;
+            g += '<line x1="' + left + '" x2="' + w + '" y1="' + y + '" y2="' + y + '" stroke="rgba(148,163,184,.18)" stroke-dasharray="3 4"/>' +
+                '<text x="' + (left - 6) + '" y="' + (y + 3) + '" fill="#94a3b8" font-size="9" text-anchor="end">' + fmt(mx * i / 4).replace('.00', '') + '</text>';
+        }
+        var step = n > 20 ? 3 : (n > 12 ? 2 : 1);
+        arr.forEach(function (x, k) {
+            var cx = left + k * (bw * 2 + gap) + 4;
+            var hr = ph * (x.revenue / mx), hp = ph * (Math.max(x.profit, 0) / mx);
+            g += '<rect x="' + cx + '" y="' + (top + ph - hr) + '" width="' + bw + '" height="' + Math.max(hr, 0) + '" rx="3" fill="#38bdf8"><title>' + esc(x.label) + ' | مبيعات ' + usd(x.revenue) + ' | طلبات ' + x.orders + '</title></rect>';
+            g += '<rect x="' + (cx + bw + 1) + '" y="' + (top + ph - hp) + '" width="' + bw + '" height="' + Math.max(hp, 0) + '" rx="3" fill="#34d399"><title>' + esc(x.label) + ' | ربح ' + usd(x.profit) + '</title></rect>';
+            if (k % step === 0) g += '<text x="' + (cx + bw) + '" y="' + (top + ph + 16) + '" fill="#94a3b8" font-size="9" text-anchor="middle">' + esc(x.label) + '</text>';
+        });
+        return '<svg width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '">' + g + '</svg>';
+    }
+    function chartCard(d) {
+        return '<div class="inv-card"><div class="inv-card-t"><h3>' + ico('bar-chart') + 'حركة الـ API عبر الزمن</h3>' +
+            '<div class="ord-chips" id="acvChartTabs"><button class="ord-chip' + (ACV.chart === 'daily' ? ' active' : '') + '" data-c="daily">يومي (30 يوم)</button>' +
+            '<button class="ord-chip' + (ACV.chart === 'weekly' ? ' active' : '') + '" data-c="weekly">أسبوعي (12)</button>' +
+            '<button class="ord-chip' + (ACV.chart === 'monthly' ? ' active' : '') + '" data-c="monthly">شهري (12)</button></div></div>' +
+            '<div class="inv-legend"><span><i style="background:#38bdf8"></i>المبيعات</span><span><i style="background:#34d399"></i>الربح</span></div>' +
+            '<div class="inv-chart" id="acvChartBox">' + chartSvg(d.series[ACV.chart]) + '</div></div>';
+    }
+
+    /* ---------- قوائم ---------- */
+    function listPanel(title, icon, arr, nameFn, subFn, empty) {
+        var mx = 0; (arr || []).forEach(function (x) { mx = Math.max(mx, x.revenue); });
+        var body = (arr && arr.length) ? arr.map(function (x) {
+            var w = mx > 0 ? Math.max(3, Math.round(x.revenue / mx * 100)) : 0;
+            return '<div class="inv-li"><div class="inv-li-top"><div class="inv-li-n">' + nameFn(x) + '</div><div class="inv-li-v">' + usd(x.revenue) + '</div></div><div class="inv-bar"><i style="width:' + w + '%"></i></div><div class="inv-li-s">' + subFn(x) + '</div></div>';
+        }).join('') : '<div class="acv-empty">' + empty + '</div>';
+        return '<div class="inv-card"><div class="inv-card-t"><h3>' + ico(icon) + title + '</h3></div><div class="inv-list">' + body + '</div></div>';
+    }
+    function statusPanel(d) {
+        var s = d.status;
+        var tile = function (k, lbl, c) { return '<div class="inv-tile"><b class="' + c + '">' + s[k].count + '</b><span>' + lbl + ' (' + usd(s[k].amount) + ')</span></div>'; };
+        var rej = d.rejected_top.length ? '<div class="inv-sub-h">' + ico('x-circle') + 'أكثر المنتجات رفضاً</div><div class="inv-chips">' + d.rejected_top.map(function (x) { return '<span class="inv-pill red">' + esc(x.name) + ' (' + x.count + ')</span>'; }).join('') + '</div>' : '';
+        return '<div class="inv-card"><div class="inv-card-t"><h3>' + ico('receipt') + 'جرد حالات الطلبات</h3><small>' + d.summary.orders + ' طلب بالفترة</small></div><div class="inv-tiles">' +
+            tile('done', 'ناجحة', 'inv-pos') + tile('pending', 'معلقة', '') + tile('rejected', 'مرفوضة', 'inv-neg') + '</div>' + rej + '</div>';
+    }
+    function hoursPanel(d) {
+        var mx = 0; d.by_hour.forEach(function (x) { mx = Math.max(mx, x.orders); });
+        var bars = d.by_hour.map(function (x) {
+            var h = mx > 0 ? Math.round(x.orders / mx * 100) : 0;
+            return '<div title="' + x.hour + ':00 | ' + x.orders + ' طلب | ' + usd(x.revenue) + '"><i style="height:' + h + '%"></i><small>' + (x.hour % 3 === 0 ? x.hour : '') + '</small></div>';
+        }).join('');
+        var wmx = 0; d.by_weekday.forEach(function (x) { wmx = Math.max(wmx, x.orders); });
+        var order = [5, 6, 0, 1, 2, 3, 4];
+        var wd = order.map(function (i) {
+            var x = d.by_weekday[i], w = wmx > 0 ? Math.max(2, Math.round(x.orders / wmx * 100)) : 0;
+            return '<div class="inv-li"><div class="inv-li-top"><div class="inv-li-n">' + WD_NAMES[i] + '</div><div class="inv-li-v">' + x.orders + ' طلب</div></div><div class="inv-bar"><i style="width:' + w + '%"></i></div></div>';
+        }).join('');
+        return '<div class="inv-card"><div class="inv-card-t"><h3>' + ico('clock') + 'أوقات الذروة (عدد الطلبات الناجحة)</h3></div><div class="acv-hours">' + bars + '</div><div class="inv-sub-h">' + ico('calendar-days') + 'حسب أيام الأسبوع</div><div class="inv-list">' + wd + '</div></div>';
+    }
+
+    /* ---------- العملاء ---------- */
+    function clientsShell(d) {
+        var sorts = [['revenue', 'المبيعات'], ['profit', 'الربح'], ['orders', 'الطلبات'], ['balance', 'الرصيد'], ['recent', 'آخر نشاط']];
+        var sts = [['all', 'الكل'], ['active', 'نشط'], ['idle', 'خامل'], ['dormant', 'متوقف'], ['never', 'بدون طلبات']];
+        return '<div class="inv-card"><div class="inv-card-t"><h3>' + ico('users') + 'جرد كل عميل API</h3><small id="acvClientsCount"></small></div>' +
+            '<div class="acv-search"><input type="text" id="acvSearch" placeholder="ابحث بالإيميل أو رقم العميل..." value="' + esc(ACV.q) + '" autocomplete="off"></div>' +
+            '<div class="ord-chips" id="acvSortChips"><span class="inv-dim" style="font-size:.72rem; font-weight:800; align-self:center;">ترتيب حسب:</span>' + sorts.map(function (s) { return '<button class="ord-chip' + (ACV.sort === s[0] ? ' active' : '') + '" data-s="' + s[0] + '">' + s[1] + '</button>'; }).join('') + '</div>' +
+            '<div class="ord-chips" id="acvStChips"><span class="inv-dim" style="font-size:.72rem; font-weight:800; align-self:center;">الحالة:</span>' + sts.map(function (s) { return '<button class="ord-chip' + (ACV.st === s[0] ? ' active' : '') + '" data-st="' + s[0] + '">' + s[1] + '</button>'; }).join('') + '</div>' +
+            '<div class="inv-scroll"><div class="acv-tbl"><div class="acv-tr head"><div>العميل</div><div>الطلبات (ناجحة / مرفوضة / معلقة)</div><div>المبيعات</div><div>الربح</div><div>الرصيد</div><div>الخصم</div><div>آخر طلب</div><div>الحالة</div></div><div id="acvClientsList"></div></div></div></div>';
+    }
+    function clientRow(c) {
+        var st = STATES[c.state] || STATES.never;
+        var open = !!ACV.open[c.email];
+        var last = c.last_order ? esc(c.last_order.substring(0, 10)) + '<div class="acv-sub">' + (c.days_since === 0 ? 'اليوم' : 'قبل ' + c.days_since + ' يوم') + '</div>' : '<span class="inv-dim">-</span>';
+        var row = '<div class="acv-tr acv-crow" data-email="' + esc(c.email) + '">' +
+            '<div><div class="acv-mail">' + esc(c.email) + '</div><div class="acv-sub">#' + esc(c.id) + ' · ' + (c.enabled ? '<span style="color:#34d399">API مفعّل</span>' : '<span style="color:#f87171">API غير مفعّل</span>') + '</div></div>' +
+            '<div class="num"><span class="inv-pos">' + c.done + '</span> / <span class="inv-neg">' + c.rejected + '</span> / <span style="color:#fbbf24">' + c.pending + '</span></div>' +
+            '<div class="num">' + usd(c.revenue) + '</div>' +
+            '<div class="num ' + cls(c.profit) + '">' + usd(c.profit) + '<div class="acv-sub">' + pct(c.margin) + '</div></div>' +
+            '<div class="num">' + usd(c.balance) + '</div>' +
+            '<div class="num">' + (c.discount > 0 ? c.discount + '%' : '<span class="inv-dim">-</span>') + '</div>' +
+            '<div>' + last + '</div>' +
+            '<div><span class="acv-badge ' + st[1] + '">' + st[0] + '</span></div></div>';
+        if (open) {
+            var tp = c.top_products.length ? c.top_products.map(function (p) { return '<span class="inv-pill">' + esc(p.name) + ' · ' + p.orders + ' طلب · ' + usd(p.revenue) + '</span>'; }).join('') : '<span class="inv-dim" style="font-size:.74rem;">لا مبيعات بالفترة</span>';
+            row += '<div class="acv-detail"><div class="acv-tiles4">' +
+                '<div class="inv-tile"><b>' + c.total_orders + '</b><span>كل طلباته (ناجحة ' + c.total_done + ')</span></div>' +
+                '<div class="inv-tile"><b>' + usd(c.total_spent) + '</b><span>مجموع مشترياته</span></div>' +
+                '<div class="inv-tile"><b>' + usd(c.avg_order) + '</b><span>متوسط الطلب (بالفترة)</span></div>' +
+                '<div class="inv-tile"><b>' + pct(c.success_rate) + '</b><span>نسبة نجاح طلباته</span></div>' +
+                '<div class="inv-tile"><b>' + pct(c.share) + '</b><span>حصته من مبيعات الـ API</span></div>' +
+                '<div class="inv-tile"><b>' + fmt(c.qty).replace('.00', '') + '</b><span>مجموع الكمية</span></div>' +
+                '<div class="inv-tile"><b>' + esc(c.first_order || '-') + '</b><span>أول طلب</span></div>' +
+                '<div class="inv-tile"><b>' + esc(c.join_date || '-') + '</b><span>تاريخ التسجيل</span></div></div>' +
+                '<div class="inv-sub-h">' + ico('lock') + 'التوكن: <span style="direction:ltr; font-family:monospace; color:var(--txt);">' + esc(c.token || 'لا يوجد') + '</span></div>' +
+                '<div class="inv-sub-h">' + ico('trophy') + 'أكثر منتجات اشتراها بالفترة</div><div class="inv-chips">' + tp + '</div></div>';
+        }
+        return row;
+    }
+    function renderClients() {
+        var d = ACV.data; if (!d || !$('acvClientsList')) return;
+        var q = ACV.q.trim().toLowerCase();
+        var arr = d.clients.filter(function (c) {
+            if (ACV.st !== 'all' && c.state !== ACV.st) return false;
+            if (q && c.email.toLowerCase().indexOf(q) === -1 && String(c.id).indexOf(q) === -1) return false;
+            return true;
+        });
+        var key = ACV.sort;
+        arr = arr.slice().sort(function (a, b) {
+            if (key === 'recent') return (b.last_order || '').localeCompare(a.last_order || '');
+            return (b[key] || 0) - (a[key] || 0);
+        });
+        $('acvClientsCount').textContent = arr.length + ' من ' + d.clients.length + ' عميل';
+        $('acvClientsList').innerHTML = arr.length ? arr.map(clientRow).join('') : '<div class="acv-empty">لا يوجد عملاء مطابقون</div>';
+    }
+
+    /* ---------- الطلبات ---------- */
+    function orderRow(o) {
+        var st = ORD_ST[o.k] || ORD_ST.pending;
+        var pr = o.profit == null ? '<span class="inv-dim">-</span>' : '<span class="' + cls(o.profit) + '">' + usd(o.profit) + '</span>';
+        return '<div class="acv-otr"><div><div style="font-weight:800;">#' + esc(o.id) + '</div><div class="acv-sub">' + esc(o.date) + ' ' + esc(o.time) + '</div></div>' +
+            '<div class="acv-mail">' + esc(o.email) + '</div><div>' + esc(o.product) + ' <span class="inv-dim">- ' + esc(o.sub) + '</span><div class="acv-sub">' + esc(o.input || '') + '</div></div>' +
+            '<div class="num">' + fmt(o.qty).replace('.00', '') + '</div><div class="num">' + usd(o.price) + '</div><div class="num">' + pr + '</div>' +
+            '<div><span class="acv-badge ' + st[1] + '">' + st[0] + '</span></div></div>';
+    }
+    function ordersCard(d) {
+        var tabs = [['all', 'الكل'], ['done', 'مكتملة'], ['pending', 'معلقة'], ['rejected', 'مرفوضة']];
+        return '<div class="inv-card"><div class="inv-card-t"><h3>' + ico('receipt') + 'آخر طلبات الـ API</h3><small>آخر ' + d.recent.length + ' طلب بالفترة</small></div>' +
+            '<div class="ord-chips" id="acvOrdTabs">' + tabs.map(function (t) { return '<button class="ord-chip' + (ACV.ost === t[0] ? ' active' : '') + '" data-o="' + t[0] + '">' + t[1] + '</button>'; }).join('') + '</div>' +
+            '<div class="inv-scroll"><div class="acv-otbl"><div class="acv-otr head"><div>الطلب</div><div>العميل</div><div>المنتج / الفئة</div><div>الكمية</div><div>السعر</div><div>الربح</div><div>الحالة</div></div><div id="acvOrdList"></div></div></div></div>';
+    }
+    function renderOrders() {
+        var d = ACV.data; if (!d || !$('acvOrdList')) return;
+        var arr = d.recent.filter(function (o) { return ACV.ost === 'all' || o.k === ACV.ost; });
+        $('acvOrdList').innerHTML = arr.length ? arr.map(orderRow).join('') : '<div class="acv-empty">لا توجد طلبات</div>';
+    }
+    function problemsCards(d) {
+        var a = d.alerts, out = '';
+        if (a.pending_list.length) {
+            out += '<div class="inv-card"><div class="inv-card-t"><h3>' + ico('hourglass') + 'طلبات API معلقة</h3><small>' + a.pending_count + ' طلب</small></div><div class="inv-scroll"><div class="acv-otbl">' +
+                '<div class="acv-otr head"><div>الطلب</div><div>العميل</div><div>المنتج / الفئة</div><div>الكمية</div><div>السعر</div><div>العمر</div><div>المزود</div></div>' +
+                a.pending_list.map(function (o) {
+                    return '<div class="acv-otr"><div style="font-weight:800;">#' + esc(o.id) + '</div><div class="acv-mail">' + esc(o.email) + '</div><div>' + esc(o.product) + ' <span class="inv-dim">- ' + esc(o.sub) + '</span></div><div class="num">' + fmt(o.qty).replace('.00', '') + '</div><div class="num">' + usd(o.price) + '</div><div class="num ' + (o.age_days > 1 ? 'inv-neg' : '') + '">' + (o.age_days === 0 ? 'اليوم' : o.age_days + ' يوم') + '</div><div>' + esc(o.provider || '-') + '</div></div>';
+                }).join('') + '</div></div></div>';
+        }
+        if (a.loss_list.length) {
+            out += '<div class="inv-card"><div class="inv-card-t"><h3>' + ico('trending-down') + 'طلبات انباعت بخسارة</h3><small>' + a.loss_count + ' طلب / ' + usd(a.loss_total) + '</small></div><div class="inv-scroll"><div class="acv-otbl">' +
+                '<div class="acv-otr head"><div>الطلب</div><div>العميل</div><div>المنتج / الفئة</div><div>الكمية</div><div>البيع</div><div>الخسارة</div><div>الكلفة</div></div>' +
+                a.loss_list.map(function (o) {
+                    return '<div class="acv-otr"><div style="font-weight:800;">#' + esc(o.id) + '</div><div class="acv-mail">' + esc(o.email) + '</div><div>' + esc(o.product) + ' <span class="inv-dim">- ' + esc(o.sub) + '</span></div><div class="num">' + fmt(o.qty).replace('.00', '') + '</div><div class="num">' + usd(o.price) + '</div><div class="num inv-neg">' + usd(o.profit) + '</div><div class="num inv-dim">' + usd(o.cost) + '</div></div>';
+                }).join('') + '</div></div></div>';
+        }
+        return out;
+    }
+
+    function render() {
+        var d = ACV.data; if (!d) return;
+        var rg = d.range;
+        $('acvRangeLabel').innerHTML = ico('calendar') + ' ' + esc(ACV.range === 'custom' ? (rg.from + '  ←  ' + rg.to) : RANGE_NAMES[ACV.range] + (rg.from ? ' (' + rg.from + ' ← ' + rg.to + ')' : ''));
+        $('acvGenerated').textContent = 'آخر تحديث: ' + d.generated;
+        renderLink(d);
+        var html = kpis(d) + notes(d) + overviewCard(d) + periodsTable(d) + chartCard(d) + clientsShell(d) +
+            '<div class="inv-grid">' +
+            listPanel('أفضل المنتجات عبر الـ API', 'trophy', d.by_product,
+                function (x) { return esc(x.name); },
+                function (x) { return '<span>' + x.orders + ' طلب / ' + fmt(x.qty).replace('.00', '') + ' كمية</span><span class="' + cls(x.profit) + '">ربح ' + usd(x.profit) + '</span>'; }, 'لا توجد مبيعات بهذه الفترة') +
+            listPanel('أفضل الفئات عبر الـ API', 'tag', d.by_sub,
+                function (x) { return esc(x.name) + '<em>' + esc(x.product || '') + '</em>'; },
+                function (x) { return '<span>' + x.orders + ' طلب / ' + fmt(x.qty).replace('.00', '') + ' كمية</span><span class="' + cls(x.profit) + '">ربح ' + usd(x.profit) + '</span>'; }, 'لا توجد مبيعات بهذه الفترة') +
+            listPanel('جرد المزودين (طلبات الـ API)', 'server', d.by_provider,
+                function (x) { return esc(x.name); },
+                function (x) { return '<span>' + x.orders + ' طلب</span><span class="' + cls(x.profit) + '">ربح ' + usd(x.profit) + '</span>'; }, 'لا توجد بيانات') +
+            statusPanel(d) + hoursPanel(d) + '</div>' +
+            problemsCards(d) + ordersCard(d) +
+            '<div class="inv-foot">يشمل هذا الجرد فقط الطلبات اللي جت عبر الـ API (مصدرها api). الربح = سعر البيع بعد خصم العميل - كلفة المزود. الطلبات المرفوضة ما بتدخل بالمبيعات لأن مبلغها بيرجع للعميل. الخصومات الممنوحة تقدير حسب نسبة الخصم الحالية لكل عميل.</div>';
+        $('acvBody').innerHTML = html;
+        renderClients();
+        renderOrders();
+    }
+
+    window.acvReload = function () { ACV.busy = false; load(); };
+    window.acvApplyCustom = function () { ACV.range = 'custom'; ACV.busy = false; load(); };
+
+    window.openApiClientsInventory = function () {
+        if (typeof window.toggleSidebar === 'function') window.toggleSidebar();
+        ['adminMainSection', 'checkOrdersPage', 'checkDepositsPage', 'viewProvidersPage', 'deleteCategoryPage', 'deleteProductPage'].forEach(function (id) {
+            var el = $(id); if (el) el.style.display = 'none';
+        });
+        ['clientsListScreen', 'apiImportScreen', 'allOrdersScreen', 'inventoryScreen'].forEach(function (id) {
+            var el = $(id); if (el) el.classList.remove('active');
+        });
+        $('apiClientsScreen').classList.add('active');
+        $('apiClientsScreen').scrollTop = 0;
+        ACV.busy = false; ACV.urlInit = false;
+        load();
+    };
+    window.closeApiClientsScreen = function () {
+        $('apiClientsScreen').classList.remove('active');
+        var m = $('adminMainSection'); if (m) m.style.display = 'block';
+    };
+
+    /* ---------- أحداث ---------- */
+    $('acvChips').addEventListener('click', function (e) {
+        var b = e.target.closest ? e.target.closest('.ord-chip') : null;
+        if (!b) return;
+        var r = b.getAttribute('data-r');
+        ACV.range = r;
+        if (r === 'custom') {
+            setChips();
+            var t = new Date(), f = new Date(t.getTime() - 29 * 86400000);
+            var ymd = function (x) { return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0'); };
+            if (!$('acvFrom').value) $('acvFrom').value = ymd(f);
+            if (!$('acvTo').value) $('acvTo').value = ymd(t);
+            return;
+        }
+        ACV.busy = false; load();
+    });
+    $('acvEndpoints').addEventListener('click', function (e) {
+        var b = e.target.closest ? e.target.closest('.acv-ep') : null;
+        if (b) copyText(b.getAttribute('data-url'));
+    });
+    $('acvBody').addEventListener('click', function (e) {
+        var t = e.target; if (!t.closest) return;
+        var b = t.closest('#acvChartTabs .ord-chip');
+        if (b && ACV.data) {
+            ACV.chart = b.getAttribute('data-c');
+            var tabs = document.querySelectorAll('#acvChartTabs .ord-chip');
+            for (var i = 0; i < tabs.length; i++) tabs[i].classList.toggle('active', tabs[i] === b);
+            $('acvChartBox').innerHTML = chartSvg(ACV.data.series[ACV.chart]);
+            return;
+        }
+        b = t.closest('#acvSortChips .ord-chip');
+        if (b) { ACV.sort = b.getAttribute('data-s'); var s1 = document.querySelectorAll('#acvSortChips .ord-chip'); for (var j = 0; j < s1.length; j++) s1[j].classList.toggle('active', s1[j] === b); renderClients(); return; }
+        b = t.closest('#acvStChips .ord-chip');
+        if (b) { ACV.st = b.getAttribute('data-st'); var s2 = document.querySelectorAll('#acvStChips .ord-chip'); for (var k = 0; k < s2.length; k++) s2[k].classList.toggle('active', s2[k] === b); renderClients(); return; }
+        b = t.closest('#acvOrdTabs .ord-chip');
+        if (b) { ACV.ost = b.getAttribute('data-o'); var s3 = document.querySelectorAll('#acvOrdTabs .ord-chip'); for (var m = 0; m < s3.length; m++) s3[m].classList.toggle('active', s3[m] === b); renderOrders(); return; }
+        b = t.closest('.acv-crow');
+        if (b) { var em = b.getAttribute('data-email'); ACV.open[em] = !ACV.open[em]; renderClients(); }
+    });
+    $('acvBody').addEventListener('input', function (e) {
+        if (e.target && e.target.id === 'acvSearch') { ACV.q = e.target.value; renderClients(); }
+    });
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && $('apiClientsScreen').classList.contains('active')) window.closeApiClientsScreen();
+    });
+
+    /* ---------- تصدير ---------- */
+    window.acvExportCsv = function () {
+        var d = ACV.data; if (!d) return;
+        var q = function (v) { return '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"'; };
+        var L = [];
+        L.push(['جرد عملاء الـ API', d.generated].map(q).join(','));
+        L.push(['الفترة', 'ناجحة', 'كل الطلبات', 'المبيعات', 'الكلفة', 'الربح', 'الهامش %', 'نسبة النجاح %'].map(q).join(','));
+        d.periods.forEach(function (p) { L.push([p.label, p.done, p.orders, p.revenue, p.cost, p.profit, p.margin, p.success_rate].map(q).join(',')); });
+        L.push('');
+        L.push(['العملاء'].map(q).join(','));
+        L.push(['الإيميل', 'الرقم', 'API مفعّل', 'الطلبات', 'ناجحة', 'مرفوضة', 'معلقة', 'المبيعات', 'الربح', 'الرصيد', 'الخصم %', 'آخر طلب', 'الحالة'].map(q).join(','));
+        d.clients.forEach(function (c) { L.push([c.email, c.id, c.enabled ? 'نعم' : 'لا', c.orders, c.done, c.rejected, c.pending, c.revenue, c.profit, c.balance, c.discount, c.last_order, (STATES[c.state] || ['-'])[0]].map(q).join(',')); });
+        L.push('');
+        L.push(['آخر الطلبات'].map(q).join(','));
+        L.push(['الرقم', 'التاريخ', 'الوقت', 'العميل', 'المنتج', 'الفئة', 'الكمية', 'السعر', 'الربح', 'الحالة'].map(q).join(','));
+        d.recent.forEach(function (o) { L.push([o.id, o.date, o.time, o.email, o.product, o.sub, o.qty, o.price, o.profit == null ? '' : o.profit, o.status].map(q).join(',')); });
+        var blob = new Blob([String.fromCharCode(0xFEFF) + L.join(NL)], { type: 'text/csv;charset=utf-8;' });
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob); a.download = 'api_clients_inventory_' + new Date().toISOString().slice(0, 10) + '.csv';
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        setTimeout(function () { URL.revokeObjectURL(a.href); }, 1500);
+        toast('تم تصدير جرد الـ API', 'download');
+    };
+    window.acvExportXlsx = function () {
+        var d = ACV.data; if (!d || !window.adminExportXlsx) return;
+        var ser = function (arr) { return arr.map(function (x) { return [x.label, x.revenue, x.profit, x.orders, x.total]; }); };
+        window.adminExportXlsx('api_clients_inventory_' + new Date().toISOString().slice(0, 10), [
+            { name: 'الجرد الدوري', headers: ['الفترة', 'ناجحة', 'كل الطلبات', 'المبيعات', 'الكلفة', 'الربح', 'الهامش %', 'نسبة النجاح %'], rows: d.periods.map(function (p) { return [p.label, p.done, p.orders, p.revenue, p.cost, p.profit, p.margin, p.success_rate]; }) },
+            { name: 'العملاء', headers: ['الإيميل', 'الرقم', 'API مفعّل', 'الطلبات', 'ناجحة', 'مرفوضة', 'معلقة', 'المبيعات', 'الربح', 'الهامش %', 'الرصيد', 'الخصم %', 'مجموع المشتريات', 'أول طلب', 'آخر طلب', 'الحالة'], rows: d.clients.map(function (c) { return [c.email, c.id, c.enabled ? 'نعم' : 'لا', c.orders, c.done, c.rejected, c.pending, c.revenue, c.profit, c.margin, c.balance, c.discount, c.total_spent, c.first_order, c.last_order, (STATES[c.state] || ['-'])[0]]; }) },
+            { name: 'المنتجات', headers: ['المنتج', 'الطلبات', 'الكمية', 'المبيعات', 'الربح'], rows: d.by_product.map(function (x) { return [x.name, x.orders, x.qty, x.revenue, x.profit]; }) },
+            { name: 'الفئات', headers: ['المنتج', 'الفئة', 'الطلبات', 'الكمية', 'المبيعات', 'الربح'], rows: d.by_sub.map(function (x) { return [x.product, x.name, x.orders, x.qty, x.revenue, x.profit]; }) },
+            { name: 'آخر الطلبات', headers: ['الرقم', 'التاريخ', 'الوقت', 'العميل', 'المنتج', 'الفئة', 'الكمية', 'السعر', 'الكلفة', 'الربح', 'الحالة'], rows: d.recent.map(function (o) { return [o.id, o.date, o.time, o.email, o.product, o.sub, o.qty, o.price, o.cost == null ? '' : o.cost, o.profit == null ? '' : o.profit, o.status]; }) },
+            { name: 'يومي', headers: ['اليوم', 'المبيعات', 'الربح', 'ناجحة', 'كل الطلبات'], rows: ser(d.series.daily) },
+            { name: 'أسبوعي', headers: ['الأسبوع', 'المبيعات', 'الربح', 'ناجحة', 'كل الطلبات'], rows: ser(d.series.weekly) },
+            { name: 'شهري', headers: ['الشهر', 'المبيعات', 'الربح', 'ناجحة', 'كل الطلبات'], rows: ser(d.series.monthly) }
+        ]);
+    };
+})();
+</script>
 </body>
 </html>
 """
@@ -12880,11 +18363,14 @@ def push_unsubscribe(email, endpoint):
 # إشعارات الأدمن عند ربط / فك ربط بوت التلغرام
 # --------------------------------------------------
 def _send_admin_html(text):
+    _tg_tok, _tg_chat = tg_notify_target("registrations")
+    if not _tg_tok or not _tg_chat:
+        return
     def _run():
         try:
-            payload = json.dumps({"chat_id": TELEGRAM_ADMIN_CHAT_ID, "text": text, "parse_mode": "HTML"}).encode("utf-8")
+            payload = json.dumps({"chat_id": _tg_chat, "text": text, "parse_mode": "HTML"}).encode("utf-8")
             req = urllib.request.Request(
-                f"https://api.telegram.org/bot{TELEGRAM_PURCHASE_BOT_TOKEN}/sendMessage",
+                f"https://api.telegram.org/bot{_tg_tok}/sendMessage",
                 data=payload, headers={"Content-Type": "application/json"}, method="POST")
             with urllib.request.urlopen(req, timeout=10):
                 pass
@@ -13084,6 +18570,77 @@ _MEDIA_MIME_EXT = {"video/mp4": "mp4", "video/webm": "webm", "video/quicktime": 
 _MEDIA_NAME_RE = re.compile(r"^[0-9a-f]{32}\.(mp4|webm|mov|ogg)$")
 
 
+def _mp4_faststart(raw):
+    """ينقل ذرّة moov لبداية ملف MP4 (مثل qt-faststart). بدونها المتصفح لازم يحمّل الفيديو كامل قبل ما يشتغل، وهاد سبب التعليق."""
+    import struct
+    try:
+        size = len(raw)
+        atoms = []
+        pos = 0
+        while pos + 8 <= size:
+            asz, atype = struct.unpack(">I4s", raw[pos:pos + 8])
+            hdr = 8
+            if asz == 1:
+                if pos + 16 > size:
+                    return raw
+                asz = struct.unpack(">Q", raw[pos + 8:pos + 16])[0]
+                hdr = 16
+            elif asz == 0:
+                asz = size - pos
+            if asz < hdr or pos + asz > size:
+                return raw
+            atoms.append((atype, pos, asz))
+            pos += asz
+        types = [a[0] for a in atoms]
+        if b"moov" not in types or b"mdat" not in types:
+            return raw
+        mi = types.index(b"moov")
+        di = types.index(b"mdat")
+        if mi < di:
+            return raw  # جاهز أصلاً
+        _, moov_pos, moov_sz = atoms[mi]
+        mdat_pos = atoms[di][1]
+        moov = bytearray(raw[moov_pos:moov_pos + moov_sz])
+
+        def walk(start, end):
+            p = start
+            while p + 8 <= end:
+                sz, t = struct.unpack(">I4s", bytes(moov[p:p + 8]))
+                h = 8
+                if sz == 1:
+                    sz = struct.unpack(">Q", bytes(moov[p + 8:p + 16]))[0]
+                    h = 16
+                elif sz == 0:
+                    sz = end - p
+                if sz < h or p + sz > end:
+                    raise ValueError("bad atom")
+                if t in (b"trak", b"mdia", b"minf", b"stbl"):
+                    walk(p + h, p + sz)
+                elif t == b"stco":
+                    cnt = struct.unpack(">I", bytes(moov[p + h + 4:p + h + 8]))[0]
+                    for k in range(cnt):
+                        o = p + h + 8 + k * 4
+                        v = struct.unpack(">I", bytes(moov[o:o + 4]))[0] + moov_sz
+                        if v > 0xFFFFFFFF:
+                            raise ValueError("offset overflow")
+                        moov[o:o + 4] = struct.pack(">I", v)
+                elif t == b"co64":
+                    cnt = struct.unpack(">I", bytes(moov[p + h + 4:p + h + 8]))[0]
+                    for k in range(cnt):
+                        o = p + h + 8 + k * 8
+                        v = struct.unpack(">Q", bytes(moov[o:o + 8]))[0] + moov_sz
+                        moov[o:o + 8] = struct.pack(">Q", v)
+                elif t == b"cmov":
+                    raise ValueError("compressed moov")
+                p += sz
+
+        walk(8, moov_sz)
+        return raw[:mdat_pos] + bytes(moov) + raw[mdat_pos:moov_pos] + raw[moov_pos + moov_sz:]
+    except Exception as e:
+        logging.warning("faststart تخطّى الملف: %s" % e)
+        return raw
+
+
 def store_banner_media(value):
     """الصور تبقى كما هي (data URL)، أما الفيديو فيتحفظ كملف ويرجع رابط /media/..."""
     if not isinstance(value, str) or not value.startswith("data:video/"):
@@ -13097,6 +18654,8 @@ def store_banner_media(value):
         raw = base64.b64decode(b64)
         if len(raw) > MEDIA_MAX_BYTES:
             raise ValueError("حجم الفيديو كبير (الحد الأقصى 60MB)")
+        if ext in ("mp4", "mov"):
+            raw = _mp4_faststart(raw)
         os.makedirs(MEDIA_DIR, exist_ok=True)
         name = f"{uuid.uuid4().hex}.{ext}"
         with open(os.path.join(MEDIA_DIR, name), "wb") as f:
@@ -13136,6 +18695,698 @@ def cleanup_banner_media(value):
 
 
 # --------------------------------------------------
+# نظام الجرد: تقارير الأرباح والمبيعات والمنتجات والإيداعات
+# --------------------------------------------------
+from datetime import timedelta as _inv_timedelta
+
+
+def inv_cost_for_sub(sub, quantity=1):
+    """كلفة الطلب الإجمالية من المزود (None إذا الكلفة غير معروفة)."""
+    if not sub:
+        return None
+    bp = sub.get('base_price')
+    if bp in (None, ''):
+        return None
+    bp = _num(bp)
+    if bp <= 0:
+        return None
+    qty = _num(quantity, 1) or 1
+    return round(bp * qty, PRICE_DECIMALS) if sub.get('is_counter') else round(bp, PRICE_DECIMALS)
+
+
+def _inv_date(s):
+    try:
+        return datetime.strptime(str(s or '')[:10], "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        return None
+
+
+def _inv_order_record(o, sub_index):
+    d = _inv_date(o.get('date'))
+    if d is None:
+        return None
+    st = o.get('status') or 'قيد الانتظار'
+    if st == 'مكتملة':
+        k = 'done'
+    elif st == 'مرفوضة':
+        k = 'rejected'
+    else:
+        k = 'pending'
+    price = _num(o.get('price', 0))
+    cost = None
+    if k == 'done':
+        b = _num(o.get('base_price'), 0)
+        if b > 0:
+            cost = b
+        else:
+            cands = sub_index.get((o.get('product'), o.get('subcategory')), [])
+            pid = str(o.get('api_product_id', '') or '')
+            if len(cands) > 1 and pid:
+                narrowed = [c for c in cands if str(c.get('api_product_id', '')) == pid]
+                if narrowed:
+                    cands = narrowed
+            sub = cands[0] if cands else None
+            qty_c = o.get('quantity', 1)
+            if sub is not None:
+                tmp = dict(sub)
+                if o.get('is_counter'):
+                    tmp['is_counter'] = True
+                cost = inv_cost_for_sub(tmp, qty_c)
+    try:
+        hour = int(str(o.get('time') or '12:00:00')[:2])
+    except ValueError:
+        hour = 12
+    return {
+        'd': d, 'hour': hour, 'k': k, 'price': price, 'cost': cost,
+        'profit': (price - cost) if (cost is not None and k == 'done') else None,
+        'product': o.get('product') or '-', 'sub': o.get('subcategory') or '-',
+        'provider': o.get('provider_name') or '', 'source': o.get('order_source') or 'الموقع',
+        'email': o.get('email') or '-', 'qty': _num(o.get('quantity', 1), 1) or 1,
+    }
+
+
+def _inv_agg(recs, deps, users_dates, start, end):
+    """تجميع فترة [start, end] (شاملة). start/end ممكن None = مفتوح."""
+    def inside(d):
+        return (start is None or d >= start) and (end is None or d <= end)
+    r = {'orders': 0, 'done': 0, 'pending': 0, 'rejected': 0, 'revenue': 0.0, 'cost': 0.0,
+         'profit': 0.0, 'qty': 0.0, 'known_rev': 0.0, 'unknown_orders': 0, 'unknown_rev': 0.0,
+         'pending_amount': 0.0, 'dep_amount': 0.0, 'dep_count': 0, 'new_users': 0}
+    for x in recs:
+        if not inside(x['d']):
+            continue
+        r['orders'] += 1
+        r[x['k']] += 1
+        if x['k'] == 'pending':
+            r['pending_amount'] += x['price']
+        if x['k'] != 'done':
+            continue
+        r['revenue'] += x['price']
+        r['qty'] += x['qty']
+        if x['cost'] is None:
+            r['unknown_orders'] += 1
+            r['unknown_rev'] += x['price']
+        else:
+            r['cost'] += x['cost']
+            r['known_rev'] += x['price']
+            r['profit'] += x['price'] - x['cost']
+    for d, amt in deps:
+        if inside(d):
+            r['dep_amount'] += amt
+            r['dep_count'] += 1
+    for d in users_dates:
+        if inside(d):
+            r['new_users'] += 1
+    r['margin'] = (r['profit'] / r['known_rev'] * 100.0) if r['known_rev'] > 0 else 0.0
+    r['avg_order'] = (r['revenue'] / r['done']) if r['done'] else 0.0
+    for k in ('revenue', 'cost', 'profit', 'qty', 'known_rev', 'unknown_rev', 'pending_amount',
+              'dep_amount', 'margin', 'avg_order'):
+        r[k] = round(r[k], 6)
+    return r
+
+
+# --------------------------------------------------
+# جرد عملائي API: كل الطلبات اللي جت عن طريق الـ API (order_source == "api")
+# + رابط الـ API اللي بيشوفه العملاء (قابل للتغيير من لوحة الأدمن)
+# --------------------------------------------------
+API_CLIENTS_FILE = "api_clients_settings.json"
+API_CLIENTS_SETTINGS = load_json_file(API_CLIENTS_FILE, {})
+if not isinstance(API_CLIENTS_SETTINGS, dict):
+    API_CLIENTS_SETTINGS = {}
+
+
+def normalize_api_base(raw):
+    """يقبل رابط الموقع أو رابط الـ API كامل، ويرجع رابط الموقع الأساسي (أو '' إذا غير صالح)."""
+    raw = str(raw or '').strip()
+    if not raw:
+        return ''
+    if not re.match(r'^https?://', raw, re.I):
+        raw = 'https://' + raw
+    raw = raw.split('?')[0].split('#')[0].rstrip('/')
+    raw = re.sub(r'(?i)/client/api$', '', raw).rstrip('/')
+    try:
+        pu = urllib.parse.urlparse(raw)
+    except Exception:
+        return ''
+    if pu.scheme not in ('http', 'https') or not pu.netloc or raw.count('://') != 1 or re.search(r'\s', raw) or len(raw) > 200:
+        return ''
+    return raw
+
+
+def get_site_base_url():
+    return API_CLIENTS_SETTINGS.get('api_base_url') or SITE_BASE_URL
+
+
+def get_api_public_url():
+    return get_site_base_url() + '/client/api'
+
+
+def _ac_mask(tok):
+    tok = str(tok or '')
+    if len(tok) > 10:
+        return tok[:4] + '••••••••' + tok[-4:]
+    return '••••' if tok else ''
+
+
+def build_api_clients_report(date_from=None, date_to=None, range_key=None):
+    today = datetime.now().date()
+    with DATA_LOCK:
+        orders = list(ORDERS_DATA)
+        users = dict(USERS_DATA)
+        subs = list(SUBCATEGORIES_DATA)
+
+    sub_index = {}
+    for s_ in subs:
+        sub_index.setdefault((s_.get('product'), s_.get('name')), []).append(s_)
+
+    all_recs, api_recs = [], []
+    for o in orders:
+        r = _inv_order_record(o, sub_index)
+        if r is None:
+            continue
+        all_recs.append(r)
+        if str(o.get('order_source') or '').strip().lower() == 'api':
+            r['id'] = o.get('id')
+            r['uuid'] = str(o.get('order_uuid') or '')
+            r['status'] = o.get('status') or 'قيد الانتظار'
+            r['time'] = str(o.get('time') or '')[:8]
+            r['input'] = str(o.get('input') or '')[:60]
+            r['api_order_id'] = str(o.get('api_order_id') or '')
+            api_recs.append(r)
+
+    fr = _inv_date(date_from) if date_from else None
+    to = _inv_date(date_to) if date_to else None
+    if fr and to and fr > to:
+        fr, to = to, fr
+
+    m_start = today.replace(day=1)
+    prev_m_end = m_start - _inv_timedelta(days=1)
+    prev_m_start = prev_m_end.replace(day=1)
+    periods_def = [
+        ('today', 'اليوم', today, today),
+        ('yesterday', 'أمس', today - _inv_timedelta(days=1), today - _inv_timedelta(days=1)),
+        ('week', 'آخر 7 أيام', today - _inv_timedelta(days=6), today),
+        ('prev_week', 'الأسبوع الذي قبله', today - _inv_timedelta(days=13), today - _inv_timedelta(days=7)),
+        ('month', 'هذا الشهر', m_start, today),
+        ('prev_month', 'الشهر الماضي', prev_m_start, prev_m_end),
+        ('last30', 'آخر 30 يوم', today - _inv_timedelta(days=29), today),
+        ('year', 'هذه السنة', today.replace(month=1, day=1), today),
+        ('all', 'الإجمالي', None, None),
+    ]
+
+    def agg(s, e, recs=None):
+        a = _inv_agg(api_recs if recs is None else recs, [], [], s, e)
+        a['success_rate'] = round(a['done'] / a['orders'] * 100.0, 2) if a['orders'] else 0.0
+        return a
+
+    periods = []
+    for key, label, s, e in periods_def:
+        a = agg(s, e)
+        a['key'], a['label'] = key, label
+        periods.append(a)
+
+    if range_key:
+        for key_, _lb, s_, e_ in periods_def:
+            if key_ == range_key:
+                fr, to = s_, e_
+    summary = agg(fr, to)
+    prev = None
+    if fr and to:
+        span = (to - fr).days + 1
+        prev = agg(fr - _inv_timedelta(days=span), fr - _inv_timedelta(days=1))
+    site_sum = _inv_agg(all_recs, [], [], fr, to)
+    summary['site_revenue'] = site_sum['revenue']
+    summary['share_pct'] = round(summary['revenue'] / site_sum['revenue'] * 100.0, 2) if site_sum['revenue'] > 0 else 0.0
+
+    def inside(d):
+        return (fr is None or d >= fr) and (to is None or d <= to)
+
+    sel = [x for x in api_recs if inside(x['d'])]
+    done = [x for x in sel if x['k'] == 'done']
+
+    # قيمة الخصومات الممنوحة لعملاء الـ API (تقدير حسب نسبة الخصم الحالية للعميل)
+    disc_total = 0.0
+    for x in done:
+        dp = _num((users.get(x['email']) or {}).get('discount_percentage', 0))
+        if 0 < dp < 100:
+            disc_total += x['price'] / (1 - dp / 100.0) - x['price']
+    summary['discount_given'] = round(disc_total, 6)
+
+    def group(key_fn, limit=12):
+        g = {}
+        for x in done:
+            kk = key_fn(x)
+            e = g.setdefault(kk, {'name': kk if isinstance(kk, str) else kk[0], 'orders': 0, 'qty': 0.0,
+                                  'revenue': 0.0, 'profit': 0.0, 'known': 0})
+            if not isinstance(kk, str):
+                e['product'] = kk[1]
+            e['orders'] += 1
+            e['qty'] += x['qty']
+            e['revenue'] += x['price']
+            if x['profit'] is not None:
+                e['profit'] += x['profit']
+                e['known'] += 1
+        out = sorted(g.values(), key=lambda v: v['revenue'], reverse=True)[:limit]
+        for v in out:
+            v['qty'] = round(v['qty'], 4)
+            v['revenue'] = round(v['revenue'], 6)
+            v['profit'] = round(v['profit'], 6)
+        return out
+
+    by_product = group(lambda x: x['product'], 15)
+    by_sub = group(lambda x: (x['sub'], x['product']), 15)
+    by_provider = group(lambda x: x['provider'] or 'يدوي / بدون مزود', 10)
+
+    # حالات الطلبات
+    status = {'done': {'count': 0, 'amount': 0.0}, 'pending': {'count': 0, 'amount': 0.0},
+              'rejected': {'count': 0, 'amount': 0.0}}
+    rej_by_product = {}
+    for x in sel:
+        st = status[x['k']]
+        st['count'] += 1
+        st['amount'] += x['price']
+        if x['k'] == 'rejected':
+            rej_by_product[x['product']] = rej_by_product.get(x['product'], 0) + 1
+    for v in status.values():
+        v['amount'] = round(v['amount'], 6)
+    rejected_top = sorted([{'name': k, 'count': v} for k, v in rej_by_product.items()],
+                          key=lambda v: v['count'], reverse=True)[:8]
+
+    # أوقات الذروة
+    by_hour = [{'hour': h, 'orders': 0, 'revenue': 0.0} for h in range(24)]
+    by_wd = [{'wd': i, 'orders': 0, 'revenue': 0.0} for i in range(7)]
+    for x in done:
+        hh = by_hour[max(0, min(23, x['hour']))]
+        hh['orders'] += 1
+        hh['revenue'] += x['price']
+        ww = by_wd[x['d'].weekday()]
+        ww['orders'] += 1
+        ww['revenue'] += x['price']
+    for v in by_hour + by_wd:
+        v['revenue'] = round(v['revenue'], 6)
+
+    # ---- العملاء ----
+    emails = set(e for e, u in users.items() if u.get('api_token') or u.get('api_enabled'))
+    emails |= set(x['email'] for x in api_recs)
+    per_client_all, per_client_sel = {}, {}
+    for x in api_recs:
+        per_client_all.setdefault(x['email'], []).append(x)
+    for x in sel:
+        per_client_sel.setdefault(x['email'], []).append(x)
+
+    clients = []
+    for em in emails:
+        u = users.get(em) or {}
+        allr = per_client_all.get(em, [])
+        selr = per_client_sel.get(em, [])
+        s_done = [x for x in selr if x['k'] == 'done']
+        a_done = [x for x in allr if x['k'] == 'done']
+        rev = sum(x['price'] for x in s_done)
+        prof = sum(x['profit'] for x in s_done if x['profit'] is not None)
+        known_rev = sum(x['price'] for x in s_done if x['profit'] is not None)
+        last = max(allr, key=lambda x: (x['d'], x['time'])) if allr else None
+        first = min(allr, key=lambda x: (x['d'], x['time'])) if allr else None
+        days_since = (today - last['d']).days if last else None
+        if last is None:
+            st_label = 'never'
+        elif days_since <= 7:
+            st_label = 'active'
+        elif days_since <= 30:
+            st_label = 'idle'
+        else:
+            st_label = 'dormant'
+        tp = {}
+        for x in s_done:
+            e = tp.setdefault(x['product'], {'name': x['product'], 'orders': 0, 'revenue': 0.0})
+            e['orders'] += 1
+            e['revenue'] += x['price']
+        top_products = sorted(tp.values(), key=lambda v: v['revenue'], reverse=True)[:3]
+        for v in top_products:
+            v['revenue'] = round(v['revenue'], 6)
+        n_sel = len(selr)
+        clients.append({
+            'email': em, 'id': u.get('id', ''), 'enabled': bool(u.get('api_enabled', False)),
+            'token': _ac_mask(u.get('api_token')), 'has_token': bool(u.get('api_token')),
+            'discount': _num(u.get('discount_percentage', 0)), 'balance': round(_num(u.get('balance', 0)), 6),
+            'join_date': u.get('join_date', ''),
+            'orders': n_sel, 'done': len(s_done),
+            'rejected': sum(1 for x in selr if x['k'] == 'rejected'),
+            'pending': sum(1 for x in selr if x['k'] == 'pending'),
+            'revenue': round(rev, 6), 'profit': round(prof, 6),
+            'margin': round(prof / known_rev * 100.0, 2) if known_rev > 0 else 0.0,
+            'qty': round(sum(x['qty'] for x in s_done), 4),
+            'avg_order': round(rev / len(s_done), 6) if s_done else 0.0,
+            'success_rate': round(len(s_done) / n_sel * 100.0, 1) if n_sel else 0.0,
+            'total_orders': len(allr), 'total_done': len(a_done),
+            'total_spent': round(sum(x['price'] for x in a_done), 6),
+            'last_order': (last['d'].isoformat() + ' ' + last['time']) if last else '',
+            'first_order': first['d'].isoformat() if first else '',
+            'days_since': days_since, 'state': st_label, 'top_products': top_products,
+        })
+    tot_rev = sum(c['revenue'] for c in clients) or 0.0
+    for c in clients:
+        c['share'] = round(c['revenue'] / tot_rev * 100.0, 2) if tot_rev > 0 else 0.0
+    clients.sort(key=lambda c: (c['revenue'], c['total_spent']), reverse=True)
+
+    overview = {
+        'total': len(clients),
+        'enabled': sum(1 for c in clients if c['enabled']),
+        'disabled': sum(1 for c in clients if not c['enabled']),
+        'active': sum(1 for c in clients if c['state'] == 'active'),
+        'idle': sum(1 for c in clients if c['state'] == 'idle'),
+        'dormant': sum(1 for c in clients if c['state'] == 'dormant'),
+        'never': sum(1 for c in clients if c['state'] == 'never'),
+        'with_discount': sum(1 for c in clients if c['discount'] > 0),
+        'avg_discount': round(sum(c['discount'] for c in clients if c['discount'] > 0) /
+                              max(1, sum(1 for c in clients if c['discount'] > 0)), 2),
+        'total_balance': round(sum(c['balance'] for c in clients), 6),
+        'orders_all': len(api_recs),
+        'orders_done_all': sum(1 for x in api_recs if x['k'] == 'done'),
+    }
+
+    # ---- تنبيهات ----
+    loss = [x for x in done if x['profit'] is not None and x['profit'] < 0]
+    loss_list = sorted(loss, key=lambda x: x['profit'])[:10]
+    pend_all = sorted([x for x in api_recs if x['k'] == 'pending'], key=lambda x: (x['d'], x['time']))
+    high_reject = [{'email': c['email'], 'orders': c['orders'], 'rejected': c['rejected'],
+                    'rate': round(c['rejected'] / c['orders'] * 100.0, 1)}
+                   for c in clients if c['orders'] >= 5 and c['rejected'] / c['orders'] >= 0.3]
+
+    def order_row(x):
+        return {'id': x.get('id'), 'uuid': x.get('uuid', ''), 'email': x['email'], 'product': x['product'],
+                'sub': x['sub'], 'qty': x['qty'], 'price': round(x['price'], 6),
+                'cost': None if x['cost'] is None else round(x['cost'], 6),
+                'profit': None if x['profit'] is None else round(x['profit'], 6),
+                'status': x.get('status'), 'k': x['k'], 'date': x['d'].isoformat(), 'time': x.get('time', ''),
+                'input': x.get('input', ''), 'provider': x['provider'], 'api_order_id': x.get('api_order_id', '')}
+
+    alerts = {
+        'loss_count': len(loss), 'loss_total': round(-sum(x['profit'] for x in loss), 6),
+        'loss_list': [order_row(x) for x in loss_list],
+        'pending_count': len(pend_all), 'pending_amount': round(sum(x['price'] for x in pend_all), 6),
+        'pending_list': [dict(order_row(x), age_days=(today - x['d']).days) for x in pend_all[:30]],
+        'high_reject': high_reject[:10],
+    }
+    recent = sorted(sel, key=lambda x: (x['d'], x.get('time', ''), x.get('id') or 0), reverse=True)[:80]
+
+    # ---- سلاسل زمنية ----
+    def series_range(pairs, labels):
+        out = []
+        for (s, e), lb in zip(pairs, labels):
+            a = agg(s, e)
+            out.append({'label': lb, 'revenue': a['revenue'], 'profit': a['profit'],
+                        'orders': a['done'], 'total': a['orders']})
+        return out
+
+    day_pairs, day_labels = [], []
+    for i in range(29, -1, -1):
+        d = today - _inv_timedelta(days=i)
+        day_pairs.append((d, d))
+        day_labels.append(d.strftime("%m-%d"))
+    week_pairs, week_labels = [], []
+    for i in range(11, -1, -1):
+        e = today - _inv_timedelta(days=7 * i)
+        s = e - _inv_timedelta(days=6)
+        week_pairs.append((s, e))
+        week_labels.append(s.strftime("%m-%d"))
+    month_pairs, month_labels = [], []
+    y, m = today.year, today.month
+    ym = []
+    for _ in range(12):
+        ym.append((y, m))
+        m -= 1
+        if m == 0:
+            m, y = 12, y - 1
+    for (yy, mm) in reversed(ym):
+        s = datetime(yy, mm, 1).date()
+        nm = datetime(yy + (1 if mm == 12 else 0), 1 if mm == 12 else mm + 1, 1).date()
+        month_pairs.append((s, nm - _inv_timedelta(days=1)))
+        month_labels.append("%04d-%02d" % (yy, mm))
+    series = {'daily': series_range(day_pairs, day_labels), 'weekly': series_range(week_pairs, week_labels),
+              'monthly': series_range(month_pairs, month_labels)}
+
+    base = get_site_base_url()
+    link = {
+        'base_url': base, 'api_url': base + '/client/api', 'default_base': SITE_BASE_URL,
+        'custom': bool(API_CLIENTS_SETTINGS.get('api_base_url')),
+        'endpoints': [
+            {'m': 'GET', 'name': 'الرصيد والملف', 'path': '/client/api/profile'},
+            {'m': 'GET', 'name': 'المنتجات', 'path': '/client/api/products'},
+            {'m': 'GET', 'name': 'المحتوى', 'path': '/client/api/content/0'},
+            {'m': 'GET', 'name': 'طلب جديد', 'path': '/client/api/newOrder/{id}/params?qty=1&playerId=ID&order_uuid=UUID'},
+            {'m': 'GET', 'name': 'تشييك الطلبات', 'path': '/client/api/check?orders=[ID]'},
+        ],
+    }
+
+    return {
+        'generated': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        'range': {'from': fr.isoformat() if fr else None, 'to': to.isoformat() if to else None},
+        'link': link, 'overview': overview, 'summary': summary, 'prev': prev, 'periods': periods,
+        'series': series, 'clients': clients, 'by_product': by_product, 'by_sub': by_sub,
+        'by_provider': by_provider, 'status': status, 'rejected_top': rejected_top,
+        'by_hour': by_hour, 'by_weekday': by_wd, 'alerts': alerts,
+        'recent': [order_row(x) for x in recent],
+    }
+
+
+def build_inventory_report(date_from=None, date_to=None, range_key=None):
+    today = datetime.now().date()
+    with DATA_LOCK:
+        orders = list(ORDERS_DATA)
+        dep_reqs = list(DEPOSIT_REQUESTS_DATA)
+        users = dict(USERS_DATA)
+        subs = list(SUBCATEGORIES_DATA)
+        prods = list(PRODUCTS_DATA)
+        provs = list(PROVIDERS_DATA)
+
+    sub_index = {}
+    for s_ in subs:
+        sub_index.setdefault((s_.get('product'), s_.get('name')), []).append(s_)
+    recs = [x for x in (_inv_order_record(o, sub_index) for o in orders) if x is not None]
+    deps_ok = []
+    for q in dep_reqs:
+        if q.get('status') == 'مقبول':
+            d = _inv_date(q.get('date'))
+            if d:
+                deps_ok.append((d, _num(q.get('amount', 0))))
+    users_dates = [d for d in (_inv_date(u.get('join_date')) for u in users.values()) if d]
+
+    fr = _inv_date(date_from) if date_from else None
+    to = _inv_date(date_to) if date_to else None
+    if fr and to and fr > to:
+        fr, to = to, fr
+
+    # ---- الجرد الدوري (جدول ثابت) ----
+    m_start = today.replace(day=1)
+    prev_m_end = m_start - _inv_timedelta(days=1)
+    prev_m_start = prev_m_end.replace(day=1)
+    periods_def = [
+        ('today', 'اليوم', today, today),
+        ('yesterday', 'أمس', today - _inv_timedelta(days=1), today - _inv_timedelta(days=1)),
+        ('week', 'آخر 7 أيام', today - _inv_timedelta(days=6), today),
+        ('prev_week', 'الأسبوع الذي قبله', today - _inv_timedelta(days=13), today - _inv_timedelta(days=7)),
+        ('month', 'هذا الشهر', m_start, today),
+        ('prev_month', 'الشهر الماضي', prev_m_start, prev_m_end),
+        ('last30', 'آخر 30 يوم', today - _inv_timedelta(days=29), today),
+        ('year', 'هذه السنة', today.replace(month=1, day=1), today),
+        ('all', 'الإجمالي', None, None),
+    ]
+    periods = []
+    for key, label, s, e in periods_def:
+        a = _inv_agg(recs, deps_ok, users_dates, s, e)
+        a['key'] = key
+        a['label'] = label
+        periods.append(a)
+
+    # ---- الفترة المختارة + المقارنة بما قبلها ----
+    if range_key:
+        for key_, _lb, s_, e_ in periods_def:
+            if key_ == range_key:
+                fr, to = s_, e_
+    summary = _inv_agg(recs, deps_ok, users_dates, fr, to)
+    prev = None
+    if fr and to:
+        span = (to - fr).days + 1
+        prev = _inv_agg(recs, deps_ok, users_dates, fr - _inv_timedelta(days=span), fr - _inv_timedelta(days=1))
+
+    def inside(d):
+        return (fr is None or d >= fr) and (to is None or d <= to)
+
+    sel = [x for x in recs if inside(x['d'])]
+    done = [x for x in sel if x['k'] == 'done']
+
+    def group(key_fn, limit=12):
+        g = {}
+        for x in done:
+            kk = key_fn(x)
+            e = g.setdefault(kk, {'name': kk if isinstance(kk, str) else kk[0], 'orders': 0, 'qty': 0.0,
+                                  'revenue': 0.0, 'profit': 0.0, 'known': 0})
+            e['orders'] += 1
+            e['qty'] += x['qty']
+            e['revenue'] += x['price']
+            if x['profit'] is not None:
+                e['profit'] += x['profit']
+                e['known'] += 1
+        out = sorted(g.values(), key=lambda v: v['revenue'], reverse=True)[:limit]
+        for v in out:
+            v['revenue'] = round(v['revenue'], 6)
+            v['profit'] = round(v['profit'], 6)
+            v['qty'] = round(v['qty'], 4)
+        return out
+
+    by_product = group(lambda x: x['product'], 12)
+    by_provider = group(lambda x: x['provider'] or 'يدوي / بدون مزود', 10)
+    by_source = group(lambda x: x['source'], 10)
+
+    gsub = {}
+    for x in done:
+        kk = (x['product'], x['sub'])
+        e = gsub.setdefault(kk, {'product': x['product'], 'name': x['sub'], 'orders': 0, 'qty': 0.0,
+                                 'revenue': 0.0, 'profit': 0.0})
+        e['orders'] += 1
+        e['qty'] += x['qty']
+        e['revenue'] += x['price']
+        if x['profit'] is not None:
+            e['profit'] += x['profit']
+    by_sub = sorted(gsub.values(), key=lambda v: v['revenue'], reverse=True)[:12]
+    for v in by_sub:
+        v['revenue'] = round(v['revenue'], 6)
+        v['profit'] = round(v['profit'], 6)
+        v['qty'] = round(v['qty'], 4)
+
+    gc = {}
+    for x in done:
+        e = gc.setdefault(x['email'], {'email': x['email'], 'orders': 0, 'spent': 0.0})
+        e['orders'] += 1
+        e['spent'] += x['price']
+    top_customers = sorted(gc.values(), key=lambda v: v['spent'], reverse=True)[:10]
+    for v in top_customers:
+        v['spent'] = round(v['spent'], 6)
+
+    by_hour = [{'h': h, 'orders': 0, 'revenue': 0.0} for h in range(24)]
+    by_wd = [{'wd': w, 'orders': 0, 'revenue': 0.0} for w in range(7)]
+    for x in done:
+        hh = by_hour[x['hour'] if 0 <= x['hour'] < 24 else 0]
+        hh['orders'] += 1
+        hh['revenue'] += x['price']
+        ww = by_wd[x['d'].weekday()]
+        ww['orders'] += 1
+        ww['revenue'] += x['price']
+    for v in by_hour + by_wd:
+        v['revenue'] = round(v['revenue'], 6)
+
+    # ---- سلاسل زمنية ----
+    def series_range(starts_ends, labels):
+        out = []
+        for (s, e), lb in zip(starts_ends, labels):
+            a = _inv_agg(recs, deps_ok, users_dates, s, e)
+            out.append({'label': lb, 'revenue': a['revenue'], 'profit': a['profit'],
+                        'orders': a['done'], 'dep': a['dep_amount']})
+        return out
+
+    day_pairs, day_labels = [], []
+    for i in range(29, -1, -1):
+        d = today - _inv_timedelta(days=i)
+        day_pairs.append((d, d))
+        day_labels.append(d.strftime("%m-%d"))
+    week_pairs, week_labels = [], []
+    for i in range(11, -1, -1):
+        e = today - _inv_timedelta(days=7 * i)
+        s = e - _inv_timedelta(days=6)
+        week_pairs.append((s, e))
+        week_labels.append(s.strftime("%m-%d"))
+    month_pairs, month_labels = [], []
+    y, m = today.year, today.month
+    ym = []
+    for _ in range(12):
+        ym.append((y, m))
+        m -= 1
+        if m == 0:
+            m = 12
+            y -= 1
+    for (yy, mm) in reversed(ym):
+        s = datetime(yy, mm, 1).date()
+        nm = datetime(yy + (1 if mm == 12 else 0), 1 if mm == 12 else mm + 1, 1).date()
+        month_pairs.append((s, nm - _inv_timedelta(days=1)))
+        month_labels.append("%04d-%02d" % (yy, mm))
+    series = {
+        'daily': series_range(day_pairs, day_labels),
+        'weekly': series_range(week_pairs, week_labels),
+        'monthly': series_range(month_pairs, month_labels),
+    }
+
+    # ---- جرد الإيداعات ----
+    dep_status = {'accepted': {'count': 0, 'amount': 0.0}, 'pending': {'count': 0, 'amount': 0.0},
+                  'rejected': {'count': 0, 'amount': 0.0}}
+    dep_methods = {}
+    for q in dep_reqs:
+        d = _inv_date(q.get('date'))
+        if d is None or not inside(d):
+            continue
+        st = q.get('status')
+        key = 'accepted' if st == 'مقبول' else ('rejected' if st == 'مرفوض' else 'pending')
+        amt = _num(q.get('amount', 0))
+        dep_status[key]['count'] += 1
+        dep_status[key]['amount'] += amt
+        if key == 'accepted':
+            e = dep_methods.setdefault(q.get('method_name') or '-', {'name': q.get('method_name') or '-',
+                                                                      'count': 0, 'amount': 0.0})
+            e['count'] += 1
+            e['amount'] += amt
+    for v in dep_status.values():
+        v['amount'] = round(v['amount'], 6)
+    dep_methods = sorted(dep_methods.values(), key=lambda v: v['amount'], reverse=True)[:10]
+    for v in dep_methods:
+        v['amount'] = round(v['amount'], 6)
+
+    # ---- العملاء ----
+    total_balance = sum(_num(u.get('balance', 0)) for u in users.values())
+    top_balances = sorted(
+        [{'email': e, 'balance': round(_num(u.get('balance', 0)), 6)} for e, u in users.items()],
+        key=lambda v: v['balance'], reverse=True)[:5]
+    active_customers = len(set(x['email'] for x in done))
+
+    # ---- جرد الكتالوج ----
+    sold_keys = set((x['product'], x['sub']) for x in done)
+    api_linked = [s for s in subs if s.get('api_product_id')]
+    counters = [s for s in subs if s.get('is_counter')]
+    stagnant = [{'product': s.get('product') or '-', 'name': s.get('name') or '-'}
+                for s in subs if (s.get('product'), s.get('name')) not in sold_keys]
+    low_margin = []
+    for s in api_linked:
+        bp = _num(s.get('base_price'), 0)
+        if bp <= 0:
+            continue
+        if s.get('is_counter'):
+            sell = counter_unit_price(s)
+        else:
+            sell = _num(s.get('price', 0))
+        if sell <= bp:
+            low_margin.append({'product': s.get('product') or '-', 'name': s.get('name') or '-',
+                               'sell': round(sell, 6), 'cost': round(bp, 6)})
+    catalog = {
+        'products': len(prods), 'subcategories': len(subs), 'api_linked': len(api_linked),
+        'manual': len(subs) - len(api_linked), 'counters': len(counters), 'providers': len(provs),
+        'stagnant_count': len(stagnant), 'stagnant': stagnant[:15],
+        'low_margin_count': len(low_margin), 'low_margin': low_margin[:15],
+    }
+
+    return {
+        'generated': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        'range': {'from': fr.isoformat() if fr else None, 'to': to.isoformat() if to else None},
+        'summary': summary, 'prev': prev, 'periods': periods, 'series': series,
+        'by_product': by_product, 'by_sub': by_sub, 'by_provider': by_provider, 'by_source': by_source,
+        'top_customers': top_customers, 'by_hour': by_hour, 'by_weekday': by_wd,
+        'deposits': {'status': dep_status, 'methods': dep_methods},
+        'users': {'total': len(users), 'total_balance': round(total_balance, 6),
+                  'active': active_customers, 'top_balances': top_balances},
+        'catalog': catalog,
+    }
+
+
+
+
+# --------------------------------------------------
 # منطق الشراء المشترك (الموقع + بوت التلغرام)
 # السعر يُحسب دائماً على السيرفر ولا يُصدَّق السعر القادم من المتصفح
 # --------------------------------------------------
@@ -13166,9 +19417,36 @@ def sub_total_price(sub, quantity):
     return True, "", 1, round(_num(sub.get('price', 0)), PRICE_DECIMALS)
 
 
+def normalize_extra_params(sub, extra_params):
+    """يتحقق من متطلبات الشراء الإضافية (من الثاني وطالع) ويرجعها [{label, value}].
+    الأول دائماً playerId. يرجع (ok, رسالة, القائمة)."""
+    labels = [str(x).strip() for x in (sub.get('api_params') or []) if str(x).strip()]
+    wanted = labels[1:]
+    given = {}
+    if isinstance(extra_params, list):
+        for it in extra_params:
+            if isinstance(it, dict):
+                given[str(it.get('label', '')).strip()] = str(it.get('value', '')).strip()
+    elif isinstance(extra_params, dict):
+        given = {str(k).strip(): str(v).strip() for k, v in extra_params.items()}
+    out = []
+    for lb in wanted:
+        val = given.get(lb, '')
+        if not val:
+            return False, f"يرجى إدخال: {lb}", []
+        out.append({"label": lb, "value": val[:200]})
+    return True, "", out
+
+
+def build_extra_query(extra_list):
+    """يحوّل المتطلبات الإضافية لجزء من رابط الـ API (الاسم = نص المتطلب كما هو من المزود)."""
+    return ''.join(f"&{urllib.parse.quote(e['label'], safe='')}={urllib.parse.quote(e['value'], safe='')}"
+                   for e in extra_list)
+
+
 def process_site_purchase(email, product_name, sub_name, quantity, player_input,
                           client_api_product_id='', client_price=None,
-                          user_ip='غير معروف', order_source="الموقع"):
+                          user_ip='غير معروف', order_source="الموقع", extra_params=None):
     if email not in USERS_DATA:
         return {"status": "error", "message": "المستخدم غير موجود!"}
 
@@ -13179,6 +19457,14 @@ def process_site_purchase(email, product_name, sub_name, quantity, player_input,
     ok, msg, quantity, price = sub_total_price(sub, quantity)
     if not ok:
         return {"status": "error", "message": msg}
+
+    ok, msg, extra_list = normalize_extra_params(sub, extra_params)
+    if not ok:
+        return {"status": "error", "message": msg}
+    # النص الظاهر بالطلب والإشعارات: الأول + باقي المتطلبات بأسمائها
+    player_input_raw = player_input
+    if extra_list:
+        player_input = ' | '.join([str(player_input_raw or '')] + [f"{e['label']}: {e['value']}" for e in extra_list])
 
     provider_name = sub.get('provider_name', '') or ''
     api_product_id = sub.get('api_product_id', '') or ''
@@ -13196,20 +19482,23 @@ def process_site_purchase(email, product_name, sub_name, quantity, player_input,
     order_uuid_val = str(uuid.uuid4())
     order_status = "قيد الانتظار"
     system_response = "تم تسجيل الطلب في انتظار القبول"
+    api_replay = None
 
     if api_product_id and PROVIDERS_DATA:
         provider = next((p for p in PROVIDERS_DATA if p.get('name') == provider_name), PROVIDERS_DATA[0])
         token = provider.get('token')
         base_url = provider.get('url', '').rstrip('/') + '/'
-        player_id_input = urllib.parse.quote(str(player_input or ''))
+        player_id_input = urllib.parse.quote(str(player_input_raw or ''))
         order_api_url = (f"{base_url}client/api/newOrder/{api_product_id}/params"
-                         f"?qty={quantity}&playerId={player_id_input}&order_uuid={order_uuid_val}")
+                         f"?qty={quantity}&playerId={player_id_input}&order_uuid={order_uuid_val}"
+                         f"{build_extra_query(extra_list)}")
         try:
             api_res = make_api_request(order_api_url, token)
             if api_res.get('status') == "OK":
                 res_data = api_res.get('data', {})
                 st = res_data.get('status')
                 system_response = f"API OK - Status: {st} - Qty: {quantity}"
+                api_replay = res_data.get('replay_api')
                 if st == 'accept':
                     order_status = "مكتملة"
                 elif st == 'reject':
@@ -13241,6 +19530,7 @@ def process_site_purchase(email, product_name, sub_name, quantity, player_input,
             "subcategory": sub_name,
             "price": price,
             "input": player_input,
+            "extra_params": extra_list,
             "provider_name": provider_name,
             "api_product_id": api_product_id,
             "status": order_status,
@@ -13248,8 +19538,13 @@ def process_site_purchase(email, product_name, sub_name, quantity, player_input,
             "time": now.strftime("%H:%M:%S"),
             "quantity": quantity,
             "is_counter": is_counter,
-            "order_source": order_source
+            "order_source": order_source,
+            "base_price": inv_cost_for_sub(sub, quantity)
         }
+        if api_replay:
+            order['replay_api'] = api_replay
+        if order_status in ("مكتملة", "مرفوضة"):
+            order['completed_at'] = now.strftime("%Y-%m-%d %H:%M:%S")
         ORDERS_DATA.append(order)
         save_json_file(ORDERS_FILE, ORDERS_DATA)
 
@@ -13544,10 +19839,1143 @@ def ims_edit_subsection(data):
 
 MAX_POST_BYTES = 90 * 1024 * 1024   # أكبر طلب مسموح (فيديو 60MB يصير ~80MB بعد base64)
 IMAGE_FILE_PATHS = {"/api/update_category", "/api/add_category", "/api/add_product", "/api/add_subcategory",
-                    "/api/add_subcategory_group", "/api/update_subcategory_group", "/api/add_deposit_method",
+                    "/api/add_subcategory_group", "/api/update_subcategory_group", "/api/add_deposit_method", "/api/auto_deposit_save",
                     "/api/edit_imported_section", "/api/edit_imported_subsection", "/api/import_api_category_full"}
 MAX_IMAGE_CHARS = 1500000           # أكبر صورة قسم (نص base64) ~1.1MB
 POST_LOCK = threading.RLock()   # يسلسل عمليات الكتابة (POST) حتى ما يصير تضارب بالأرصدة والبيانات
+
+
+
+# ==================================================
+# الإيداع التلقائي (ShamCash API)
+# ==================================================
+import hmac
+import urllib.error
+from decimal import Decimal, InvalidOperation
+from datetime import timedelta
+
+AUTO_DEPOSIT_FILE = "auto_deposit_methods.json"
+AUTO_DEPOSIT_USED_FILE = "auto_deposit_used_tx.json"
+SHAMCASH_API_BASE = "https://api.shamcash-api.com/v1"
+AUTO_DEPOSIT_KINDS = {
+    "usd": {"title": "شام كاش دولار", "currency": "USD", "label": "دولار"},
+    "syp": {"title": "شام كاش سوري", "currency": "SYP", "label": "ليرة سورية"},
+}
+# اختياري: لو عرفت coin_id الحقيقي لكل عملة بالـ API حطو هون. إذا فاضي بيتكشف تلقائياً من /balances
+SHAMCASH_COIN_IDS = {"USD": None, "SYP": None}
+AUTO_DEPOSIT_MAX_AGE_DAYS = 30   # أقدم عملية مقبولة
+
+AUTO_DEPOSIT_DATA = load_json_file(AUTO_DEPOSIT_FILE, {})
+AUTO_DEPOSIT_USED = load_json_file(AUTO_DEPOSIT_USED_FILE, {})   # رقم العملية -> بياناتها (يستخدم مرة وحدة فقط)
+AUTO_DEPOSIT_PENDING = set()
+AUTO_DEPOSIT_LOCK = threading.Lock()
+AUTO_DEPOSIT_FAILS = {}
+
+
+def _auto_dep_cfg(kind):
+    base = {"api_token": "", "name": "", "exchange_rate": 1, "address": "",
+            "image": "", "description": "", "enabled": False}
+    saved = AUTO_DEPOSIT_DATA.get(kind)
+    if isinstance(saved, dict):
+        base.update(saved)
+    if not str(base.get("name") or "").strip():
+        base["name"] = AUTO_DEPOSIT_KINDS[kind]["title"]
+    return base
+
+
+def auto_deposit_public_methods():
+    """الطرق المفعّلة كما تظهر للمستخدم (بدون التوكن أبداً)."""
+    out = []
+    for kind, meta in AUTO_DEPOSIT_KINDS.items():
+        c = _auto_dep_cfg(kind)
+        if c.get("enabled") and c.get("api_token"):
+            out.append({
+                "name": c["name"], "description": c.get("description", ""),
+                "exchange_rate": c.get("exchange_rate", 1), "image": c.get("image", ""),
+                "payment_codes": c.get("address", ""), "auto": True, "auto_key": kind,
+                "currency_label": meta["label"],
+            })
+    return out
+
+
+def _auto_admin_view():
+    out = []
+    for kind, meta in AUTO_DEPOSIT_KINDS.items():
+        c = _auto_dep_cfg(kind)
+        tok = str(c.get("api_token") or "")
+        out.append({
+            "kind": kind, "default_title": meta["title"], "name": c["name"],
+            "custom_name": str((AUTO_DEPOSIT_DATA.get(kind) or {}).get("name") or ""),
+            "exchange_rate": c.get("exchange_rate", 1), "address": c.get("address", ""),
+            "image": c.get("image", ""), "description": c.get("description", ""),
+            "enabled": bool(c.get("enabled")), "has_token": bool(tok),
+            "token_hint": tok[-4:] if len(tok) >= 8 else "",
+        })
+    return out
+
+
+# --------------------------------------------------
+# الأدمنية: حسابات مشرفين بصلاحيات (التحقق كله من السيرفر)
+# --------------------------------------------------
+ADMIN_PERM_CATALOG = [
+    ("stats", "الإحصائيات", "أرقام لوحة القيادة (عدد العملاء والطلبات والأرصدة)"),
+    ("orders", "الطلبات", "عرض الطلبات وقبولها أو رفضها وتشييكها"),
+    ("deposits", "الإيداعات", "قبول/رفض الإيداعات وطرق الإيداع والإيداع التلقائي والعملات"),
+    ("balance", "الأرصدة", "شحن وخصم رصيد المستخدمين"),
+    ("clients", "العملاء", "قائمة العملاء وكشف عميل والخصومات وتفعيل الـ API"),
+    ("products", "المنتجات والأقسام", "إضافة وحذف وتعديل الأقسام والفئات والمنتجات والجرد"),
+    ("api", "إدارة API", "المزودات وسحب الأقسام ونسبة الربح"),
+    ("design", "الشكل والصور", "البنرات والصور والشعار والمظهر والشريط العلوي"),
+    ("settings", "إعدادات الموقع", "من نحن والدعم ووضع الصيانة والإذاعة"),
+]
+ADMIN_PERM_KEYS = [p[0] for p in ADMIN_PERM_CATALOG]
+ADMIN_SESSION_TTL = 12 * 3600
+ADMIN_LOG_MAX = 400
+ADMIN_SESSIONS = {}
+_ADMIN_SESS_LOCK = threading.Lock()
+_ADMIN_FAILS = {}
+
+# كل مسار إداري ← الصلاحية المطلوبة (tuple = أي وحدة منها تكفي، "owner" = للمدير فقط)
+ADMIN_PATH_PERMS = {
+    # GET
+    "/api/admin_stats": "stats",
+    "/api/inventory_report": "products",
+    "/api/api_clients_inventory": "api",
+    "/api/get_deposit_requests": "deposits",
+    "/api/get_all_orders": "orders",
+    "/api/imported_sections": ("products", "api"),
+    "/api/imported_subsections": ("products", "api"),
+    "/api/import_progress": ("api", "products"),
+    "/api/get_providers": ("api", "products"),
+    "/api/get_all_clients": ("clients", "balance"),
+    "/api/get_client_detail": ("clients", "balance"),
+    "/api/admin_accounts": "owner",
+    "/api/admin_activity_log": "owner",
+    # POST
+    "/api/api_clients_save_url": "api",
+    "/api/toggle_maintenance": "settings",
+    "/api/update_announcement": "settings",
+    "/api/update_about_us": "settings",
+    "/api/update_support_settings": "settings",
+    "/api/update_logo_settings": "design",
+    "/api/update_google_settings": "settings",
+    "/api/update_banner_shine": "design",
+    "/api/update_ticker_settings": "design",
+    "/api/update_appearance_settings": "design",
+    "/api/add_banner": "design",
+    "/api/delete_banner": "design",
+    "/api/add_category_banner": "design",
+    "/api/delete_category_banner": "design",
+    "/api/update_splash": "design",
+    "/api/update_category": ("design", "products"),
+    "/api/add_currency": "deposits",
+    "/api/delete_currency": "deposits",
+    "/api/apply_profit_margin": "api",
+    "/api/verify_product_id": ("api", "products"),
+    "/api/add_provider": "api",
+    "/api/get_provider_profile": ("api", "products"),
+    "/api/get_provider_products": ("api", "products"),
+    "/api/fetch_api_categories": "api",
+    "/api/import_api_category_full": "api",
+    "/api/cancel_api_import": "api",
+    "/api/edit_imported_section": "products",
+    "/api/edit_imported_subsection": "products",
+    "/api/ims_set_order": "products",
+    "/api/set_client_discount": "clients",
+    "/api/remove_client_discount": "clients",
+    "/api/inspect_client": "clients",
+    "/api/toggle_user_api": "clients",
+    "/api/process_product_order": "orders",
+    "/api/process_deposit_request": "deposits",
+    "/api/add_deposit_method": "deposits",
+    "/api/delete_deposit_method": "deposits",
+    "/api/auto_deposit_admin_list": "deposits",
+    "/api/auto_deposit_save": "deposits",
+    "/api/auto_deposit_toggle": "deposits",
+    "/api/auto_deposit_history": "deposits",
+    "/api/tg_notify_get": "settings",
+    "/api/tg_notify_save": "settings",
+    "/api/tg_notify_test": "settings",
+    "/api/manage_balance": "balance",
+    "/api/add_category": "products",
+    "/api/delete_category": "products",
+    "/api/add_product": "products",
+    "/api/add_subcategory": "products",
+    "/api/add_subcategory_group": "products",
+    "/api/update_subcategory_group": "products",
+    "/api/delete_subcategory_group": "products",
+    "/api/delete_subcategory": "products",
+    "/api/delete_multiple_subcategories": "products",
+    "/api/delete_product": "products",
+    "/api/delete_multiple_products": "products",
+    "/api/admin_account_save": "owner",
+    "/api/admin_account_delete": "owner",
+    "/api/export_xlsx": ("orders", "clients", "stats", "products"),
+}
+
+ADMIN_ACTION_LABELS = {
+    "/api/toggle_maintenance": "تغيير وضع الصيانة",
+    "/api/update_announcement": "تعديل الإذاعة",
+    "/api/update_about_us": "تعديل من نحن",
+    "/api/update_support_settings": "تعديل إعدادات الدعم",
+    "/api/update_logo_settings": "تعديل اللوغو",
+    "/api/update_google_settings": "ضبط تسجيل جوجل",
+    "/api/update_banner_shine": "تعديل لمعان البنر",
+    "/api/update_ticker_settings": "تعديل الشريط العلوي",
+    "/api/update_appearance_settings": "تعديل المظهر",
+    "/api/add_banner": "إضافة بنر",
+    "/api/delete_banner": "حذف بنر",
+    "/api/add_category_banner": "إضافة بنر لقسم",
+    "/api/delete_category_banner": "حذف بنر قسم",
+    "/api/update_splash": "تعديل الشاشة الترحيبية",
+    "/api/update_category": "تعديل قسم",
+    "/api/add_currency": "إضافة عملة",
+    "/api/delete_currency": "حذف عملة",
+    "/api/apply_profit_margin": "تطبيق نسبة ربح",
+    "/api/add_provider": "إضافة مزوّد API",
+    "/api/import_api_category_full": "سحب قسم من API",
+    "/api/cancel_api_import": "إلغاء سحب API",
+    "/api/edit_imported_section": "تعديل قسم مسحوب",
+    "/api/edit_imported_subsection": "تعديل قسم فرعي مسحوب",
+    "/api/ims_set_order": "ترتيب الأقسام المسحوبة",
+    "/api/set_client_discount": "إضافة خصم لعميل",
+    "/api/remove_client_discount": "إزالة خصم عميل",
+    "/api/toggle_user_api": "تفعيل/إيقاف API لعميل",
+    "/api/process_product_order": "معالجة طلب",
+    "/api/process_deposit_request": "معالجة إيداع",
+    "/api/add_deposit_method": "إضافة طريقة إيداع",
+    "/api/delete_deposit_method": "حذف طريقة إيداع",
+    "/api/auto_deposit_save": "حفظ إعدادات إيداع تلقائي",
+    "/api/auto_deposit_toggle": "تفعيل/إيقاف إيداع تلقائي",
+    "/api/tg_notify_save": "حفظ إعدادات الإشعارات",
+    "/api/manage_balance": "تعديل رصيد مستخدم",
+    "/api/add_category": "إضافة قسم",
+    "/api/delete_category": "حذف قسم",
+    "/api/add_product": "إضافة منتج",
+    "/api/add_subcategory": "إضافة فئة",
+    "/api/add_subcategory_group": "إضافة مجموعة فرعية",
+    "/api/update_subcategory_group": "تعديل مجموعة فرعية",
+    "/api/delete_subcategory_group": "حذف مجموعة فرعية",
+    "/api/delete_subcategory": "حذف فئة",
+    "/api/delete_multiple_subcategories": "حذف عدة فئات",
+    "/api/delete_product": "حذف منتج",
+    "/api/delete_multiple_products": "حذف عدة منتجات",
+    "/api/admin_account_save": "حفظ حساب أدمن",
+    "/api/admin_account_delete": "حذف حساب أدمن",
+}
+
+
+def _admin_pw_hash(password, salt_hex=None):
+    salt = bytes.fromhex(salt_hex) if salt_hex else os.urandom(16)
+    h = hashlib.pbkdf2_hmac("sha256", str(password).encode("utf-8"), salt, 100000)
+    return salt.hex(), h.hex()
+
+
+def _find_subadmin(aid):
+    for a in SUBADMINS_DATA["admins"]:
+        if a.get("id") == aid:
+            return a
+    return None
+
+
+def _find_subadmin_by_email(email):
+    for a in SUBADMINS_DATA["admins"]:
+        if str(a.get("email", "")).lower() == email:
+            return a
+    return None
+
+
+def _admin_public(a):
+    return {
+        "id": a.get("id"), "name": a.get("name"), "email": a.get("email"),
+        "perms": [p for p in a.get("perms", []) if p in ADMIN_PERM_KEYS],
+        "active": bool(a.get("active", True)),
+        "created": a.get("created", 0), "last_login": a.get("last_login", 0),
+    }
+
+
+def _owner_creds_ok(data):
+    try:
+        e = str(data.get("admin_email", "")).encode("utf-8")
+        p = str(data.get("admin_password", "")).encode("utf-8")
+        return hmac.compare_digest(e, ADMIN_EMAIL.encode("utf-8")) and hmac.compare_digest(p, ADMIN_PASSWORD.encode("utf-8"))
+    except Exception:
+        return False
+
+
+def _admin_purge_sessions(aid):
+    with _ADMIN_SESS_LOCK:
+        for t in [t for t, v in ADMIN_SESSIONS.items() if v.get("aid") == aid]:
+            ADMIN_SESSIONS.pop(t, None)
+
+
+def admin_session_get(token):
+    """يرجّع سياق الأدمن (دور + صلاحيات حيّة من الملف) أو None إذا الجلسة غير صالحة."""
+    if not token:
+        return None
+    now = time.time()
+    with _ADMIN_SESS_LOCK:
+        ss = ADMIN_SESSIONS.get(token)
+        if not ss:
+            return None
+        if ss["exp"] < now:
+            ADMIN_SESSIONS.pop(token, None)
+            return None
+        if ss["role"] == "owner":
+            ctx = {"role": "owner", "aid": "owner", "name": "المدير", "perms": list(ADMIN_PERM_KEYS)}
+        else:
+            acc = _find_subadmin(ss["aid"])
+            if not acc or not acc.get("active", True):
+                ADMIN_SESSIONS.pop(token, None)
+                return None
+            ctx = {"role": "sub", "aid": acc["id"], "name": acc.get("name", ""),
+                   "perms": [p for p in acc.get("perms", []) if p in ADMIN_PERM_KEYS]}
+        ss["exp"] = now + ADMIN_SESSION_TTL
+        return ctx
+
+
+# ==================== تسجيل الدخول بواسطة جوجل ====================
+GOOGLE_CLIENT_ID_ENV = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
+
+
+def get_google_client_id():
+    return GOOGLE_CLIENT_ID_ENV or str(SETTINGS_DATA.get("google_client_id", "") or "").strip()
+
+
+def _google_get_json(url, bearer=None):
+    req = urllib.request.Request(url, headers={"Authorization": "Bearer " + bearer} if bearer else {})
+    with urllib.request.urlopen(req, timeout=8) as res:
+        return json.loads(res.read().decode("utf-8"))
+
+
+def google_verify_access_token(access_token, client_id):
+    """يتحقق من توكن جوجل عند جوجل نفسها ويتأكد انه صادر لموقعنا (aud). يرجّع {email,name} أو None."""
+    try:
+        info = _google_get_json("https://oauth2.googleapis.com/tokeninfo?access_token=" + urllib.parse.quote(access_token, safe=""))
+        if (info.get("aud") or info.get("azp")) != client_id:
+            logging.warning("google_login: aud mismatch")
+            return None
+        email = str(info.get("email") or "")
+        verified = str(info.get("email_verified", "")).lower() == "true"
+        name = ""
+        if not email:
+            ui = _google_get_json("https://www.googleapis.com/oauth2/v3/userinfo", bearer=access_token)
+            email = str(ui.get("email") or "")
+            verified = bool(ui.get("email_verified"))
+            name = str(ui.get("name") or "")
+        if not email or not verified:
+            return None
+        return {"email": email.strip().lower(), "name": name}
+    except Exception as e:
+        logging.error("google_verify_access_token: %s" % e)
+        return None
+
+
+def google_login_process(d, user_ip):
+    cid = get_google_client_id()
+    if not cid:
+        return {"status": "error", "message": "تسجيل الدخول عبر جوجل غير مفعّل حالياً"}
+    token = str(d.get("access_token") or "")[:4096]
+    if not token:
+        return {"status": "error", "message": "تعذر قراءة بيانات جوجل"}
+    info = google_verify_access_token(token, cid)  # اتصال شبكة: خارج القفل
+    if not info:
+        return {"status": "error", "message": "تعذر التحقق من حساب جوجل"}
+    email = info["email"]
+    created = False
+    with POST_LOCK:
+        key = next((k for k in USERS_DATA if str(k).lower() == email), None)
+        if key is None:
+            key = email
+            created = True
+            USERS_DATA[key] = {
+                "id": 1000 + len(USERS_DATA) + 1,
+                "phone": "0000000000",
+                "password": secrets.token_urlsafe(16),
+                "auth_provider": "google",
+                "balance": 0,
+                "profile_completed": False,
+                "api_enabled": False,
+                "api_token": generate_api_token(),
+                "currency_name": "USD",
+                "currency_symbol": "$",
+                "currency_rate": 1,
+                "discount_percentage": 0,
+                "join_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+            save_json_file(USERS_FILE, USERS_DATA)
+        u = USERS_DATA[key]
+        out = {"status": "success", "email": key, "balance": round(float(u.get("balance", 0)), 10),
+               "user_id": u.get("id", 1001), "profile_completed": bool(u.get("profile_completed", False)),
+               "new_user": created}
+    if created:
+        try:
+            send_telegram_new_user_notification(email=key, password="تسجيل بواسطة Google", phone="لم يتم إدخاله بعد",
+                                                user_ip=user_ip, currency_name="USD", currency_symbol="$", currency_rate=1)
+        except Exception as e:
+            logging.error("google_login notify: %s" % e)
+    return out
+
+
+_ADMIN_AUTO_FAILS = {}  # محاولات الدخول التلقائي الفاشلة (عدّاد منفصل حتى ما يقفل الدخول اليدوي)
+
+
+def admin_login_check(email, password, ip, auto=False):
+    now = time.time()
+    rec = _ADMIN_FAILS.get(ip)
+    if rec and now - rec[1] < 600 and rec[0] >= 8:
+        return {"status": "error", "message": "محاولات كتيرة غلط، جرّب بعد شوي"}
+    arec = _ADMIN_AUTO_FAILS.get(ip)
+    if auto and arec and now - arec[1] < 600 and arec[0] >= 30:
+        return {"status": "error", "message": "محاولات كتيرة غلط، جرّب بعد شوي"}
+    email = str(email or "").strip().lower()
+    password = str(password or "")
+    role, acc, paused = None, None, False
+    owner_ok = hmac.compare_digest(email.encode("utf-8"), ADMIN_EMAIL.lower().encode("utf-8")) and \
+        hmac.compare_digest(password.encode("utf-8"), ADMIN_PASSWORD.encode("utf-8"))
+    if owner_ok:
+        role = "owner"
+    else:
+        acc = _find_subadmin_by_email(email)
+        _, h = _admin_pw_hash(password, acc.get("salt") if acc else "00" * 16)
+        if acc and hmac.compare_digest(h, str(acc.get("hash", ""))):
+            if acc.get("active", True):
+                role = "sub"
+            else:
+                paused = True
+    if role is None:
+        if auto:
+            if arec and now - arec[1] < 600:
+                arec[0] += 1
+            else:
+                _ADMIN_AUTO_FAILS[ip] = [1, now]
+        elif rec and now - rec[1] < 600:
+            rec[0] += 1
+        else:
+            _ADMIN_FAILS[ip] = [1, now]
+        return {"status": "error", "message": "هذا الحساب موقوف، تواصل مع المدير" if paused else "البريد الإلكتروني أو كلمة السر غير صحيحة!"}
+    _ADMIN_FAILS.pop(ip, None)
+    _ADMIN_AUTO_FAILS.pop(ip, None)
+    token = secrets.token_urlsafe(32)
+    with _ADMIN_SESS_LOCK:
+        for t in [t for t, v in ADMIN_SESSIONS.items() if v["exp"] < now]:
+            ADMIN_SESSIONS.pop(t, None)
+        ADMIN_SESSIONS[token] = {"role": role, "aid": "owner" if role == "owner" else acc["id"], "exp": now + ADMIN_SESSION_TTL}
+    if role == "sub":
+        acc["last_login"] = int(now)
+        save_json_file(SUBADMINS_FILE, SUBADMINS_DATA)
+        perms = [p for p in acc.get("perms", []) if p in ADMIN_PERM_KEYS]
+        name = acc.get("name", "")
+    else:
+        perms, name = list(ADMIN_PERM_KEYS), "المدير"
+    return {"status": "success", "token": token, "role": role, "name": name, "perms": perms}
+
+
+def admin_log_add(ctx, label, detail=""):
+    try:
+        ADMIN_LOG_DATA.append({"t": int(time.time()), "who": ctx.get("name", ""), "role": ctx.get("role", ""),
+                               "act": label, "d": str(detail or "")[:160]})
+        del ADMIN_LOG_DATA[:-ADMIN_LOG_MAX]
+        save_json_file(ADMIN_LOG_FILE, ADMIN_LOG_DATA)
+    except Exception as e:
+        logging.error("admin_log_add: %s" % e)
+
+
+def _admin_action_detail(path, d):
+    try:
+        if path == "/api/manage_balance":
+            return ("شحن" if d.get("action") == "add" else "خصم") + " %s$ - %s" % (d.get("amount"), d.get("email"))
+        if path in ("/api/process_deposit_request", "/api/process_product_order"):
+            return "%s #%s" % ("قبول" if d.get("action") == "accept" else "رفض", d.get("id"))
+        if path in ("/api/set_client_discount", "/api/remove_client_discount", "/api/toggle_user_api"):
+            return str(d.get("email") or "")
+        if path == "/api/admin_account_save":
+            return str(d.get("email") or d.get("name") or "")
+    except Exception:
+        pass
+    return ""
+
+
+def admin_accounts_payload():
+    return {
+        "status": "success",
+        "admins": [_admin_public(a) for a in SUBADMINS_DATA["admins"]],
+        "perms": [{"key": k, "label": l, "desc": dsc} for k, l, dsc in ADMIN_PERM_CATALOG],
+        "log": list(reversed(ADMIN_LOG_DATA[-80:])),
+    }
+
+
+def admin_account_save(d):
+    aid = str(d.get("id") or "").strip()
+    acc = _find_subadmin(aid) if aid else None
+    if aid and not acc:
+        return {"status": "error", "message": "الحساب غير موجود"}
+    new = acc is None
+    name = acc.get("name") if acc else ""
+    email = acc.get("email") if acc else ""
+    if new or "name" in d:
+        name = str(d.get("name") or "").strip()
+        if len(name) < 2 or len(name) > 40:
+            return {"status": "error", "message": "اكتب اسم من حرفين إلى 40 حرف"}
+    if new or "email" in d:
+        email = str(d.get("email") or "").strip().lower()
+        if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email) or len(email) > 120:
+            return {"status": "error", "message": "الإيميل غير صحيح"}
+        if email == ADMIN_EMAIL.lower():
+            return {"status": "error", "message": "هذا الإيميل محجوز للمدير"}
+        for a in SUBADMINS_DATA["admins"]:
+            if a is not acc and str(a.get("email", "")).lower() == email:
+                return {"status": "error", "message": "هذا الإيميل مستخدم لأدمن ثاني"}
+    password = str(d.get("password") or "")
+    if new and len(password) < 6:
+        return {"status": "error", "message": "كلمة السر لازم 6 أحرف أو أكثر"}
+    if password and len(password) < 6:
+        return {"status": "error", "message": "كلمة السر لازم 6 أحرف أو أكثر"}
+    perms = acc.get("perms", []) if acc else []
+    if new or "perms" in d:
+        raw = d.get("perms") if isinstance(d.get("perms"), list) else []
+        perms = [p for p in ADMIN_PERM_KEYS if p in raw]
+        if not perms:
+            return {"status": "error", "message": "اختار صلاحية وحدة على الأقل"}
+    active = bool(acc.get("active", True)) if acc else True
+    if "active" in d:
+        active = bool(d.get("active"))
+    if new:
+        acc = {"id": uuid.uuid4().hex[:10], "created": int(time.time()), "last_login": 0}
+        SUBADMINS_DATA["admins"].append(acc)
+    acc.update({"name": name, "email": email, "perms": perms, "active": active})
+    if password:
+        acc["salt"], acc["hash"] = _admin_pw_hash(password)
+        _admin_purge_sessions(acc["id"])
+    if not active:
+        _admin_purge_sessions(acc["id"])
+    save_json_file(SUBADMINS_FILE, SUBADMINS_DATA)
+    return {"status": "success", "id": acc["id"]}
+
+
+def admin_account_delete(d):
+    aid = str(d.get("id") or "").strip()
+    acc = _find_subadmin(aid)
+    if not acc:
+        return {"status": "error", "message": "الحساب غير موجود"}
+    SUBADMINS_DATA["admins"].remove(acc)
+    _admin_purge_sessions(aid)
+    save_json_file(SUBADMINS_FILE, SUBADMINS_DATA)
+    return {"status": "success"}
+
+
+# --------------------------------------------------
+# كشف حساب العميل + تصدير Excel (xlsx) بدون مكتبات خارجية
+# --------------------------------------------------
+def build_user_statement(email):
+    with DATA_LOCK:
+        orders = [o for o in ORDERS_DATA if o.get('email') == email]
+        deps = [d for d in DEPOSIT_REQUESTS_DATA if d.get('email') == email]
+        adjs = [a for a in BALANCE_ADJ_DATA if a.get('email') == email]
+        bal = USERS_DATA.get(email, {}).get('balance', 0)
+    rows = []
+    o_text = {'done': 'مكتمل', 'pending': 'قيد الانتظار', 'check': 'قيد التشيك', 'rejected': 'مرفوض - أُعيد المبلغ'}
+    for o in orders:
+        st = o.get('status') or 'قيد الانتظار'
+        k = 'done' if st == 'مكتملة' else ('rejected' if st == 'مرفوضة' else ('check' if st == 'تم الارسال للتشيك' else 'pending'))
+        price = round(_num(o.get('price', 0)), 6)
+        rows.append({
+            "kind": "order", "ref": str(o.get('order_uuid') or o.get('id') or '')[:16],
+            "title": o.get('product') or '-', "detail": o.get('subcategory') or '',
+            "input": str(o.get('input') or ''), "qty": o.get('quantity') or 1,
+            "amount": 0 if k == 'rejected' else -price, "price": price,
+            "sk": k, "status": o_text[k],
+            "ts": (o.get('date') or '') + ' ' + (o.get('time') or '00:00:00'),
+        })
+    d_text = {'accepted': 'مقبول', 'pending': 'قيد التدقيق', 'rejected': 'مرفوض'}
+    for d in deps:
+        st = d.get('status')
+        k = 'accepted' if st == 'مقبول' else ('rejected' if st == 'مرفوض' else 'pending')
+        amt = round(_num(d.get('amount', 0)), 6)
+        ts = str(d.get('date') or '')
+        if len(ts) == 16:
+            ts += ':00'
+        rows.append({
+            "kind": "deposit", "ref": str(d.get('tx_id') or d.get('id') or ''),
+            "title": d.get('method_name') or 'إيداع', "detail": '', "input": '', "qty": 1,
+            "amount": amt if k == 'accepted' else 0, "price": amt,
+            "sk": k, "status": d_text[k], "ts": ts,
+        })
+    for a in adjs:
+        amt = round(_num(a.get('amount', 0)), 6)
+        rows.append({
+            "kind": "adjust", "ref": '', "title": "شحن رصيد من الإدارة" if amt > 0 else "خصم رصيد من الإدارة",
+            "detail": '', "input": '', "qty": 1, "amount": amt, "price": abs(amt),
+            "sk": "adjust", "status": "تعديل من الإدارة", "ts": str(a.get('date') or ''),
+        })
+    rows.sort(key=lambda r: r["ts"], reverse=True)
+    return {"status": "success", "balance": round(_num(bal), 6), "rows": rows[:3000]}
+
+
+def make_xlsx(sheets):
+    """يبني ملف Excel حقيقي (xlsx) من قائمة أوراق: [{name, headers, rows}] (ورقة من اليمين لليسار + صف عناوين مثبّت)."""
+    import zipfile
+    import io
+    import math
+    from xml.sax.saxutils import escape
+
+    def clean(v):
+        return ''.join(ch for ch in str(v) if ch in '\t\n\r' or ord(ch) >= 32)
+
+    def col_name(n):
+        out = ''
+        n += 1
+        while n:
+            n, r = divmod(n - 1, 26)
+            out = chr(65 + r) + out
+        return out
+
+    used = set()
+    safe_sheets = []
+    for i, sh in enumerate(sheets[:12]):
+        if not isinstance(sh, dict):
+            continue
+        name = clean(sh.get('name') or ('Sheet%d' % (i + 1)))
+        for ch in '[]:*?/\\':
+            name = name.replace(ch, ' ')
+        name = (name.strip() or 'Sheet')[:31]
+        base, n = name, 2
+        while name.lower() in used:
+            name = (base[:28] + ' %d' % n)
+            n += 1
+        used.add(name.lower())
+        headers = sh.get('headers') if isinstance(sh.get('headers'), list) else []
+        rows = sh.get('rows') if isinstance(sh.get('rows'), list) else []
+        safe_sheets.append((name, headers[:40], rows[:60000]))
+    if not safe_sheets:
+        raise ValueError("no sheets")
+
+    def cell(ref, v, style=0):
+        st = ' s="%d"' % style if style else ''
+        if isinstance(v, bool):
+            v = 'نعم' if v else 'لا'
+        if isinstance(v, (int, float)) and not (isinstance(v, float) and (math.isnan(v) or math.isinf(v))):
+            return '<c r="%s"%s><v>%s</v></c>' % (ref, st, repr(v) if isinstance(v, float) else v)
+        if v is None or v == '':
+            return ''
+        return '<c r="%s"%s t="inlineStr"><is><t xml:space="preserve">%s</t></is></c>' % (ref, st, escape(clean(v)))
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as z:
+        ct = ['<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">',
+              '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>',
+              '<Default Extension="xml" ContentType="application/xml"/>',
+              '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>',
+              '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>']
+        for i in range(len(safe_sheets)):
+            ct.append('<Override PartName="/xl/worksheets/sheet%d.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' % (i + 1))
+        ct.append('</Types>')
+        z.writestr('[Content_Types].xml', ''.join(ct))
+        z.writestr('_rels/.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>')
+        wb = ['<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>']
+        rels = ['<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">']
+        for i, (name, _h, _r) in enumerate(safe_sheets):
+            wb.append('<sheet name="%s" sheetId="%d" r:id="rId%d"/>' % (escape(name, {'"': '&quot;'}), i + 1, i + 1))
+            rels.append('<Relationship Id="rId%d" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet%d.xml"/>' % (i + 1, i + 1))
+        wb.append('</sheets></workbook>')
+        rels.append('<Relationship Id="rId%d" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>' % (len(safe_sheets) + 1))
+        z.writestr('xl/workbook.xml', ''.join(wb))
+        z.writestr('xl/_rels/workbook.xml.rels', ''.join(rels))
+        z.writestr('xl/styles.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF1F4E79"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"><alignment horizontal="center"/></xf></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>')
+        for i, (name, headers, rows) in enumerate(safe_sheets):
+            ncols = max([len(headers)] + [len(r) for r in rows if isinstance(r, list)] + [1])
+            ncols = min(ncols, 40)
+            widths = [10] * ncols
+            for c, h in enumerate(headers[:ncols]):
+                widths[c] = max(widths[c], min(len(clean(h)) + 4, 60))
+            body = []
+            if headers:
+                body.append('<row r="1">' + ''.join(cell('%s1' % col_name(c), h, 1) for c, h in enumerate(headers[:ncols])) + '</row>')
+            r0 = 2 if headers else 1
+            for ri, row in enumerate(rows):
+                if not isinstance(row, list):
+                    continue
+                cells = []
+                for c, v in enumerate(row[:ncols]):
+                    if isinstance(v, str):
+                        widths[c] = max(widths[c], min(len(v) + 2, 60))
+                    cells.append(cell('%s%d' % (col_name(c), r0 + ri), v))
+                body.append('<row r="%d">%s</row>' % (r0 + ri, ''.join(cells)))
+            cols = ''.join('<col min="%d" max="%d" width="%d" customWidth="1"/>' % (c + 1, c + 1, w) for c, w in enumerate(widths))
+            pane = '<pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/>' if headers else ''
+            z.writestr('xl/worksheets/sheet%d.xml' % (i + 1),
+                       '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView rightToLeft="1" workbookViewId="0">%s</sheetView></sheetViews><cols>%s</cols><sheetData>%s</sheetData></worksheet>' % (pane, cols, ''.join(body)))
+    return buf.getvalue()
+
+
+def _auto_admin_ok(data):
+    try:
+        if data.get("__gate_ok") is True:
+            return True
+        e = str(data.get("admin_email", "")).encode("utf-8")
+        p = str(data.get("admin_password", "")).encode("utf-8")
+        return hmac.compare_digest(e, ADMIN_EMAIL.encode("utf-8")) and hmac.compare_digest(p, ADMIN_PASSWORD.encode("utf-8"))
+    except Exception:
+        return False
+
+
+def _shamcash_get(token, path, params=None, timeout=20):
+    url = SHAMCASH_API_BASE + path
+    if params:
+        url += "?" + urllib.parse.urlencode(params)
+    req = urllib.request.Request(url, headers={
+        "Authorization": "Bearer " + token, "Accept": "application/json", "User-Agent": "Mozilla/5.0"})
+    raw = ""
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as res:
+            raw = res.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as e:
+        try:
+            raw = e.read().decode("utf-8", "replace")
+        except Exception:
+            raw = ""
+        if not raw:
+            return {"status": "error", "code": "HTTP_%s" % e.code, "message": "HTTP %s" % e.code, "data": None}
+    except Exception as e:
+        return {"status": "error", "code": "NETWORK", "message": str(e), "data": None}
+    try:
+        return json.loads(raw)
+    except Exception:
+        return {"status": "error", "code": "BAD_JSON", "message": "رد غير مفهوم من ShamCash API", "data": None}
+
+
+def _sc_flatten(obj, prefix="", out=None, depth=0):
+    if out is None:
+        out = []
+    if depth > 4:
+        return out
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            _sc_flatten(v, (prefix + "." + str(k)) if prefix else str(k), out, depth + 1)
+    elif isinstance(obj, list):
+        for i, v in enumerate(obj[:20]):
+            _sc_flatten(v, prefix + "[" + str(i) + "]", out, depth + 1)
+    else:
+        out.append((prefix, obj))
+    return out
+
+
+def _to_decimal(v):
+    if v is None or isinstance(v, bool):
+        return None
+    try:
+        d = Decimal(str(v).replace(",", "").replace(" ", ""))
+        return d if d.is_finite() else None
+    except (InvalidOperation, ValueError):
+        return None
+
+
+_SC_USD_WORDS = ("usd", "$", "dollar", "دولار")
+_SC_SYP_WORDS = ("syp", "ل.س", "ليرة", "سوري", "lira", "pound", "syrian")
+
+
+def _sc_text_currency(v):
+    t = str(v).strip().lower()
+    if not t:
+        return None
+    u = any(w in t for w in _SC_USD_WORDS)
+    p = any(w in t for w in _SC_SYP_WORDS)
+    if u and not p:
+        return "USD"
+    if p and not u:
+        return "SYP"
+    return None
+
+
+def _sc_tx_currency(flat, coin_map):
+    for k, v in flat:
+        last = k.lower().split(".")[-1]
+        if isinstance(v, str) and any(x in last for x in ("coin", "currenc", "symbol", "unit")) and not last.endswith("id"):
+            c = _sc_text_currency(v)
+            if c:
+                return c
+    for k, v in flat:
+        last = k.lower().split(".")[-1]
+        if last in ("coin_id", "currency_id") and not isinstance(v, bool):
+            if str(v) in coin_map:
+                return coin_map[str(v)]
+            for cur, cid in SHAMCASH_COIN_IDS.items():
+                if cid is not None and str(cid) == str(v):
+                    return cur
+    return None
+
+
+def _sc_tx_is_outgoing(flat):
+    words = ("out", "sent", "send", "withdraw", "debit", "outgoing", "صادر", "ارسال", "إرسال", "سحب")
+    for k, v in flat:
+        last = k.lower().split(".")[-1]
+        if last in ("type", "direction", "kind", "operation", "tx_type", "transaction_type", "flow") and isinstance(v, str):
+            t = v.strip().lower()
+            if any(w in t for w in words):
+                return True
+    return False
+
+
+def _sc_tx_amount(flat):
+    for key in ("amount", "value", "total", "sum", "net_amount"):
+        for k, v in flat:
+            if k.lower().split(".")[-1] == key:
+                d = _to_decimal(v)
+                if d is not None:
+                    return d
+    return None
+
+
+def _sc_collect_coin_map(obj, out=None, depth=0):
+    """يكتشف coin_id -> العملة من رد /balances (عند توفره)."""
+    if out is None:
+        out = {}
+    if depth > 5:
+        return out
+    if isinstance(obj, dict):
+        cid = obj.get("coin_id", obj.get("currency_id"))
+        if cid is not None and not isinstance(cid, bool):
+            for k, v in obj.items():
+                if isinstance(v, str) and k.lower() not in ("coin_id", "currency_id"):
+                    c = _sc_text_currency(v)
+                    if c:
+                        out[str(cid)] = c
+                        break
+        for v in obj.values():
+            _sc_collect_coin_map(v, out, depth + 1)
+    elif isinstance(obj, list):
+        for v in obj[:50]:
+            _sc_collect_coin_map(v, out, depth + 1)
+    return out
+
+
+def _sc_find_match(token, kind, tx_id, amount):
+    currency = AUTO_DEPOSIT_KINDS[kind]["currency"]
+    acc = _shamcash_get(token, "/accounts")
+    if acc.get("status") != "success":
+        return {"state": "api_error", "code": acc.get("code"), "message": acc.get("message")}
+    d = acc.get("data")
+    accounts = d.get("accounts") if isinstance(d, dict) else d
+    if not isinstance(accounts, list) or not accounts:
+        return {"state": "api_error", "code": "NO_ACCOUNT", "message": "لا يوجد حساب مرتبط بهذا التوكن"}
+    ids = []
+    for a in accounts:
+        if isinstance(a, dict) and a.get("id") is not None and str(a.get("status", "active")).lower() != "inactive":
+            ids.append(a.get("id"))
+    if not ids:
+        return {"state": "api_error", "code": "INACTIVE", "message": "حساب شام كاش غير مفعل"}
+
+    start_at = (datetime.now() - timedelta(days=AUTO_DEPOSIT_MAX_AGE_DAYS)).strftime("%Y-%m-%d")
+    api_err = None
+    for acc_id in ids[:5]:
+        coin_map = {}
+        bal = _shamcash_get(token, "/balances", {"account_id": acc_id})
+        if bal.get("status") == "success":
+            coin_map = _sc_collect_coin_map(bal.get("data"))
+        queries = []
+        known = SHAMCASH_COIN_IDS.get(currency)
+        if known is not None:
+            queries.append(known)
+        else:
+            queries.extend([cid for cid, cur in coin_map.items() if cur == currency])
+        if not queries:
+            queries = [None]
+        for cid in queries:
+            params = {"account_id": acc_id, "transaction_ids": tx_id, "start_at": start_at, "limit": 20}
+            if cid is not None:
+                params["coin_id"] = cid
+            resp = _shamcash_get(token, "/transactions", params)
+            if resp.get("status") != "success":
+                api_err = resp
+                continue
+            dd = resp.get("data")
+            txs = dd.get("transactions") if isinstance(dd, dict) else dd
+            if not isinstance(txs, list):
+                continue
+            for tx in txs:
+                if not isinstance(tx, dict):
+                    continue
+                flat = _sc_flatten(tx)
+                if not any((not isinstance(v, bool)) and str(v).strip().lower() == tx_id.lower() for _, v in flat):
+                    continue
+                if _sc_tx_is_outgoing(flat):
+                    continue
+                cur = _sc_tx_currency(flat, coin_map)
+                if cur is None and cid is not None:
+                    cur = currency   # الاستعلام كان مقيداً بعملة هذه الطريقة
+                if cur is None:
+                    logging.warning("ShamCash: تعذر تحديد عملة العملية، الحقول: %s" % [k for k, _ in flat])
+                    continue
+                if cur != currency:
+                    continue
+                amt = _sc_tx_amount(flat)
+                if amt is None:
+                    logging.warning("ShamCash: تعذر قراءة المبلغ، الحقول: %s" % [k for k, _ in flat])
+                    continue
+                if amt > 0 and abs(amt - amount) < Decimal("0.005"):
+                    return {"state": "ok", "account_id": acc_id, "tx": tx}
+    if api_err is not None:
+        return {"state": "api_error", "code": api_err.get("code"), "message": api_err.get("message")}
+    return {"state": "no_match"}
+
+
+def _auto_dep_api_error_text(code):
+    code = str(code or "")
+    if code == "RATE_LIMIT_EXCEEDED":
+        return "الخدمة مشغولة حالياً، حاول بعد قليل"
+    if code in ("FETCH_FAILED", "NETWORK", "BAD_JSON", "INTERNAL_ERROR") or code.startswith("HTTP_5"):
+        return "تعذر التحقق الآن، حاول بعد قليل"
+    return "خدمة التحقق التلقائي غير متاحة حالياً، تواصل مع الدعم"
+
+
+def _auto_dep_notify(info):
+    _tg_tok, _tg_chat = tg_notify_target("auto_deposits")
+    try:
+        with POST_LOCK:
+            sep = "━━━━━━━━━━━━━━"
+            user_tg = (
+                "<b>تم ايداع رصيدك تلقائياً</b>\n" + sep + "\n"
+                "<b>طريقة الإيداع:</b> " + tg_esc(info["method"]) + "\n"
+                "<b>المبلغ المحول:</b> " + tg_esc(info["local_amount"]) + " " + tg_esc(info["currency_label"]) + "\n"
+                "<b>المبلغ المضاف:</b> " + tg_money(info["credited"]) + " $\n"
+                "<b>رقم العملية:</b> <code>" + tg_esc(info["tx_id"]) + "</code>\n" + sep + "\n"
+                "<b>رصيدك الآن:</b> " + tg_money(info["new_balance"]) + " $"
+            )
+            add_user_notification(
+                email=info["email"], order_uuid="deposit_" + str(info["req_id"]),
+                message="تمت عملية ايداع رصيد تلقائي بمبلغ " + tg_money(info["credited"]) + " $",
+                status="success", tg_text=user_tg)
+    except Exception as e:
+        logging.error("فشل إشعار المستخدم بالإيداع التلقائي: %s" % e)
+    try:
+        if _tg_tok and _tg_tok != "YOUR_TELEGRAM_BOT_TOKEN":
+            sep = "ـــــــــــــــــــــــــــــ"
+            e_ = html_lib.escape
+            text = (
+                "<b>ايداع تلقائي ناجح</b>\n" + sep + "\n"
+                "<b>طريقة الإيداع:</b> " + e_(info["method"]) + "\n"
+                "<b>العملة:</b> " + e_(info["currency"]) + "\n"
+                "<b>المبلغ المحول:</b> " + e_(info["local_amount"]) + " " + e_(info["currency_label"]) + "\n"
+                "<b>سعر الصرف:</b> " + e_(str(info["rate"])) + "\n"
+                "<b>المبلغ المضاف:</b> " + tg_money(info["credited"]) + " $\n"
+                "<b>رقم العملية:</b> <code>" + e_(info["tx_id"]) + "</code>\n"
+                "<b>حساب شام كاش:</b> " + e_(str(info["account_id"])) + "\n" + sep + "\n"
+                "<b>ايميل المستخدم:</b> " + e_(info["email"]) + "\n"
+                "<b>رصيده قبل:</b> " + tg_money(info["prev_balance"]) + " $\n"
+                "<b>رصيده الان:</b> " + tg_money(info["new_balance"]) + " $\n"
+                "<b>التاريخ:</b> " + e_(info["date"])
+            )
+            payload = json.dumps({"chat_id": _tg_chat, "text": text, "parse_mode": "HTML"}).encode("utf-8")
+            req = urllib.request.Request(
+                "https://api.telegram.org/bot%s/sendMessage" % _tg_tok,
+                data=payload, headers={"Content-Type": "application/json"}, method="POST")
+            urllib.request.urlopen(req, timeout=8).read()
+    except Exception as e:
+        logging.error("فشل إرسال إشعار الإيداع التلقائي للأدمن: %s" % e)
+
+
+def auto_deposit_verify(data):
+    def err(msg, code="ERROR"):
+        return {"status": "error", "code": code, "message": msg}
+    email = str(data.get("email") or "").strip()
+    kind = data.get("kind")
+    tx_id = str(data.get("tx_id") or "").strip()
+    if kind not in AUTO_DEPOSIT_KINDS:
+        return err("طريقة غير معروفة")
+    if email not in USERS_DATA:
+        return err("يرجى تسجيل الدخول أولاً")
+    cfg = _auto_dep_cfg(kind)
+    if not cfg.get("enabled") or not cfg.get("api_token"):
+        return err("هذه الطريقة غير متاحة حالياً")
+    amount = _to_decimal(data.get("amount"))
+    if amount is None or amount <= 0 or amount > Decimal("1000000000000"):
+        return err("ادخل المبلغ بشكل صحيح")
+    if len(tx_id) < 3 or len(tx_id) > 100:
+        return err("ادخل رقم العملية بشكل صحيح")
+    key = tx_id.lower()
+    now = time.time()
+    with AUTO_DEPOSIT_LOCK:
+        fails = [t for t in AUTO_DEPOSIT_FAILS.get(email, []) if now - t < 600]
+        AUTO_DEPOSIT_FAILS[email] = fails
+        if len(fails) >= 8:
+            return err("محاولات كثيرة، انتظر عشر دقائق ثم حاول مجدداً", "RATE")
+        if key in AUTO_DEPOSIT_USED:
+            return err("رقم العملية هذا مستخدم مسبقاً", "USED")
+        if key in AUTO_DEPOSIT_PENDING:
+            return err("هذه العملية قيد المعالجة، انتظر لحظات", "PENDING")
+        AUTO_DEPOSIT_PENDING.add(key)
+    try:
+        res = _sc_find_match(cfg["api_token"], kind, tx_id, amount)
+        if res["state"] == "api_error":
+            logging.error("ShamCash API error: %s - %s" % (res.get("code"), res.get("message")))
+            return err(_auto_dep_api_error_text(res.get("code")), "API")
+        if res["state"] != "ok":
+            with AUTO_DEPOSIT_LOCK:
+                AUTO_DEPOSIT_FAILS.setdefault(email, []).append(now)
+            return err("العملية غير موجودة، تأكد من رقم العملية والمبلغ ونوع العملة", "NOT_FOUND")
+
+        meta = AUTO_DEPOSIT_KINDS[kind]
+        with POST_LOCK:
+            with AUTO_DEPOSIT_LOCK:
+                if key in AUTO_DEPOSIT_USED:
+                    return err("رقم العملية هذا مستخدم مسبقاً", "USED")
+                try:
+                    rate = float(cfg.get("exchange_rate") or 1)
+                except Exception:
+                    rate = 1.0
+                if rate <= 0:
+                    rate = 1.0
+                credited = round(float(amount) / rate, 10)
+                prev = round(float((USERS_DATA.get(email) or {}).get("balance", 0)), 10)
+                new_bal = round(prev + credited, 10)
+                now_dt = datetime.now()
+                AUTO_DEPOSIT_USED[key] = {"tx_id": tx_id, "email": email, "kind": kind,
+                                          "amount": str(amount), "credited": credited,
+                                          "date": now_dt.strftime("%Y-%m-%d %H:%M:%S")}
+                save_json_file(AUTO_DEPOSIT_USED_FILE, AUTO_DEPOSIT_USED)
+                USERS_DATA[email]["balance"] = new_bal
+                save_json_file(USERS_FILE, USERS_DATA)
+                req_id = len(DEPOSIT_REQUESTS_DATA) + 1
+                DEPOSIT_REQUESTS_DATA.append({
+                    "id": req_id, "email": email, "method_name": cfg["name"],
+                    "amount": credited, "local_amount": float(amount), "exchange_rate": rate,
+                    "tx_id": tx_id, "receipt_image": "", "status": "مقبول", "auto": True,
+                    "date": now_dt.strftime("%Y-%m-%d %H:%M")})
+                save_json_file(DEPOSIT_REQUESTS_FILE, DEPOSIT_REQUESTS_DATA)
+        info = {"email": email, "method": cfg["name"], "currency": meta["currency"],
+                "currency_label": meta["label"], "local_amount": format(amount.normalize(), "f"),
+                "rate": rate, "credited": credited, "tx_id": tx_id, "account_id": res.get("account_id"),
+                "prev_balance": prev, "new_balance": new_bal, "req_id": req_id,
+                "date": now_dt.strftime("%Y-%m-%d %H:%M:%S")}
+        threading.Thread(target=_auto_dep_notify, args=(info,), daemon=True).start()
+        return {"status": "success", "new_balance": new_bal, "credited": credited,
+                "amount": float(amount), "method": cfg["name"]}
+    finally:
+        with AUTO_DEPOSIT_LOCK:
+            AUTO_DEPOSIT_PENDING.discard(key)
+
+
+def _auto_f(v):
+    try:
+        return float(v)
+    except Exception:
+        return 0.0
+
+
+def _auto_deposit_history_view():
+    """سجل الإيداعات التلقائية المكتملة (للأدمن فقط)."""
+    kinds_by_name = {}
+    for k in AUTO_DEPOSIT_KINDS:
+        kinds_by_name[str(_auto_dep_cfg(k).get("name") or "")] = k
+    used = dict(AUTO_DEPOSIT_USED)
+    rows, seen = [], set()
+    for r in list(DEPOSIT_REQUESTS_DATA):
+        if not isinstance(r, dict) or not r.get("auto"):
+            continue
+        tx = str(r.get("tx_id") or "")
+        key = tx.lower()
+        seen.add(key)
+        u = used.get(key) if isinstance(used.get(key), dict) else {}
+        kind = u.get("kind") if u.get("kind") in AUTO_DEPOSIT_KINDS else kinds_by_name.get(str(r.get("method_name") or ""), "")
+        meta = AUTO_DEPOSIT_KINDS.get(kind) or {}
+        rows.append({
+            "id": r.get("id"), "email": str(r.get("email") or ""),
+            "method_name": str(r.get("method_name") or meta.get("title") or ""),
+            "kind": kind, "currency": meta.get("currency", ""), "currency_label": meta.get("label", ""),
+            "local_amount": _auto_f(r.get("local_amount", u.get("amount"))),
+            "amount": round(_auto_f(r.get("amount")), 10), "rate": _auto_f(r.get("exchange_rate")),
+            "tx_id": tx, "status": str(r.get("status") or "مقبول"),
+            "date": str(u.get("date") or r.get("date") or ""),
+        })
+    for key, u in used.items():
+        if key in seen or not isinstance(u, dict):
+            continue
+        kind = u.get("kind") if u.get("kind") in AUTO_DEPOSIT_KINDS else ""
+        meta = AUTO_DEPOSIT_KINDS.get(kind) or {}
+        rows.append({
+            "id": None, "email": str(u.get("email") or ""), "method_name": str(meta.get("title") or ""),
+            "kind": kind, "currency": meta.get("currency", ""), "currency_label": meta.get("label", ""),
+            "local_amount": _auto_f(u.get("amount")), "amount": round(_auto_f(u.get("credited")), 10),
+            "rate": 0.0, "tx_id": str(u.get("tx_id") or key), "status": "مقبول",
+            "date": str(u.get("date") or ""),
+        })
+    rows.sort(key=lambda x: x.get("date") or "", reverse=True)
+    today = datetime.now().strftime("%Y-%m-%d")
+    done = [x for x in rows if x["status"] == "مقبول"]
+    today_rows = [x for x in done if str(x.get("date") or "").startswith(today)]
+    by_kind = []
+    for k, meta in AUTO_DEPOSIT_KINDS.items():
+        ks = [x for x in done if x["kind"] == k]
+        by_kind.append({"kind": k, "title": meta["title"], "currency": meta["currency"], "count": len(ks),
+                        "local": round(sum(x["local_amount"] for x in ks), 6),
+                        "credited": round(sum(x["amount"] for x in ks), 6)})
+    stats = {
+        "count": len(rows), "completed": len(done),
+        "total_credited": round(sum(x["amount"] for x in done), 6),
+        "today": today, "today_count": len(today_rows),
+        "today_credited": round(sum(x["amount"] for x in today_rows), 6),
+        "users": len({x["email"] for x in done if x["email"]}),
+        "by_kind": by_kind,
+    }
+    return {"status": "success", "rows": rows[:2000], "stats": stats}
+
+
+def auto_deposit_admin_action(path, data):
+    if not _auto_admin_ok(data):
+        return {"status": "error", "message": "غير مصرح"}
+    if path == "/api/auto_deposit_admin_list":
+        return {"status": "success", "methods": _auto_admin_view()}
+    if path == "/api/auto_deposit_history":
+        return _auto_deposit_history_view()
+    kind = data.get("kind")
+    if kind not in AUTO_DEPOSIT_KINDS:
+        return {"status": "error", "message": "طريقة غير معروفة"}
+    cfg = dict(AUTO_DEPOSIT_DATA.get(kind) or {})
+    if path == "/api/auto_deposit_toggle":
+        enable = bool(data.get("enabled"))
+        if enable and not str(cfg.get("api_token") or "").strip():
+            return {"status": "error", "message": "ضيف توكن API من زر القلم أول شي قبل التفعيل"}
+        cfg["enabled"] = enable
+        AUTO_DEPOSIT_DATA[kind] = cfg
+        save_json_file(AUTO_DEPOSIT_FILE, AUTO_DEPOSIT_DATA)
+        return {"status": "success", "enabled": enable}
+    # save
+    token = str(data.get("api_token") or "").strip()
+    if token:
+        if len(token) > 400 or any(ch.isspace() for ch in token):
+            return {"status": "error", "message": "التوكن غير صالح"}
+        cfg["api_token"] = token
+    name = str(data.get("name") or "").strip()[:80]
+    if name:
+        cfg["name"] = name
+    try:
+        rate = float(data.get("exchange_rate"))
+        if not (rate > 0) or rate == float("inf"):
+            raise ValueError()
+    except Exception:
+        return {"status": "error", "message": "سعر الصرف غير صحيح"}
+    cfg["exchange_rate"] = round(rate, 10)
+    cfg["address"] = str(data.get("address") or "").strip()[:500]
+    cfg["description"] = str(data.get("description") or "").strip()[:2000]
+    image = data.get("image")
+    if isinstance(image, str) and image:
+        cfg["image"] = image
+    if data.get("remove_image"):
+        cfg["image"] = ""
+    cfg.setdefault("enabled", False)
+    AUTO_DEPOSIT_DATA[kind] = cfg
+    save_json_file(AUTO_DEPOSIT_FILE, AUTO_DEPOSIT_DATA)
+    result = {"status": "success", "methods": _auto_admin_view()}
+    if token:
+        chk = _shamcash_get(token, "/accounts", timeout=12)
+        if chk.get("status") == "success":
+            result["token_check"] = {"ok": True, "message": "التوكن صالح وتم الاتصال بـ ShamCash بنجاح"}
+        else:
+            result["token_check"] = {"ok": False, "message": "تم الحفظ لكن التوكن لم ينجح: %s %s" % (chk.get("code", ""), chk.get("message", ""))}
+    return result
+
+
+_HTML_CACHE = {}
 
 
 class WebAppHandler(BaseHTTPRequestHandler):
@@ -13572,6 +21000,133 @@ class WebAppHandler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", cache)
         self.send_header("Vary", "Accept-Encoding")
         if gz:
+            self.send_header("Content-Encoding", "gzip")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _client_ip(self):
+        xff = (self.headers.get("X-Forwarded-For", "") or "").split(",")[0].strip()
+        return xff or self.client_address[0]
+
+    def _reply_json(self, obj, code=200):
+        body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-type", "application/json; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _admin_gate(self, path, data=None):
+        """يتأكد إن الطلب من أدمن عنده الصلاحية. يرجّع سياق الأدمن، أو None بعد ما يرد 401/403."""
+        need = ADMIN_PATH_PERMS.get(path)
+        ctx = admin_session_get(self.headers.get("X-Admin-Token", ""))
+        if ctx is None and isinstance(data, dict) and _owner_creds_ok(data):
+            ctx = {"role": "owner", "aid": "owner", "name": "المدير", "perms": list(ADMIN_PERM_KEYS)}
+        if ctx is None:
+            self._reply_json({"status": "error", "message": "انتهت الجلسة، سجّل دخول من جديد", "code": "auth"}, 401)
+            return None
+        if ctx["role"] != "owner":
+            needs = need if isinstance(need, tuple) else (need,)
+            if "owner" in needs or not any(n in ctx["perms"] for n in needs):
+                self._reply_json({"status": "error", "message": "ما عندك صلاحية لهالعملية", "code": "perm"}, 403)
+                return None
+        return ctx
+
+    def _handle_admin_get(self, path):
+        """True = تم الرد (أو الرفض). False = مسموح، كمّل للمعالجة العادية."""
+        if path == "/api/admin_me":
+            ctx = admin_session_get(self.headers.get("X-Admin-Token", ""))
+            if not ctx:
+                self._reply_json({"status": "error"})
+            else:
+                self._reply_json({"status": "success", "role": ctx["role"], "name": ctx["name"], "perms": ctx["perms"]})
+            return True
+        ctx = self._admin_gate(path)
+        if ctx is None:
+            return True
+        if path == "/api/admin_accounts":
+            self._reply_json(admin_accounts_payload())
+            return True
+        if path == "/api/admin_activity_log":
+            self._reply_json({"status": "success", "log": list(reversed(ADMIN_LOG_DATA[-200:]))})
+            return True
+        return False
+
+    def _handle_admin_post(self, path, data):
+        """True = تم الرد. False = مسموح، كمّل للمعالجة العادية."""
+        d = data if isinstance(data, dict) else {}
+        if path == "/api/admin_login":
+            self._reply_json(admin_login_check(d.get("email"), d.get("password"), self._client_ip(), d.get("auto") is True))
+            return True
+        if path == "/api/admin_logout":
+            tok = self.headers.get("X-Admin-Token", "")
+            with _ADMIN_SESS_LOCK:
+                ADMIN_SESSIONS.pop(tok, None)
+            self._reply_json({"status": "success"})
+            return True
+        if path not in ADMIN_PATH_PERMS:
+            return False
+        ctx = self._admin_gate(path, d)
+        if ctx is None:
+            return True
+        d["__gate_ok"] = True
+        label = ADMIN_ACTION_LABELS.get(path)
+        if path == "/api/admin_account_save":
+            res = admin_account_save(d)
+            if res.get("status") == "success" and label:
+                admin_log_add(ctx, label, _admin_action_detail(path, d))
+            self._reply_json(res)
+            return True
+        if path == "/api/export_xlsx":
+            try:
+                blob = make_xlsx(d.get("sheets") if isinstance(d.get("sheets"), list) else [])
+            except Exception as e:
+                logging.error("export_xlsx: %s" % e)
+                self._reply_json({"status": "error", "message": "تعذر إنشاء ملف Excel"}, 400)
+                return True
+            fname = ''.join(ch for ch in str(d.get("filename") or "export") if ch.isalnum() or ch in "-_")[:60] or "export"
+            self.send_response(200)
+            self.send_header("Content-type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            self.send_header("Content-Disposition", 'attachment; filename="%s.xlsx"' % fname)
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(blob)))
+            self.end_headers()
+            self.wfile.write(blob)
+            return True
+        if path == "/api/admin_account_delete":
+            res = admin_account_delete(d)
+            if res.get("status") == "success" and label:
+                admin_log_add(ctx, label, str(d.get("id") or ""))
+            self._reply_json(res)
+            return True
+        if label:
+            admin_log_add(ctx, label, _admin_action_detail(path, d))
+        return False
+
+    def _send_html_cached(self, html, key):
+        """صفحات الموقع/الإدمن (مئات الكيلوبايت): تُضغط مرة وحدة وتنخزن بالذاكرة، والمتصفح يعمل ETag."""
+        ent = _HTML_CACHE.get(key)
+        if ent is None or ent[0] is not html:
+            raw = html.encode("utf-8")
+            ent = (html, '"' + hashlib.md5(raw).hexdigest() + '"', raw, gzip.compress(raw, compresslevel=6))
+            _HTML_CACHE[key] = ent
+        _, etag, raw, gz = ent
+        if self.headers.get("If-None-Match") == etag:
+            self.send_response(304)
+            self.send_header("ETag", etag)
+            self.send_header("Cache-Control", "no-cache, must-revalidate")
+            self.end_headers()
+            return
+        use_gz = "gzip" in (self.headers.get("Accept-Encoding", "") or "").lower()
+        body = gz if use_gz else raw
+        self.send_response(200)
+        self.send_header("Content-type", "text/html; charset=utf-8")
+        self.send_header("ETag", etag)
+        self.send_header("Cache-Control", "no-cache, must-revalidate")
+        self.send_header("Vary", "Accept-Encoding")
+        if use_gz:
             self.send_header("Content-Encoding", "gzip")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
@@ -13614,11 +21169,15 @@ class WebAppHandler(BaseHTTPRequestHandler):
                         api_status = res['data'][0].get('status')
                         if api_status == "accept":
                             order['status'] = "مكتملة"
+                            if not order.get('completed_at'):
+                                order['completed_at'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                             changed = True
                         elif api_status == "reject":
                             if order.get('status') == "مرفوضة":
                                 continue
                             order['status'] = "مرفوضة"
+                            if not order.get('completed_at'):
+                                order['completed_at'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                             u_email = order.get('email')
                             if u_email in USERS_DATA:
                                 cur_b = round(float(USERS_DATA[u_email].get('balance', 0)), 10)
@@ -13661,7 +21220,7 @@ class WebAppHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", ctype)
         self.send_header("Accept-Ranges", "bytes")
         self.send_header("Content-Length", str(length))
-        self.send_header("Cache-Control", "public, max-age=31536000, immutable" if name.startswith("img_") else "public, max-age=86400")
+        self.send_header("Cache-Control", "public, max-age=31536000, immutable")
         if status == 206:
             self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
         self.end_headers()
@@ -13685,8 +21244,12 @@ class WebAppHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self):
+        _ap = self.path.split("?")[0]
+        if _ap in ADMIN_PATH_PERMS or _ap == "/api/admin_me":
+            if self._handle_admin_get(_ap):
+                return
         # First, check maintenance mode - but allow admin routes
-        if not self.path.startswith("/admin") and not self.path.startswith("/api/maintenance") and MAINTENANCE_DATA.get("is_active"):
+        if not self.path.startswith("/admin") and not self.path.startswith("/api/maintenance") and not self.headers.get("X-Admin-Token") and MAINTENANCE_DATA.get("is_active"):
             self.send_response(503)
             self.send_header("Content-type", "text/html; charset=utf-8")
             self.send_header("Cache-Control", "no-cache, must-revalidate")
@@ -13698,11 +21261,7 @@ class WebAppHandler(BaseHTTPRequestHandler):
             self._serve_media()
 
         elif self.path == "/admin/1":
-            self.send_response(200)
-            self.send_header("Content-type", "text/html; charset=utf-8")
-            self.send_header("Cache-Control", "no-cache, must-revalidate")
-            self.end_headers()
-            self.wfile.write(ADMIN_HTML_CONTENT.encode("utf-8"))
+            self._send_html_cached(ADMIN_HTML_CONTENT, "admin")
 
         elif self.path == "/api/maintenance_status":
             self.send_response(200)
@@ -13808,7 +21367,7 @@ class WebAppHandler(BaseHTTPRequestHandler):
 
         elif self.path == "/service-worker.js":
             sw_code = '''
-const CACHE_NAME = 'syria-card-v4';
+const CACHE_NAME = 'syria-card-v5';
 
 self.addEventListener('install', event => {
     self.skipWaiting();
@@ -13855,7 +21414,8 @@ self.addEventListener('notificationclick', event => {
 // الشبكة أولاً (حتى تظهر التحديثات الجديدة فوراً)، والكاش فقط عند انقطاع الاتصال
 self.addEventListener('fetch', event => {
     if (event.request.method !== 'GET') return;
-    if (event.request.url.includes('/api/')) return;
+    if (event.request.url.includes('/api/') || event.request.url.includes('/media/')) return;
+    if (event.request.headers.has('range')) return;
 
     event.respondWith(
         fetch(event.request).then(fetchRes => {
@@ -13880,6 +21440,40 @@ self.addEventListener('fetch', event => {
             self.end_headers()
             self.wfile.write(json.dumps(APPEARANCE_DATA, ensure_ascii=False).encode("utf-8"))
 
+        elif self.path.startswith("/api/api_clients_inventory"):
+            q_ = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            try:
+                report = build_api_clients_report(
+                    q_.get('from', [None])[0], q_.get('to', [None])[0], q_.get('range', [None])[0])
+                body_ = json.dumps(report, ensure_ascii=False).encode("utf-8")
+                code_ = 200
+            except Exception as e_:
+                logging.error(f"خطأ بجرد عملاء الـ API: {e_}")
+                body_ = json.dumps({"status": "error", "message": str(e_)}, ensure_ascii=False).encode("utf-8")
+                code_ = 500
+            self.send_response(code_)
+            self.send_header("Content-type", "application/json; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body_)
+
+        elif self.path.startswith("/api/inventory_report"):
+            q_ = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            try:
+                report = build_inventory_report(
+                    q_.get('from', [None])[0], q_.get('to', [None])[0], q_.get('range', [None])[0])
+                body_ = json.dumps(report, ensure_ascii=False).encode("utf-8")
+                code_ = 200
+            except Exception as e_:
+                logging.error(f"خطأ بتقرير الجرد: {e_}")
+                body_ = json.dumps({"status": "error", "message": str(e_)}, ensure_ascii=False).encode("utf-8")
+                code_ = 500
+            self.send_response(code_)
+            self.send_header("Content-type", "application/json; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body_)
+
         elif self.path == "/api/admin_stats":
             total_users = len(USERS_DATA)
             total_orders = len(ORDERS_DATA)
@@ -13899,6 +21493,10 @@ self.addEventListener('fetch', event => {
                 "total_balance": round(total_balance, 10),
                 "pending_deposits": pending_deposits
             }, ensure_ascii=False).encode("utf-8"))
+
+        elif self.path == "/api/google_config":
+            _gid = get_google_client_id()
+            self._reply_json({"enabled": bool(_gid), "client_id": _gid, "from_env": bool(GOOGLE_CLIENT_ID_ENV)})
 
         elif self.path == "/api/get_site_settings":
             self.send_response(200)
@@ -13928,7 +21526,7 @@ self.addEventListener('fetch', event => {
             self.send_response(200)
             self.send_header("Content-type", "text/html; charset=utf-8")
             self.end_headers()
-            self.wfile.write(API_DOCS_HTML.encode("utf-8"))
+            self.wfile.write(API_DOCS_HTML.replace(SITE_BASE_URL, get_site_base_url()).encode("utf-8"))
 
         elif self.path.startswith("/client/api/profile"):
             auth_token = self.headers.get('api-token')
@@ -13993,7 +21591,7 @@ self.addEventListener('fetch', event => {
                     "name": sub.get('name'),
                     "price": final_price,
                     "base_price": base_price,
-                    "params": ["ادخل الايدي"],
+                    "params": (sub.get('api_params') or ["ادخل الايدي"]),
                     "category_name": sub.get('product'),
                     "available": True,
                     "qty_values": None,
@@ -14087,6 +21685,9 @@ self.addEventListener('fetch', event => {
                 qty = int(params.get('qty', ['1'])[0])
                 player_id = params.get('playerId', [''])[0]
                 order_uuid_in = params.get('order_uuid', [''])[0]
+                # أي متطلبات إضافية غير الأساسية نمررها للمزود كما هي
+                extra_list = [{"label": k, "value": v[0]} for k, v in params.items()
+                              if k not in ('qty', 'playerId', 'order_uuid') and v and str(v[0]).strip()]
                 
                 if not order_uuid_in:
                     self.wfile.write(json.dumps({"status": "error", "code": 114, "message": "order_uuid is required"}).encode("utf-8"))
@@ -14153,7 +21754,7 @@ self.addEventListener('fetch', event => {
                             token = provider.get('token')
                             base_url = provider.get('url', '').rstrip('/') + '/'
                             player_enc = urllib.parse.quote(str(player_id))
-                            api_url = f"{base_url}client/api/newOrder/{api_product_id}/params?qty={qty}&playerId={player_enc}&order_uuid={order_uuid_in}"
+                            api_url = f"{base_url}client/api/newOrder/{api_product_id}/params?qty={qty}&playerId={player_enc}&order_uuid={order_uuid_in}{build_extra_query(extra_list)}"
                             api_res = make_api_request(api_url, token)
                             if api_res.get('status') == "OK":
                                 res_data = api_res.get('data', {})
@@ -14174,6 +21775,7 @@ self.addEventListener('fetch', event => {
                     "subcategory": sub.get('name'),
                     "price": total_price,
                     "input": player_id,
+                    "extra_params": extra_list,
                     "provider_name": provider_name,
                     "api_product_id": api_product_id,
                     "status": "مكتملة" if order_status == "accept" else ("مرفوضة" if order_status == "reject" else "قيد الانتظار"),
@@ -14182,8 +21784,11 @@ self.addEventListener('fetch', event => {
                     "quantity": qty,
                     "is_counter": sub.get('is_counter', False),
                     "replay_api": replay_api,
-                    "order_source": "api"
+                    "order_source": "api",
+                    "base_price": inv_cost_for_sub(sub, qty)
                 }
+                if new_order['status'] in ("مكتملة", "مرفوضة"):
+                    new_order['completed_at'] = now.strftime("%Y-%m-%d %H:%M:%S")
                 ORDERS_DATA.append(new_order)
                 save_json_file(ORDERS_FILE, ORDERS_DATA)
                 
@@ -14259,10 +21864,7 @@ self.addEventListener('fetch', event => {
             self._send_json_fast(CATEGORY_BANNERS_DATA)
 
         elif self.path == "/api/splash":
-            self.send_response(200)
-            self.send_header("Content-type", "application/json; charset=utf-8")
-            self.end_headers()
-            self.wfile.write(json.dumps(SPLASH_DATA, ensure_ascii=False).encode("utf-8"))
+            self._send_json_fast(SPLASH_DATA)
 
         elif self.path == "/api/products":
             self._send_json_fast(PRODUCTS_DATA)
@@ -14270,11 +21872,15 @@ self.addEventListener('fetch', event => {
         elif self.path == "/api/subcategories":
             self._send_json_fast(SUBCATEGORIES_DATA)
 
-        elif self.path == "/api/get_deposit_methods":
+        elif self.path.split("?")[0] == "/api/get_deposit_methods":
+            _methods = list(DEPOSIT_METHODS_DATA)
+            if "manual=1" not in self.path:
+                _methods += auto_deposit_public_methods()
             self.send_response(200)
             self.send_header("Content-type", "application/json; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
             self.end_headers()
-            self.wfile.write(json.dumps(DEPOSIT_METHODS_DATA, ensure_ascii=False).encode("utf-8"))
+            self.wfile.write(json.dumps(_methods, ensure_ascii=False).encode("utf-8"))
 
         elif self.path == "/api/get_deposit_requests":
             self.send_response(200)
@@ -14365,7 +21971,7 @@ self.addEventListener('fetch', event => {
                     "status": "success",
                     "token": token,
                     "enabled": USERS_DATA[email].get('api_enabled', False),
-                    "api_url": f"{SITE_BASE_URL}/client/api"
+                    "api_url": get_api_public_url()
                 }).encode("utf-8"))
             else:
                 self.send_response(200)
@@ -14460,15 +22066,44 @@ self.addEventListener('fetch', event => {
             self.end_headers()
             self.wfile.write(json.dumps(user_notifs, ensure_ascii=False).encode("utf-8"))
 
+        elif self.path.startswith("/api/user_statement"):
+            query = urllib.parse.urlparse(self.path).query
+            params = urllib.parse.parse_qs(query)
+            email = params.get('email', [''])[0]
+            if email in USERS_DATA:
+                self._reply_json(build_user_statement(email))
+            else:
+                self._reply_json({"status": "error", "message": "المستخدم غير موجود"})
+
         elif self.path == "/api/get_all_clients":
             clients = []
+            _agg = {}
+            for _o in ORDERS_DATA:
+                _a = _agg.setdefault(_o.get('email'), {"n": 0, "spent": 0.0, "last": ""})
+                _a["n"] += 1
+                if _o.get('status') == 'مكتملة':
+                    _a["spent"] += _num(_o.get('price', 0))
+                _d = str(_o.get('date') or '')
+                if _d > _a["last"]:
+                    _a["last"] = _d
+            _dep = {}
+            for _q in DEPOSIT_REQUESTS_DATA:
+                if _q.get('status') == 'مقبول':
+                    _dep[_q.get('email')] = _dep.get(_q.get('email'), 0.0) + _num(_q.get('amount', 0))
             for email, udata in USERS_DATA.items():
+                _a = _agg.get(email, {"n": 0, "spent": 0.0, "last": ""})
                 clients.append({
                     "email": email,
                     "id": udata.get('id', 1001),
                     "balance": round(float(udata.get('balance', 0)), 10),
                     "name": udata.get('name', ''),
-                    "discount_percentage": udata.get('discount_percentage', 0)
+                    "discount_percentage": udata.get('discount_percentage', 0),
+                    "phone": udata.get('phone', ''),
+                    "join_date": udata.get('join_date', ''),
+                    "orders_count": _a["n"],
+                    "spent": round(_a["spent"], 6),
+                    "last_order": _a["last"],
+                    "deposits_total": round(_dep.get(email, 0.0), 6)
                 })
             self.send_response(200)
             self.send_header("Content-type", "application/json; charset=utf-8")
@@ -14503,9 +22138,49 @@ self.addEventListener('fetch', event => {
                 self.wfile.write(json.dumps({"status": "error", "message": "المستخدم غير موجود"}).encode("utf-8"))
 
         else:
-            self._send_bytes_fast(USER_HTML_CONTENT.encode("utf-8"), "text/html; charset=utf-8", "no-cache, must-revalidate")
+            self._send_html_cached(USER_HTML_CONTENT, "user")
 
     def do_POST(self):
+        if self.path == "/api/auto_deposit_verify":
+            # خارج POST_LOCK حتى ما يعلّق السيرفر أثناء انتظار ShamCash
+            try:
+                n = int(self.headers.get('Content-Length') or 0)
+                body = json.loads(self.rfile.read(min(n, 100000)).decode('utf-8')) if n else {}
+                result = auto_deposit_verify(body if isinstance(body, dict) else {})
+            except Exception as e:
+                logging.error("auto_deposit_verify: %s" % e)
+                result = {"status": "error", "message": "حدث خطأ، حاول مرة أخرى"}
+            self.send_response(200)
+            self.send_header("Content-type", "application/json; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            return
+        if self.path == "/api/google_login":
+            # خارج POST_LOCK: التحقق من جوجل اتصال شبكة وما لازم يعلّق السيرفر
+            try:
+                n = int(self.headers.get('Content-Length') or 0)
+                body = json.loads(self.rfile.read(min(n, 20000)).decode('utf-8')) if n else {}
+                result = google_login_process(body if isinstance(body, dict) else {}, self._client_ip())
+            except Exception as e:
+                logging.error("google_login: %s" % e)
+                result = {"status": "error", "message": "حدث خطأ، حاول مرة أخرى"}
+            self._reply_json(result)
+            return
+        if self.path == "/api/tg_notify_test":
+            # خارج POST_LOCK حتى ما يعلّق السيرفر أثناء الاتصال بتلغرام
+            try:
+                n = int(self.headers.get('Content-Length') or 0)
+                body = json.loads(self.rfile.read(min(n, 100000)).decode('utf-8')) if n else {}
+                d = body if isinstance(body, dict) else {}
+                if self._admin_gate(self.path, d) is None:
+                    return
+                result = tg_notify_test(d.get("kind"))
+            except Exception as e:
+                logging.error("tg_notify_test: %s" % e)
+                result = {"status": "error", "message": "حدث خطأ أثناء التجربة"}
+            self._reply_json(result)
+            return
         with POST_LOCK:
             self._do_POST_locked()
 
@@ -14522,6 +22197,10 @@ self.addEventListener('fetch', event => {
         post_data = self.rfile.read(content_length)
         data = json.loads(post_data.decode('utf-8'))
         del post_data
+        if isinstance(data, dict):
+            data.pop("__gate_ok", None)
+        if self._handle_admin_post(self.path.split("?")[0], data):
+            return
         if self.path in IMAGE_FILE_PATHS and isinstance(data, dict):
             _img = data.get('image')
             if isinstance(_img, str) and _img.startswith('data:image/'):
@@ -14554,6 +22233,21 @@ self.addEventListener('fetch', event => {
             ANNOUNCEMENT_DATA['font'] = font
             ANNOUNCEMENT_DATA['color'] = color
             save_json_file(ANNOUNCEMENT_FILE, ANNOUNCEMENT_DATA)
+            self.send_response(200)
+            self.send_header("Content-type", "application/json; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "success"}).encode("utf-8"))
+
+        elif self.path == "/api/update_banner_shine":
+            def _shine_int(v, dflt):
+                try:
+                    return max(1, min(10, int(v)))
+                except (TypeError, ValueError):
+                    return dflt
+            APPEARANCE_DATA['banner_shine_enabled'] = bool(data.get('enabled', False))
+            APPEARANCE_DATA['banner_shine_intensity'] = _shine_int(data.get('intensity', 6), 6)
+            APPEARANCE_DATA['banner_shine_speed'] = _shine_int(data.get('speed', 5), 5)
+            save_json_file(APPEARANCE_FILE, APPEARANCE_DATA)
             self.send_response(200)
             self.send_header("Content-type", "application/json; charset=utf-8")
             self.end_headers()
@@ -14699,6 +22393,15 @@ self.addEventListener('fetch', event => {
                 "profile_completed": prof_comp
             }).encode("utf-8"))
 
+        elif self.path == "/api/update_google_settings":
+            cid = str(data.get('client_id', '')).strip()[:200]
+            if cid and not cid.endswith(".apps.googleusercontent.com"):
+                self._reply_json({"status": "error", "message": "الـ Client ID غير صحيح، لازم ينتهي بـ apps.googleusercontent.com"})
+            else:
+                SETTINGS_DATA['google_client_id'] = cid
+                save_json_file(SETTINGS_FILE, SETTINGS_DATA)
+                self._reply_json({"status": "success"})
+
         elif self.path == "/api/update_about_us":
             about_text = data.get('about_us', '')
             SETTINGS_DATA['about_us'] = about_text
@@ -14734,8 +22437,20 @@ self.addEventListener('fetch', event => {
             APPEARANCE_DATA['bottom_nav_height'] = int(data.get('bottom_nav_height', 62))
             APPEARANCE_DATA['deposit_card_size'] = int(data.get('deposit_card_size', 100))
             APPEARANCE_DATA['category_card_size'] = int(data.get('category_card_size', 100))
+            APPEARANCE_DATA['order_card_size'] = max(50, min(160, int(data.get('order_card_size', 100))))
             APPEARANCE_DATA['price_font_size'] = int(data.get('price_font_size', 13))
             APPEARANCE_DATA['price_font_color'] = data.get('price_font_color', '#4ade80')
+            def _fw(v, default, allow_zero=False):
+                try:
+                    v = int(v)
+                except Exception:
+                    return default
+                if allow_zero and v == 0:
+                    return 0
+                return max(300, min(900, int(round(v / 100.0)) * 100))
+            APPEARANCE_DATA['general_font_weight'] = _fw(data.get('general_font_weight', 0), 0, True)
+            APPEARANCE_DATA['sidebar_font_weight'] = _fw(data.get('sidebar_font_weight', 700), 700)
+            APPEARANCE_DATA['price_font_weight'] = _fw(data.get('price_font_weight', 800), 800)
             
             # الوضع الداكن
             APPEARANCE_DATA['dark_bg_color'] = data.get('dark_bg_color', '#050508')
@@ -15185,6 +22900,25 @@ self.addEventListener('fetch', event => {
             self.end_headers()
             self.wfile.write(json.dumps({"status": "success", "message": "تم تطبيق الخصم بنجاح"}, ensure_ascii=False).encode("utf-8"))
 
+        elif self.path == "/api/api_clients_save_url":
+            raw_url = str(data.get('url', '')).strip()
+            if raw_url:
+                base_ = normalize_api_base(raw_url)
+                if not base_:
+                    self.send_response(200)
+                    self.send_header("Content-type", "application/json; charset=utf-8")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"status": "error", "message": "الرابط غير صالح! اكتب رابط مثل https://yourdomain.com"}, ensure_ascii=False).encode("utf-8"))
+                    return
+                API_CLIENTS_SETTINGS['api_base_url'] = base_
+            else:
+                API_CLIENTS_SETTINGS.pop('api_base_url', None)
+            save_json_file(API_CLIENTS_FILE, API_CLIENTS_SETTINGS)
+            self.send_response(200)
+            self.send_header("Content-type", "application/json; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "success", "api_url": get_api_public_url()}, ensure_ascii=False).encode("utf-8"))
+
         elif self.path == "/api/remove_client_discount":
             email = data.get('email', '').strip()
 
@@ -15215,6 +22949,7 @@ self.addEventListener('fetch', event => {
                 client_price=data.get('price'),
                 user_ip=user_ip,
                 order_source="الموقع",
+                extra_params=data.get('extra_params'),
             )
             self.send_response(200)
             self.send_header("Content-type", "application/json; charset=utf-8")
@@ -15233,8 +22968,19 @@ self.addEventListener('fetch', event => {
             target_order = next((o for o in ORDERS_DATA if o.get('id') == order_id), None)
 
             if target_order and target_order.get('status') in ["قيد الانتظار", "تم الارسال للتشيك"]:
+                # رد النظام اللي بيظهر للعميل: يدوي = اللي كتبه الأدمن، API = من المزوّد
+                admin_reply = str(data.get('admin_reply') or '').strip()[:2000]
+                if target_order.get('api_product_id'):
+                    if not target_order.get('replay_api'):
+                        _rp = fetch_provider_replay(target_order)
+                        if _rp:
+                            target_order['replay_api'] = _rp
+                elif admin_reply:
+                    target_order['admin_reply'] = admin_reply
                 if action == 'accept':
                     target_order['status'] = "مكتملة"
+                    if not target_order.get('completed_at'):
+                        target_order['completed_at'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     user_pwd = USERS_DATA.get(target_order.get('email'), {}).get('password', 'غير معروف')
                     send_telegram_status_change_notification(target_order, "مكتملة", user_pwd)
                     add_user_notification(
@@ -15245,6 +22991,8 @@ self.addEventListener('fetch', event => {
                     )
                 else:
                     target_order['status'] = "مرفوضة"
+                    if not target_order.get('completed_at'):
+                        target_order['completed_at'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     email = target_order.get('email')
                     price = round(float(target_order.get('price', 0)), 10)
                     if email in USERS_DATA:
@@ -15368,10 +23116,27 @@ self.addEventListener('fetch', event => {
 
             USERS_DATA[email]['balance'] = new_bal
             save_json_file(USERS_FILE, USERS_DATA)
+            _delta = round(new_bal - current_bal, 10)
+            if _delta != 0:
+                BALANCE_ADJ_DATA.append({"email": email, "amount": _delta, "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S")})
+                del BALANCE_ADJ_DATA[:-20000]
+                save_json_file(BALANCE_ADJ_FILE, BALANCE_ADJ_DATA)
             self.send_response(200)
             self.send_header("Content-type", "application/json; charset=utf-8")
             self.end_headers()
             self.wfile.write(json.dumps({"status": "success", "new_balance": new_bal}).encode("utf-8"))
+
+        elif self.path in ("/api/tg_notify_get", "/api/tg_notify_save"):
+            result = tg_notify_admin_action(self.path, data if isinstance(data, dict) else {})
+            self._reply_json(result)
+
+        elif self.path in ("/api/auto_deposit_admin_list", "/api/auto_deposit_save", "/api/auto_deposit_toggle", "/api/auto_deposit_history"):
+            result = auto_deposit_admin_action(self.path, data if isinstance(data, dict) else {})
+            self.send_response(200)
+            self.send_header("Content-type", "application/json; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(json.dumps(result, ensure_ascii=False).encode("utf-8"))
 
         elif self.path == "/api/add_deposit_method":
             name = data.get('name')
