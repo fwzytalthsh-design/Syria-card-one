@@ -21018,6 +21018,28 @@ class WebAppHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _is_admin_request(self):
+        """True إذا الطلب جاي من أدمن بجلسة صالحة (مو بس وجود الهيدر)."""
+        return admin_session_get(self.headers.get("X-Admin-Token", "")) is not None
+
+    def _maint_passthrough(self, path):
+        """بوضع الصيانة: شو مسموح يمر بدون ما يكون المستخدم أدمن."""
+        if self._is_admin_request():
+            return True
+        if path.startswith("/admin") or path.startswith("/api/maintenance"):
+            return True
+        if path in ("/api/admin_login", "/api/admin_logout", "/api/admin_me", "/api/splash",
+                    "/api/get_appearance_settings"):
+            return True
+        # الصور/الفيديوهات: لازم تضل شغالة لأن <img> ما بيبعت هيدر الأدمن (ولشعار شاشة الصيانة)
+        if path.startswith("/media/"):
+            return True
+        return False
+
+    def _maint_block_json(self):
+        self._reply_json({"status": "error", "maintenance": True,
+                          "message": MAINTENANCE_DATA.get("message") or "الموقع تحت أعمال الصيانة"}, 503)
+
     def _admin_gate(self, path, data=None):
         """يتأكد إن الطلب من أدمن عنده الصلاحية. يرجّع سياق الأدمن، أو None بعد ما يرد 401/403."""
         need = ADMIN_PATH_PERMS.get(path)
@@ -21248,8 +21270,12 @@ class WebAppHandler(BaseHTTPRequestHandler):
         if _ap in ADMIN_PATH_PERMS or _ap == "/api/admin_me":
             if self._handle_admin_get(_ap):
                 return
-        # First, check maintenance mode - but allow admin routes
-        if not self.path.startswith("/admin") and not self.path.startswith("/api/maintenance") and not self.headers.get("X-Admin-Token") and MAINTENANCE_DATA.get("is_active"):
+        # وضع الصيانة: الموقع يطفي عن المستخدمين، لوحة الأدمن (جلسة صالحة) تضل شغالة
+        if MAINTENANCE_DATA.get("is_active") and not self._maint_passthrough(self.path.split("?")[0]):
+            if self.path.startswith("/client/api/"):
+                # واجهة الـ API للعملاء: رد JSON برمز الخطأ 130 (مثل الموثّق بصفحة الـ API)
+                self._reply_json({"error": 130, "message": "The site is under maintenance"}, 503)
+                return
             self.send_response(503)
             self.send_header("Content-type", "text/html; charset=utf-8")
             self.send_header("Cache-Control", "no-cache, must-revalidate")
@@ -22141,6 +22167,11 @@ self.addEventListener('fetch', event => {
             self._send_html_cached(USER_HTML_CONTENT, "user")
 
     def do_POST(self):
+        if MAINTENANCE_DATA.get("is_active") and self.path in ("/api/auto_deposit_verify", "/api/google_login") \
+                and not self._maint_passthrough(self.path.split("?")[0]):
+            self._maint_block_json()
+            self.close_connection = True
+            return
         if self.path == "/api/auto_deposit_verify":
             # خارج POST_LOCK حتى ما يعلّق السيرفر أثناء انتظار ShamCash
             try:
@@ -22200,6 +22231,10 @@ self.addEventListener('fetch', event => {
         if isinstance(data, dict):
             data.pop("__gate_ok", None)
         if self._handle_admin_post(self.path.split("?")[0], data):
+            return
+        if MAINTENANCE_DATA.get("is_active") and not (isinstance(data, dict) and data.get("__gate_ok") is True) \
+                and not self._maint_passthrough(self.path.split("?")[0]):
+            self._maint_block_json()
             return
         if self.path in IMAGE_FILE_PATHS and isinstance(data, dict):
             _img = data.get('image')
