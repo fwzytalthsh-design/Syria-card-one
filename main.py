@@ -2684,6 +2684,13 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
             font-size: var(--sidebar-font-size);
         }
         .sidebar.active { right: 0; }
+        /* تمرير مريح بالإصبع: طول الشاشة الفعلي، سحب ناعم، ومساحة تحت بآخر القائمة */
+        .sidebar {
+            height: 100vh; height: 100dvh;
+            overflow-y: auto; overflow-x: hidden;
+            -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+            padding-bottom: calc(110px + env(safe-area-inset-bottom, 0px));
+        }
         .sidebar-header { display: flex; align-items: center; justify-content: flex-end; padding: 0 5px; }
         .close-btn { background: transparent; border: none; color: var(--subtext-color); font-size: 1.5rem; cursor: pointer; }
 
@@ -4944,13 +4951,18 @@ USER_HTML_CONTENT = """<!DOCTYPE html>
             }, 320);
         }
 
+        let touchStartY = 0;
         document.addEventListener('touchstart', e => {
             touchStartX = e.touches[0].clientX;
+            touchStartY = e.touches[0].clientY;
         }, {passive: true});
 
         document.addEventListener('touchmove', e => {
             touchCurrentX = e.touches[0].clientX;
             let diffX = touchCurrentX - touchStartX;
+            let diffY = e.touches[0].clientY - touchStartY;
+            // سحب أفقي واضح فقط (حتى ما تنسكّر القائمة وإنت عم تمرّر لفوق وتحت)
+            if (Math.abs(diffX) < Math.abs(diffY) * 2) return;
 
             if (!sidebar.classList.contains('active') && touchStartX < 35 && diffX > 50) {
                 toggleSidebar();
@@ -8578,6 +8590,7 @@ ADMIN_HTML_CONTENT = """
             transition: right .35s cubic-bezier(.2,.8,.2,1) !important;
         }
         .sidebar.active { right: 0 !important; }
+        .sidebar { height: 100vh; height: 100dvh; overflow-y: auto !important; overflow-x: hidden; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; padding-bottom: calc(110px + env(safe-area-inset-bottom, 0px)) !important; }
         .sidebar-header { border-bottom: 1px solid var(--line) !important; padding-bottom: 14px !important; margin-bottom: 4px; }
         .sidebar-header > div { color: var(--gold) !important; font-size: 1.05rem !important; font-weight: 800 !important; }
         .sidebar-header .close-btn { width: 34px; height: 34px; border-radius: 10px; background: var(--bg-2); border: 1px solid var(--line-2); color: var(--muted); transition: all .2s; }
@@ -19843,6 +19856,14 @@ IMAGE_FILE_PATHS = {"/api/update_category", "/api/add_category", "/api/add_produ
                     "/api/edit_imported_section", "/api/edit_imported_subsection", "/api/import_api_category_full"}
 MAX_IMAGE_CHARS = 1500000           # أكبر صورة قسم (نص base64) ~1.1MB
 POST_LOCK = threading.RLock()   # يسلسل عمليات الكتابة (POST) حتى ما يصير تضارب بالأرصدة والبيانات
+# مسارات ما بتمرّ من POST_LOCK: إما قراءة فقط، أو بتحمي نفسها بـ DATA_LOCK (زي بوت التلغرام اللي كان أصلاً بينفّذ الشراء بدون القفل).
+# السبب: هي بتعمل اتصالات خارجية بطيئة (مزوّد/تلغرام)، ولو مسكت القفل العام كل الموقع (دخول/أدمن/شراء) بيعلق وراها.
+_ORDER_SYNC_GATE = threading.Lock()  # مزامنة حالات الطلبات: وحدة بس بنفس الوقت
+NO_POST_LOCK_PATHS = frozenset({
+    "/api/login", "/api/admin_login", "/api/purchase",
+    "/api/verify_product_id", "/api/get_provider_profile",
+    "/api/get_provider_products", "/api/fetch_api_categories",
+})
 
 
 
@@ -21167,50 +21188,69 @@ class WebAppHandler(BaseHTTPRequestHandler):
         self._send_bytes_fast(body, "application/json; charset=utf-8")
 
     def sync_orders_status_with_api(self):
-        with POST_LOCK:
+        # قبل: كان يمسك POST_LOCK وهو يسأل المزوّد عن كل طلب معلّق (5 ثواني لكل طلب) فيجمّد الموقع كله.
+        # هلق: الاتصال بالمزوّد بيصير بدون قفل، والتطبيق على البيانات بقفل قصير، ومزامنة وحدة بس بنفس الوقت.
+        if not _ORDER_SYNC_GATE.acquire(False):
+            return
+        try:
             self._sync_orders_status_impl()
+        finally:
+            _ORDER_SYNC_GATE.release()
 
     def _sync_orders_status_impl(self):
-        changed = False
         if not PROVIDERS_DATA:
             return
+        deadline = time.time() + 20  # ميزانية وقت: الباقي بيكمل بالمرة الجاية
+        pending = [(o.get('id'), o.get('order_uuid'), o.get('provider_name'))
+                   for o in list(ORDERS_DATA)
+                   if o.get('status') in ["قيد الانتظار", "تم الارسال للتشيك"] and o.get('order_uuid')]
+        results = {}
 
-        for order in ORDERS_DATA:
-            if order.get('status') in ["قيد الانتظار", "تم الارسال للتشيك"] and order.get('order_uuid'):
-                p_name = order.get('provider_name')
-                provider = next((p for p in PROVIDERS_DATA if p.get('name') == p_name), PROVIDERS_DATA[0])
-                token = provider.get('token')
-                url = provider.get('url', '').rstrip('/') + '/'
+        def _check_one(item):
+            oid, order_uuid_val, p_name = item
+            if time.time() > deadline:
+                return
+            provider = next((p for p in PROVIDERS_DATA if p.get('name') == p_name), PROVIDERS_DATA[0])
+            token = provider.get('token')
+            url = provider.get('url', '').rstrip('/') + '/'
+            try:
+                check_url = f"{url}client/api/check?orders=[{order_uuid_val}]&uuid=1"
+                res = make_api_request(check_url, token, timeout=5)  # بدون أي قفل
+                if res.get('status') == "OK" and res.get('data') and len(res['data']) > 0:
+                    results[oid] = res['data'][0].get('status')
+            except Exception as e:
+                logging.error(f"خطأ بمزامنة الطلب #{oid}: {e}")
 
-                try:
-                    order_uuid_val = order.get('order_uuid')
-                    check_url = f"{url}client/api/check?orders=[{order_uuid_val}]&uuid=1"
-                    res = make_api_request(check_url, token, timeout=5)
-                    
-                    if res.get('status') == "OK" and res.get('data') and len(res['data']) > 0:
-                        api_status = res['data'][0].get('status')
-                        if api_status == "accept":
-                            order['status'] = "مكتملة"
-                            if not order.get('completed_at'):
-                                order['completed_at'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                            changed = True
-                        elif api_status == "reject":
-                            if order.get('status') == "مرفوضة":
-                                continue
-                            order['status'] = "مرفوضة"
-                            if not order.get('completed_at'):
-                                order['completed_at'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                            u_email = order.get('email')
-                            if u_email in USERS_DATA:
-                                cur_b = round(float(USERS_DATA[u_email].get('balance', 0)), 10)
-                                USERS_DATA[u_email]['balance'] = round(cur_b + float(order.get('price', 0)), 10)
-                                save_json_file(USERS_FILE, USERS_DATA)
-                            changed = True
-                except Exception as e:
-                    logging.error(f"خطأ بمزامنة الطلب #{order.get('id')}: {e}")
-
-        if changed:
-            save_json_file(ORDERS_FILE, ORDERS_DATA)
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=8) as _ex:  # بالتوازي بدل واحد واحد
+            list(_ex.map(_check_one, pending))
+        if not results:
+            return
+        with POST_LOCK:  # تطبيق سريع فقط
+            changed = False
+            for order in ORDERS_DATA:
+                api_status = results.get(order.get('id'))
+                # نعيد فحص الحالة: إذا انغيّرت أثناء الانتظار (أدمن/نظام المتابعة) ما نطبّق مرة ثانية (يمنع تكرار الاسترجاع)
+                if not api_status or order.get('status') not in ["قيد الانتظار", "تم الارسال للتشيك"]:
+                    continue
+                if api_status == "accept":
+                    order['status'] = "مكتملة"
+                    if not order.get('completed_at'):
+                        order['completed_at'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    changed = True
+                elif api_status == "reject":
+                    order['status'] = "مرفوضة"
+                    if not order.get('completed_at'):
+                        order['completed_at'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    u_email = order.get('email')
+                    if u_email in USERS_DATA:
+                        with DATA_LOCK:
+                            cur_b = round(float(USERS_DATA[u_email].get('balance', 0)), 10)
+                            USERS_DATA[u_email]['balance'] = round(cur_b + float(order.get('price', 0)), 10)
+                            save_json_file(USERS_FILE, USERS_DATA)
+                    changed = True
+            if changed:
+                save_json_file(ORDERS_FILE, ORDERS_DATA)
 
     def _serve_media(self):
         name = urllib.parse.urlparse(self.path).path[len("/media/"):]
@@ -22212,8 +22252,11 @@ self.addEventListener('fetch', event => {
                 result = {"status": "error", "message": "حدث خطأ أثناء التجربة"}
             self._reply_json(result)
             return
-        with POST_LOCK:
+        if self.path in NO_POST_LOCK_PATHS:
             self._do_POST_locked()
+        else:
+            with POST_LOCK:
+                self._do_POST_locked()
 
     def _do_POST_locked(self):
         content_length = int(self.headers.get('Content-Length') or 0)
@@ -23700,6 +23743,34 @@ self.addEventListener('fetch', event => {
         return
 
 
+def _telegram_in_background(fn):
+    """يشغّل إشعار تلغرام بخيط خلفي حتى ما ينتظر المستخدم/الأدمن اتصال تلغرام (لحد 8 ثواني لكل إشعار)."""
+    import copy
+
+    def wrapper(*args, **kwargs):
+        try:
+            args = copy.deepcopy(args)
+            kwargs = copy.deepcopy(kwargs)
+        except Exception:
+            pass
+
+        def _job():
+            try:
+                fn(*args, **kwargs)
+            except Exception as e:
+                logging.error("إشعار تلغرام (%s): %s" % (fn.__name__, e))
+        threading.Thread(target=_job, daemon=True).start()
+    wrapper.__name__ = fn.__name__
+    return wrapper
+
+
+for _tg_fn_name in ("send_telegram_notification", "send_telegram_purchase_notification",
+                    "send_telegram_new_user_notification", "send_telegram_status_change_notification",
+                    "send_telegram_deposit_notification"):
+    if _tg_fn_name in globals():
+        globals()[_tg_fn_name] = _telegram_in_background(globals()[_tg_fn_name])
+
+
 def main():
     try:
         migrate_inline_images()
@@ -23709,6 +23780,7 @@ def main():
         push_public_key()
     except Exception as e:
         logging.error(f"Web Push غير مفعّل: {e}")
+    ThreadingHTTPServer.request_queue_size = 128  # الافتراضي 5: لما ينفتح عدة اتصالات مرة وحدة كانت تنقطع (Connection reset)
     server = ThreadingHTTPServer(("0.0.0.0", PORT), WebAppHandler)
     server.daemon_threads = True
     threading.Thread(target=telegram_link_bot_loop, daemon=True).start()
